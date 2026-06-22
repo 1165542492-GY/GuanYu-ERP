@@ -2,7 +2,7 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
-- 当前版本：Ver1.5
+- 当前版本：Ver1.6
 - 运行平台：Windows
 - 服务端口：`8787`
 - 技术结构：C#/.NET Framework、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
@@ -29,12 +29,38 @@
 - `Material.html`：物料管理界面
 - `Finance.html`：财务收支界面
 - `app.manifest`：Windows 管理员权限及系统兼容性声明
+- `GuanYuERP.csproj`：MSBuild 项目文件
+- `build.ps1`：一键编译并生成安装包
+- `安装说明.txt`：随安装包分发的用户使用说明
 
 程序运行时会将四个 HTML 文件作为嵌入资源，由 `Program.cs` 组合后提供给浏览器。
 
-## 编译方式
+## 一键打包（推荐）
 
-仓库当前未使用 Visual Studio 解决方案或项目文件，可使用 Windows 自带的 .NET Framework C# 编译器。在仓库根目录执行：
+适合不会编程的使用场景。在源码目录 `01-源代码` 中执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+也可以右键 `build.ps1`，选择“使用 PowerShell 运行”。
+
+脚本会自动完成以下步骤：
+
+1. 使用 MSBuild 编译 `GuanYuERP.csproj`
+2. 生成 `GuanYuERP.exe`
+3. 打包 `GuanYuERP.exe`、`安装说明.txt`、`VERSION.md`
+4. 输出安装包到：
+
+```text
+C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系统Ver1.6.zip
+```
+
+解压后即可使用。首次运行请右键 `GuanYuERP.exe`，选择“以管理员身份运行”。
+
+## 手动编译方式
+
+如需手工编译，也可使用 Windows 自带的 .NET Framework C# 编译器。在仓库根目录执行：
 
 ```powershell
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
@@ -89,7 +115,8 @@ C:\ProgramData\智造ERP供应商管理
 - 服务监听局域网端口 `8787`，请按实际网络环境配置 Windows 防火墙。
 - 当前使用 HTTP 明文通信，建议仅在可信局域网内使用，不要直接暴露到公网。
 - 数据由运行程序统一读写，不建议在程序运行时手工编辑 JSON 文件。
-- 数据文件、备份、日志和编译产物不应提交到 Git 仓库。
+- 数据文件、备份、日志、编译产物和安装包 zip 不应提交到 Git 仓库。
+- 安装包默认输出到仓库外的 `02-安装包` 目录，不会进入 GitHub。
 - 当前账号定义保存在源码中，且各角色尚未实施接口级权限隔离。
 
 详细版本功能记录请参阅 [VERSION.md](VERSION.md)。

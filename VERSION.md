@@ -1,8 +1,27 @@
 # 版本记录
 
+## Ver1.6
+
+当前代码版本：冠誉ERP管理系统 Ver1.6。
+
+### 一键编译与打包
+
+- 新增 `GuanYuERP.csproj`，支持通过 MSBuild 编译 WinForms + HttpListener 项目
+- 新增 `build.ps1`，一键编译并生成安装包
+- 新增 `安装说明.txt`，随安装包分发给最终用户
+- 安装包输出路径：`C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系统Ver1.6.zip`
+- 安装包包含：`GuanYuERP.exe`、`安装说明.txt`、`VERSION.md`
+- 更新 `.gitignore`，避免 exe、zip、编译中间目录和业务数据进入 Git 仓库
+
+### 兼容性
+
+- 未修改 `Program.cs` 及四个 HTML 页面中的业务逻辑
+- 保留 Ver1.5 的首页看板、供应商、客户、物料和财务功能
+- 保持现有数据目录、数据格式、备份方式和局域网访问方式不变
+
 ## Ver1.5
 
-当前代码版本：冠誉ERP管理系统 Ver1.5。
+冠誉ERP管理系统 Ver1.5。
 
 ### 首页综合看板
 
