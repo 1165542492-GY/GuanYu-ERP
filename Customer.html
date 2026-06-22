@@ -1,0 +1,46 @@
+<section class="content" id="customerView" style="display:none">
+  <div class="notice"><span>客户编号由系统自动生成：<b>KH01、KH02、KH03…</b></span><span>客户资料独立保存 · 局域网共享</span></div>
+  <div class="cards">
+    <div class="card"><span class="dot">客</span><div class="card-label">客户总数</div><div class="card-value" id="customerTotal">0</div><div class="card-note">已建档客户</div></div>
+    <div class="card"><span class="dot">联</span><div class="card-label">联系人完整</div><div class="card-value" id="customerContacts">0</div><div class="card-note">联系人与电话齐全</div></div>
+    <div class="card"><span class="dot">票</span><div class="card-label">开票资料完整</div><div class="card-value" id="customerBilling">0</div><div class="card-note">开户资料已维护</div></div>
+    <div class="card"><span class="dot">启</span><div class="card-label">启用客户</div><div class="card-value" id="customerActive">0</div><div class="card-note">当前正常往来客户</div></div>
+  </div>
+  <div class="panel">
+    <div class="tools"><div class="lefttools"><input class="search" id="customerSearch" placeholder="搜索编号、客户、联系人、电话或地址"><button class="btn" id="customerReset">重置</button></div><div><input id="customerImportFile" type="file" accept=".xlsx" style="display:none"><button class="btn" id="customerImportBtn">导入表格</button> <button class="btn" id="customerBackup">立即备份</button> <button class="btn" id="customerExport">导出表格</button> <button class="btn primary" id="customerAdd">＋ 新增客户</button></div></div>
+    <div class="tablewrap"><table style="min-width:1580px"><thead><tr><th>客户编号</th><th>客户名称</th><th>联系人</th><th>联系电话</th><th>开户行</th><th>银行账号</th><th>开户行行号</th><th>地址</th><th>实时当前应收款</th><th>状态</th><th>最后更新</th><th>操作人</th><th>操作</th></tr></thead><tbody id="customerBody"></tbody></table></div>
+    <div class="foot"><span id="customerCount">共 0 条记录</span><span>统一数据库 · 自动保存与备份</span></div>
+  </div>
+</section>
+
+<div class="modal" id="customerModal"><div class="dialog"><div class="dialoghead"><div class="dialogtitle" id="customerModalTitle">新增客户</div><button class="close" id="customerClose">×</button></div><form id="customerForm"><div class="form">
+  <div class="formtitle">基本信息</div><div class="grid">
+    <div class="field"><label>客户编号</label><input id="customerCode" value="保存后自动生成" readonly></div>
+    <div class="field"><label class="req">客户名称</label><input id="customerCompany" required maxlength="100" placeholder="请输入客户公司全称"></div>
+    <div class="field"><label>联系人</label><input id="customerContact" placeholder="联系人姓名"></div>
+    <div class="field"><label>联系电话</label><input id="customerPhone" placeholder="手机或固定电话"></div>
+    <div class="field full"><label>地址</label><input id="customerAddress" placeholder="客户公司或收货地址"></div>
+  </div>
+  <div class="formtitle">开票资料</div><div class="grid">
+    <div class="field full"><label>开户行</label><input id="customerBank" placeholder="银行完整名称及支行"></div>
+    <div class="field"><label>银行账号</label><input id="customerAccount" placeholder="请输入银行账号"></div>
+    <div class="field"><label>开户行行号</label><input id="customerBankNo" placeholder="请输入联行号"></div>
+    <div class="field"><label>实时当前应收款</label><input id="customerReceivable" type="number" step="0.01" value="0"></div>
+    <div class="field"><label>状态</label><select id="customerStatus"><option>启用</option><option>停用</option></select></div>
+  </div>
+</div><div class="dialogfoot"><button type="button" class="btn" id="customerCancel">取消</button><button type="submit" class="btn primary">保存客户</button></div></form></div></div>
+
+<script>
+document.querySelector('.main').appendChild(document.getElementById('customerView'));
+var customerData=[],customerEditing=null;
+var customerOriginalLoginDone=loginDone;loginDone=function(me){customerOriginalLoginDone(me);loadCustomerData()};
+async function loadCustomerData(){try{customerData=await api('/api/customers');renderCustomers()}catch(e){}}
+function renderCustomers(){var q=document.getElementById('customerSearch').value.trim().toLowerCase(),rows=customerData.filter(function(x){return Object.keys(x).map(function(k){return x[k]}).join(' ').toLowerCase().indexOf(q)>=0});document.getElementById('customerBody').innerHTML=rows.length?rows.map(function(x){return'<tr><td><b>'+safe(x.Code)+'</b></td><td class="company">'+safe(x.Company)+'</td><td>'+safe(x.Contact||'-')+'</td><td>'+safe(x.Phone||'-')+'</td><td>'+safe(x.Bank||'-')+'</td><td>'+safe(x.Account||'-')+'</td><td>'+safe(x.BankNo||'-')+'</td><td>'+safe(x.Address||'-')+'</td><td>'+money(x.Receivable)+'</td><td><span class="status">● '+safe(x.Status||'启用')+'</span></td><td>'+safe(x.UpdatedAt||'-')+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td><button class="action" onclick="editCustomer(\''+x.Id+'\')">编辑</button><button class="action del" onclick="deleteCustomer(\''+x.Id+'\')">删除</button></td></tr>'}).join(''):'<tr><td colspan="13" class="empty">暂无客户，请点击“新增客户”开始建档</td></tr>';document.getElementById('customerCount').textContent='共 '+rows.length+' 条记录';document.getElementById('customerTotal').textContent=customerData.length;document.getElementById('customerContacts').textContent=customerData.filter(function(x){return x.Contact&&x.Phone}).length;document.getElementById('customerBilling').textContent=customerData.filter(function(x){return x.Bank&&x.Account&&x.BankNo}).length;document.getElementById('customerActive').textContent=customerData.filter(function(x){return(x.Status||'启用')==='启用'}).length}
+function openCustomerModal(item){customerEditing=item?item.Id:null;document.getElementById('customerModalTitle').textContent=item?'编辑客户':'新增客户';document.getElementById('customerCode').value=item?item.Code:'保存后自动生成';['Company','Contact','Phone','Bank','Account','BankNo','Address','Receivable','Status'].forEach(function(f){document.getElementById('customer'+f).value=item?(item[f]===undefined?'':item[f]):f==='Status'?'启用':f==='Receivable'?'0':''});document.getElementById('customerModal').classList.add('show');setTimeout(function(){document.getElementById('customerCompany').focus()},30)}
+function closeCustomerModal(){document.getElementById('customerModal').classList.remove('show');document.getElementById('customerForm').reset();customerEditing=null}
+function editCustomer(id){openCustomerModal(customerData.find(function(x){return x.Id===id}))}
+async function deleteCustomer(id){var x=customerData.find(function(v){return v.Id===id});if(!confirm('确定删除“'+x.Code+' '+x.Company+'”吗？\n删除前系统会自动备份。'))return;try{await api('/api/customers/'+id,{method:'DELETE'});await loadCustomerData();tip('客户已删除')}catch(e){tip(e.message)}}
+document.getElementById('customerForm').onsubmit=async function(e){e.preventDefault();var body={};['Company','Contact','Phone','Bank','Account','BankNo','Address','Status'].forEach(function(f){body[f]=document.getElementById('customer'+f).value.trim()});body.Receivable=Number(document.getElementById('customerReceivable').value||0);var isEdit=!!customerEditing;try{await api(isEdit?'/api/customers/'+customerEditing:'/api/customers',{method:isEdit?'PUT':'POST',body:JSON.stringify(body)});closeCustomerModal();await loadCustomerData();tip(isEdit?'客户资料已更新':'客户已新增')}catch(err){tip(err.message)}};
+document.getElementById('customerAdd').onclick=function(){openCustomerModal(null)};document.getElementById('customerClose').onclick=document.getElementById('customerCancel').onclick=closeCustomerModal;document.getElementById('customerModal').onclick=function(e){if(e.target===document.getElementById('customerModal'))closeCustomerModal()};document.getElementById('customerSearch').oninput=renderCustomers;document.getElementById('customerReset').onclick=function(){document.getElementById('customerSearch').value='';renderCustomers()};
+document.getElementById('customerImportBtn').onclick=function(){document.getElementById('customerImportFile').click()};document.getElementById('customerImportFile').onchange=function(){importExcel(this,'/api/customers/import',loadCustomerData)};document.getElementById('customerBackup').onclick=async function(){try{await api('/api/backup',{method:'POST',body:'{}'});tip('备份完成')}catch(e){tip(e.message)}};document.getElementById('customerExport').onclick=async function(){try{var r=await fetch('/api/customers/export');if(r.status===401){showLogin();return}var b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='客户信息_'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);tip('表格已导出')}catch(e){tip('导出失败')}};
+</script>

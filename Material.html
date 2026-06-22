@@ -1,0 +1,43 @@
+<section class="content" id="materialView" style="display:none">
+  <div class="notice"><span>物料编号由系统自动生成：<b>WL01、WL02、WL03…</b></span><span>供应商选项读取自供应商管理</span></div>
+  <div class="cards">
+    <div class="card"><span class="dot">物</span><div class="card-label">物料总数</div><div class="card-value" id="materialTotal">0</div><div class="card-note">已建档物料</div></div>
+    <div class="card"><span class="dot">供</span><div class="card-label">关联供应商</div><div class="card-value" id="materialSuppliers">0</div><div class="card-note">涉及供应商数量</div></div>
+    <div class="card"><span class="dot">税</span><div class="card-label">已维护含税价</div><div class="card-value" id="materialTaxed">0</div><div class="card-note">含税价大于零</div></div>
+    <div class="card"><span class="dot">启</span><div class="card-label">启用物料</div><div class="card-value" id="materialActive">0</div><div class="card-note">当前可用物料</div></div>
+  </div>
+  <div class="panel">
+    <div class="tools"><div class="lefttools"><input class="search" id="materialSearch" placeholder="搜索编号、供应商、物料名称或规格"><button class="btn" id="materialReset">重置</button></div><div><input id="materialImportFile" type="file" accept=".xlsx" style="display:none"><button class="btn" id="materialImportBtn">导入表格</button> <button class="btn" id="materialBackup">立即备份</button> <button class="btn" id="materialExport">导出表格</button> <button class="btn primary" id="materialAdd">＋ 新增物料</button></div></div>
+    <div class="tablewrap"><table style="min-width:1300px"><thead><tr><th>物料编号</th><th>供应商</th><th>物料名称/规格</th><th>数量/单位</th><th>含税价</th><th>不含税价</th><th>备注</th><th>状态</th><th>最后更新</th><th>操作人</th><th>操作</th></tr></thead><tbody id="materialBody"></tbody></table></div>
+    <div class="foot"><span id="materialCount">共 0 条记录</span><span>统一数据库 · 自动保存与备份</span></div>
+  </div>
+</section>
+
+<div class="modal" id="materialModal"><div class="dialog"><div class="dialoghead"><div class="dialogtitle" id="materialModalTitle">新增物料</div><button class="close" id="materialClose">×</button></div><form id="materialForm"><div class="form">
+  <div class="formtitle">物料信息</div><div class="grid">
+    <div class="field"><label>物料编号</label><input id="materialCode" value="保存后自动生成" readonly></div>
+    <div class="field"><label class="req">供应商</label><select id="materialSupplier" required></select></div>
+    <div class="field full"><label class="req">物料名称/规格</label><input id="materialNameSpec" required placeholder="请输入物料名称和规格型号"></div>
+    <div class="field"><label>数量/单位</label><input id="materialQuantityUnit" placeholder="例如：10件、20米、1台"></div>
+    <div class="field"><label>含税价</label><input id="materialTaxPrice" type="number" step="0.01" min="0" value="0"></div>
+    <div class="field"><label>不含税价</label><input id="materialNoTaxPrice" type="number" step="0.01" min="0" value="0"></div>
+    <div class="field"><label>状态</label><select id="materialStatus"><option>启用</option><option>停用</option></select></div>
+    <div class="field full"><label>备注</label><textarea id="materialNote" placeholder="选填"></textarea></div>
+  </div>
+</div><div class="dialogfoot"><button type="button" class="btn" id="materialCancel">取消</button><button type="submit" class="btn primary">保存物料</button></div></form></div></div>
+
+<script>
+document.querySelector('.main').appendChild(document.getElementById('materialView'));
+var materialData=[],materialEditing=null;
+var materialOriginalLoginDone=loginDone;loginDone=function(me){materialOriginalLoginDone(me);loadMaterialData()};
+async function loadMaterialData(){try{materialData=await api('/api/materials');renderMaterials()}catch(e){}}
+function materialSupplierOptions(selected){var select=document.getElementById('materialSupplier'),names=data.map(function(x){return x.Company}).filter(Boolean).sort();select.innerHTML='<option value="">请选择已建档供应商</option>'+names.map(function(x){return'<option value="'+safe(x)+'">'+safe(x)+'</option>'}).join('');select.value=selected||''}
+function renderMaterials(){var q=document.getElementById('materialSearch').value.trim().toLowerCase(),rows=materialData.filter(function(x){return Object.keys(x).map(function(k){return x[k]}).join(' ').toLowerCase().indexOf(q)>=0});document.getElementById('materialBody').innerHTML=rows.length?rows.map(function(x){return'<tr><td><b>'+safe(x.Code)+'</b></td><td class="company">'+safe(x.Supplier)+'</td><td>'+safe(x.NameSpec)+'</td><td>'+safe(x.QuantityUnit||'-')+'</td><td>'+money(x.TaxPrice)+'</td><td>'+money(x.NoTaxPrice)+'</td><td>'+safe(x.Note||'-')+'</td><td><span class="status">● '+safe(x.Status||'启用')+'</span></td><td>'+safe(x.UpdatedAt||'-')+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td><button class="action" onclick="editMaterial(\''+x.Id+'\')">编辑</button><button class="action del" onclick="deleteMaterial(\''+x.Id+'\')">删除</button></td></tr>'}).join(''):'<tr><td colspan="11" class="empty">暂无物料，请点击“新增物料”开始建档</td></tr>';document.getElementById('materialCount').textContent='共 '+rows.length+' 条记录';document.getElementById('materialTotal').textContent=materialData.length;var sm={};materialData.forEach(function(x){if(x.Supplier)sm[x.Supplier]=1});document.getElementById('materialSuppliers').textContent=Object.keys(sm).length;document.getElementById('materialTaxed').textContent=materialData.filter(function(x){return Number(x.TaxPrice)>0}).length;document.getElementById('materialActive').textContent=materialData.filter(function(x){return(x.Status||'启用')==='启用'}).length}
+function openMaterialModal(item){materialEditing=item?item.Id:null;document.getElementById('materialModalTitle').textContent=item?'编辑物料':'新增物料';document.getElementById('materialCode').value=item?item.Code:'保存后自动生成';materialSupplierOptions(item?item.Supplier:'');['NameSpec','QuantityUnit','TaxPrice','NoTaxPrice','Note','Status'].forEach(function(f){document.getElementById('material'+f).value=item?(item[f]===undefined?'':item[f]):f==='Status'?'启用':(f==='TaxPrice'||f==='NoTaxPrice')?'0':''});document.getElementById('materialModal').classList.add('show')}
+function closeMaterialModal(){document.getElementById('materialModal').classList.remove('show');document.getElementById('materialForm').reset();materialEditing=null}
+function editMaterial(id){openMaterialModal(materialData.find(function(x){return x.Id===id}))}
+async function deleteMaterial(id){var x=materialData.find(function(v){return v.Id===id});if(!confirm('确定删除“'+x.Code+' '+x.NameSpec+'”吗？\n删除前系统会自动备份。'))return;try{await api('/api/materials/'+id,{method:'DELETE'});await loadMaterialData();tip('物料已删除')}catch(e){tip(e.message)}}
+document.getElementById('materialForm').onsubmit=async function(e){e.preventDefault();var body={Supplier:document.getElementById('materialSupplier').value,NameSpec:document.getElementById('materialNameSpec').value.trim(),QuantityUnit:document.getElementById('materialQuantityUnit').value.trim(),TaxPrice:Number(document.getElementById('materialTaxPrice').value||0),NoTaxPrice:Number(document.getElementById('materialNoTaxPrice').value||0),Note:document.getElementById('materialNote').value.trim(),Status:document.getElementById('materialStatus').value};var isEdit=!!materialEditing;try{await api(isEdit?'/api/materials/'+materialEditing:'/api/materials',{method:isEdit?'PUT':'POST',body:JSON.stringify(body)});closeMaterialModal();await loadMaterialData();tip(isEdit?'物料资料已更新':'物料已新增')}catch(err){tip(err.message)}};
+document.getElementById('materialAdd').onclick=function(){if(!data.length){alert('请先在供应商管理中新增供应商');return}openMaterialModal(null)};document.getElementById('materialClose').onclick=document.getElementById('materialCancel').onclick=closeMaterialModal;document.getElementById('materialModal').onclick=function(e){if(e.target===document.getElementById('materialModal'))closeMaterialModal()};document.getElementById('materialSearch').oninput=renderMaterials;document.getElementById('materialReset').onclick=function(){document.getElementById('materialSearch').value='';renderMaterials()};
+document.getElementById('materialImportBtn').onclick=function(){document.getElementById('materialImportFile').click()};document.getElementById('materialImportFile').onchange=function(){importExcel(this,'/api/materials/import',loadMaterialData)};document.getElementById('materialBackup').onclick=async function(){try{await api('/api/backup',{method:'POST',body:'{}'});tip('备份完成')}catch(e){tip(e.message)}};document.getElementById('materialExport').onclick=async function(){try{var r=await fetch('/api/materials/export');if(r.status===401){showLogin();return}var b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='物料信息_'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);tip('表格已导出')}catch(e){tip('导出失败')}};
+</script>
