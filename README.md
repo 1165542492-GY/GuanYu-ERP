@@ -2,7 +2,7 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
-- 当前版本：Ver2.3
+- 当前版本：Ver2.4
 - 运行平台：Windows
 - 服务端口：`8787`
 - 技术结构：C#/.NET 8、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
@@ -11,7 +11,7 @@
 
 - 用户登录、退出及会话管理
 - 系统管理员账号与子账号权限管理（Ver2.2）
-- 生产管理：BOM表、机型成本（Ver2.3）
+- 生产管理：BOM表、机型成本（Ver2.3）；BOM/机型成本 CSV 导入导出（Ver2.4）
 - 系统设置税率修改（Ver2.3）
 - 首页应收、应付、库存物料和财务收支综合看板
 - 供应商、客户、物料档案的新增、查询、修改、删除、Excel 导入和 CSV 导出
@@ -68,6 +68,13 @@
 - 选择 BOM 后自动带出机型信息与材料成本
 - 机型成本当前仅统计 BOM 材料成本，总成本 = 材料成本
 - 材料成本来自 BOM 价格快照，不会随物料管理最新价格自动变化
+
+### BOM / 机型成本 CSV 导入导出（Ver2.4）
+
+- BOM 表：导出BOM、导入BOM、下载导入模板（CSV）
+- 机型成本：导出机型成本、导入机型成本、下载导入模板（CSV）
+- 导入前确认，导入后显示成功/失败统计与明细
+- 权限：`bom.export` / `bom.import`、`model_cost.export` / `model_cost.import`
 
 ## 个性化设置
 
@@ -128,7 +135,9 @@
 - `Material.html`：物料管理界面
 - `Finance.html`：财务收支界面
 - `app.manifest`：Windows 管理员权限及系统兼容性声明
-- `ERP.csproj`：.NET 8 WinForms 项目文件
+- `ERP.csproj`：.NET 8 WinForms 项目文件（主项目，使用 `dotnet build` 编译）
+- `build.ps1`：一键编译并生成安装包（基于 `ERP.csproj` / `dotnet build`）
+- `GuanYuERP.csproj`：旧版 .NET Framework 4.0 项目文件，保留作参考，不作为主构建入口
 - `安装说明.txt`：随安装包分发的用户使用说明
 
 程序运行时会将四个 HTML 文件作为嵌入资源，由 `Program.cs` 组合后提供给浏览器。
@@ -142,6 +151,16 @@ dotnet build
 ```
 
 项目会按 `ERP.csproj` 编译为 .NET 8 Windows WinForms 程序，四个 HTML 文件会继续作为嵌入资源打包。
+
+## 一键打包（推荐）
+
+在源码目录 `01-源代码` 中执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+脚本会使用 `dotnet build ERP.csproj -c Release` 编译，生成 `ERP.exe`，并打包到 `02-安装包` 目录。`GuanYuERP.csproj` 为旧版 .NET Framework 项目，不再作为打包入口。
 
 ## 运行方式
 
@@ -164,6 +183,7 @@ C:\ProgramData\智造ERP供应商管理
 目录中包含供应商、客户、物料、财务和编号序列等 JSON 数据，以及：
 
 - `users.json`：登录账号与权限（密码 SHA256 哈希存储）
+- `bom.json`、`model_costs.json`、`system_settings.json`：BOM、机型成本、系统税率（Ver2.3）
 - `backups`：自动备份和手动备份
 - `operation.log`：操作审计日志
 
