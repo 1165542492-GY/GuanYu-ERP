@@ -2,7 +2,7 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
-- 当前版本：Ver1.4
+- 当前版本：Ver1.5
 - 运行平台：Windows
 - 服务端口：`8787`
 - 技术结构：C#/.NET Framework、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
@@ -10,6 +10,7 @@
 ## 已有功能
 
 - 用户登录、退出及会话管理
+- 首页应收、应付、库存物料和财务收支综合看板
 - 供应商档案的新增、查询、修改、删除、Excel 导入和 CSV 导出
 - 客户档案的新增、查询、修改、删除、Excel 导入和 CSV 导出
 - 物料档案的新增、查询、修改、删除、Excel 导入和 CSV 导出
