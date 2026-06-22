@@ -12,7 +12,7 @@ $ExePath = Join-Path $ScriptDir "bin\Release\GuanYuERP.exe"
 $StagingDir = Join-Path $ScriptDir "bin\package-staging"
 
 # GuanYu ERP package folder name: GuanYuERP Ver1.6 (Unicode)
-$PackageRootName = (New-UnicodeString @(0x51A0, 0x8A89)) + "ERP" + (New-UnicodeString @(0x7BA1, 0x7406, 0x7CFB, 0x7EDF)) + "Ver1.6"
+$PackageRootName = (New-UnicodeString @(0x51A0, 0x8A89)) + "ERP" + (New-UnicodeString @(0x7BA1, 0x7406, 0x7CFB, 0x7EDF)) + "Ver1.7"
 
 $InnerRoot = Split-Path $ScriptDir -Parent
 $ErpRoot = Split-Path $InnerRoot -Parent

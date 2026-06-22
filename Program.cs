@@ -68,6 +68,10 @@ namespace SupplierErpApp
     }
 
     public class ImportRequest { public string FileName { get; set; } public string Data { get; set; } }
+    public class BatchDeleteRequest { public string[] Ids { get; set; } }
+    public class BatchSupplierRequest { public List<Supplier> Items { get; set; } }
+    public class BatchCustomerRequest { public List<Customer> Items { get; set; } }
+    public class BatchMaterialRequest { public List<Material> Items { get; set; } }
 
     public class FinanceTransaction
     {
@@ -227,16 +231,22 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "PUT") { UpdateSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
                 if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "DELETE") { DeleteSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
                 if (path == "/api/suppliers/import" && ctx.Request.HttpMethod == "POST") { ImportSuppliers(ctx, user); return; }
+                if (path == "/api/suppliers/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteSuppliers(ctx, user); return; }
+                if (path == "/api/suppliers/batch" && ctx.Request.HttpMethod == "POST") { BatchAddSuppliers(ctx, user); return; }
                 if (path == "/api/customers" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadCustomers()); return; }
                 if (path == "/api/customers" && ctx.Request.HttpMethod == "POST") { AddCustomer(ctx, user); return; }
                 if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "PUT") { UpdateCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
                 if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "DELETE") { DeleteCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
                 if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { ImportCustomers(ctx, user); return; }
+                if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteCustomers(ctx, user); return; }
+                if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { BatchAddCustomers(ctx, user); return; }
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadMaterials()); return; }
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { AddMaterial(ctx, user); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
                 if (path == "/api/materials/import" && ctx.Request.HttpMethod == "POST") { ImportMaterials(ctx, user); return; }
+                if (path == "/api/materials/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteMaterials(ctx, user); return; }
+                if (path == "/api/materials/batch" && ctx.Request.HttpMethod == "POST") { BatchAddMaterials(ctx, user); return; }
                 if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadOpeningBalances()); return; }
                 if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { SaveOpeningBalances(ctx, user); return; }
                 if (path == "/api/finance" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadFinance()); return; }
@@ -371,6 +381,63 @@ namespace SupplierErpApp
             list.Remove(item); SaveSuppliers(list); Audit(user, "删除供应商", item.Company); WriteJson(ctx, new { ok = true });
         }
 
+        static void BatchDeleteSuppliers(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchDeleteRequest>(ReadBody(ctx.Request));
+            var ids = (req == null ? null : req.Ids) ?? new string[0];
+            ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+            if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            var list = LoadSuppliers();
+            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的供应商" }, 404); return; }
+            foreach (var item in removed) list.Remove(item);
+            SaveSuppliers(list);
+            Audit(user, "批量删除供应商", "共" + removed.Count + "条");
+            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+        }
+
+        static void BatchAddSuppliers(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchSupplierRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条供应商资料" }, 400); return; }
+            var list = LoadSuppliers();
+            int imported = 0, skipped = 0, rowNo = 0;
+            var errors = new List<string>();
+            var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pending = new List<Supplier>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try
+                {
+                    Validate(input);
+                    if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                    {
+                        skipped++; errors.Add("第" + rowNo + "行：供应商已存在"); continue;
+                    }
+                    var item = new Supplier
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Code = NextCode(SupplierSequenceFile, "GY", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Company = input.Company, Contact = input.Contact, Phone = input.Phone, Goods = input.Goods,
+                        Address = input.Address, Bank = input.Bank, Account = input.Account, BankNo = input.BankNo,
+                        Payable = input.Payable, Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                    };
+                    batchCompanies.Add(item.Company);
+                    pending.Insert(0, item);
+                    imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item);
+            SaveSuppliers(list);
+            Audit(user, "批量添加供应商", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
         static List<Customer> LoadCustomers()
         {
             lock (DataLock)
@@ -453,6 +520,63 @@ namespace SupplierErpApp
             list.Remove(item); SaveCustomers(list); Audit(user, "删除客户", item.Code + " " + item.Company); WriteJson(ctx, new { ok = true });
         }
 
+        static void BatchDeleteCustomers(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchDeleteRequest>(ReadBody(ctx.Request));
+            var ids = (req == null ? null : req.Ids) ?? new string[0];
+            ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+            if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            var list = LoadCustomers();
+            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的客户" }, 404); return; }
+            foreach (var item in removed) list.Remove(item);
+            SaveCustomers(list);
+            Audit(user, "批量删除客户", "共" + removed.Count + "条");
+            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+        }
+
+        static void BatchAddCustomers(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchCustomerRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条客户资料" }, 400); return; }
+            var list = LoadCustomers();
+            int imported = 0, skipped = 0, rowNo = 0;
+            var errors = new List<string>();
+            var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pending = new List<Customer>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try
+                {
+                    ValidateCustomer(input);
+                    if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                    {
+                        skipped++; errors.Add("第" + rowNo + "行：客户已存在"); continue;
+                    }
+                    var item = new Customer
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Code = NextCode(CustomerSequenceFile, "KH", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Company = input.Company, Contact = input.Contact, Phone = input.Phone, Bank = input.Bank,
+                        Account = input.Account, BankNo = input.BankNo, Address = input.Address, Receivable = input.Receivable,
+                        Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                    };
+                    batchCompanies.Add(item.Company);
+                    pending.Insert(0, item);
+                    imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item);
+            SaveCustomers(list);
+            Audit(user, "批量添加客户", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
         static List<Material> LoadMaterials()
         {
             lock (DataLock)
@@ -496,6 +620,72 @@ namespace SupplierErpApp
         static void DeleteMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
             var list=LoadMaterials();var item=list.FirstOrDefault(x=>x.Id==id);if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}list.Remove(item);SaveMaterials(list);Audit(user,"删除物料",item.Code+" "+item.NameSpec);WriteJson(ctx,new{ok=true});
+        }
+
+        static void BatchDeleteMaterials(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchDeleteRequest>(ReadBody(ctx.Request));
+            var ids = (req == null ? null : req.Ids) ?? new string[0];
+            ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+            if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            var list = LoadMaterials();
+            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的物料" }, 404); return; }
+            foreach (var item in removed) list.Remove(item);
+            SaveMaterials(list);
+            Audit(user, "批量删除物料", "共" + removed.Count + "条");
+            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+        }
+
+        static void BatchAddMaterials(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchMaterialRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条物料资料" }, 400); return; }
+            var list = LoadMaterials();
+            var suppliers = LoadSuppliers();
+            int imported = 0, skipped = 0, rowNo = 0;
+            var errors = new List<string>();
+            var batchKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pending = new List<Material>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(input.NameSpec)) { skipped++; errors.Add("第" + rowNo + "行：物料名称/规格不能为空"); continue; }
+                    if (string.IsNullOrWhiteSpace(input.Supplier)) { skipped++; errors.Add("第" + rowNo + "行：请选择供应商"); continue; }
+                    input.Supplier = input.Supplier.Trim(); input.NameSpec = input.NameSpec.Trim();
+                    input.QuantityUnit = (input.QuantityUnit ?? "").Trim(); input.Note = (input.Note ?? "").Trim();
+                    if (!suppliers.Any(x => string.Equals(x.Company, input.Supplier, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
+                    }
+                    string key = input.Supplier + "\t" + input.NameSpec;
+                    if (list.Any(x => string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)) || batchKeys.Contains(key))
+                    {
+                        skipped++; errors.Add("第" + rowNo + "行：物料已存在"); continue;
+                    }
+                    var item = new Material
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Code = NextCode(MaterialSequenceFile, "WL", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
+                        TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, Note = input.Note,
+                        Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                    };
+                    batchKeys.Add(key);
+                    pending.Insert(0, item);
+                    imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item);
+            SaveMaterials(list);
+            Audit(user, "批量添加物料", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
         }
 
         static List<FinanceTransaction> LoadFinance()
