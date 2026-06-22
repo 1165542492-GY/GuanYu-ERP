@@ -4,7 +4,9 @@
 
 # Build output
 bin/
+bin/package-staging/
 obj/
+*.csproj.user
 build/
 dist/
 out/
