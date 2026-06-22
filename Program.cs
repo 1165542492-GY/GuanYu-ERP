@@ -88,6 +88,18 @@ namespace SupplierErpApp
     }
 
     public class ImportRequest { public string FileName { get; set; } public string Data { get; set; } }
+    public class CsvImportRequest { public string FileName { get; set; } public string Data { get; set; } public Dictionary<string, string> ConflictActions { get; set; } }
+    public class TableImportResult
+    {
+        public int Added { get; set; }
+        public int Updated { get; set; }
+        public int Skipped { get; set; }
+        public int FailedRows { get; set; }
+        public string[] Errors { get; set; }
+        public string[] Warnings { get; set; }
+        public bool NeedsConflictDecision { get; set; }
+        public string[] Conflicts { get; set; }
+    }
     public class BatchDeleteRequest { public string[] Ids { get; set; } }
     public class BatchSupplierRequest { public List<Supplier> Items { get; set; } }
     public class BatchCustomerRequest { public List<Customer> Items { get; set; } }
@@ -203,8 +215,8 @@ namespace SupplierErpApp
             "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
             "material.view","material.add","material.edit","material.delete","material.batch_delete",
             "finance.view","finance.add","finance.edit","finance.delete",
-            "bom.view","bom.add","bom.edit","bom.delete",
-            "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete",
+            "bom.view","bom.add","bom.edit","bom.delete","bom.export","bom.import",
+            "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
             "settings.view","settings.account","settings.password","settings.tax_rate"
         };
         const string AdminUsername = "admin";
@@ -377,10 +389,16 @@ namespace SupplierErpApp
                 if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.tax_rate")) return; SaveTaxRate(ctx, user); return; }
+                if (path == "/api/bom/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.export")) return; ExportBomCsv(ctx); return; }
+                if (path == "/api/bom/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.import")) return; ExportBomTemplateCsv(ctx); return; }
+                if (path == "/api/bom/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.import")) return; ImportBomCsv(ctx, user); return; }
                 if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBom()); return; }
                 if (path == "/api/bom" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.add")) return; AddBom(ctx, user); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "bom.edit")) return; UpdateBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "bom.delete")) return; DeleteBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
+                if (path == "/api/model-costs/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.export")) return; ExportModelCostsCsv(ctx); return; }
+                if (path == "/api/model-costs/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.import")) return; ExportModelCostTemplateCsv(ctx); return; }
+                if (path == "/api/model-costs/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.import")) return; ImportModelCostsCsv(ctx, user); return; }
                 if (path == "/api/model-costs" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.view")) return; WriteJson(ctx, LoadModelCosts()); return; }
                 if (path == "/api/model-costs" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.add")) return; AddModelCost(ctx, user); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "model_cost.edit")) return; UpdateModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
@@ -878,13 +896,17 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "bom.view", Label = "查看" },
                     new PermissionItem { Key = "bom.add", Label = "新增" },
                     new PermissionItem { Key = "bom.edit", Label = "修改" },
-                    new PermissionItem { Key = "bom.delete", Label = "删除" }
+                    new PermissionItem { Key = "bom.delete", Label = "删除" },
+                    new PermissionItem { Key = "bom.export", Label = "导出" },
+                    new PermissionItem { Key = "bom.import", Label = "导入" }
                 }},
                 new PermissionGroup { Module = "机型成本", Items = new[] {
                     new PermissionItem { Key = "model_cost.view", Label = "查看" },
                     new PermissionItem { Key = "model_cost.add", Label = "新增" },
                     new PermissionItem { Key = "model_cost.edit", Label = "修改" },
-                    new PermissionItem { Key = "model_cost.delete", Label = "删除" }
+                    new PermissionItem { Key = "model_cost.delete", Label = "删除" },
+                    new PermissionItem { Key = "model_cost.export", Label = "导出" },
+                    new PermissionItem { Key = "model_cost.import", Label = "导入" }
                 }},
                 new PermissionGroup { Module = "系统设置", Items = new[] {
                     new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
@@ -1528,6 +1550,593 @@ namespace SupplierErpApp
             var rows=ReadImportRows(ctx);var list=LoadMaterials();var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
             if(imported>0)SaveMaterials(list);Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
+        }
+
+        static string ExportPriceTypeLabel(string priceType) { return NormalizePriceType(priceType) == "含税" ? "含税价" : "不含税价"; }
+
+        static bool TryNormalizeImportPriceType(string input, out string normalized)
+        {
+            var s = (input ?? "").Trim();
+            if (s == "含税价" || s == "含税") { normalized = "含税"; return true; }
+            if (s == "不含税价" || s == "不含税") { normalized = "不含税"; return true; }
+            normalized = "";
+            return false;
+        }
+
+        static bool TryParseDecimalField(string value, out decimal result)
+        {
+            value = (value ?? "").Replace(",", "").Replace("￥", "").Replace("¥", "").Trim();
+            return decimal.TryParse(value, out result);
+        }
+
+        static string BomConflictKey(string code, string version) { return (code ?? "").Trim() + "|" + (version ?? "").Trim(); }
+
+        static string ModelCostConflictKey(string modelCode, string bomCode, string bomVersion)
+        {
+            return (modelCode ?? "").Trim() + "|" + (bomCode ?? "").Trim() + "|" + (bomVersion ?? "").Trim();
+        }
+
+        static void BumpSequenceIfNeeded(string sequenceFile, string prefix, string code)
+        {
+            if (string.IsNullOrWhiteSpace(code) || !code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
+            int value;
+            if (!int.TryParse(code.Substring(prefix.Length), out value)) return;
+            lock (DataLock)
+            {
+                int sequence;
+                if (!int.TryParse(File.ReadAllText(sequenceFile, Encoding.UTF8), out sequence)) sequence = 0;
+                if (value > sequence) File.WriteAllText(sequenceFile, value.ToString(), new UTF8Encoding(false));
+            }
+        }
+
+        static string DecodeCsvImportData(string data)
+        {
+            if (string.IsNullOrWhiteSpace(data)) throw new Exception("请选择要导入的 CSV 文件");
+            string encoded = data.Trim();
+            if (encoded.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                int comma = encoded.IndexOf(',');
+                if (comma >= 0) encoded = encoded.Substring(comma + 1);
+                try { return Encoding.UTF8.GetString(Convert.FromBase64String(encoded)); }
+                catch { throw new Exception("CSV 文件内容无效"); }
+            }
+            return encoded;
+        }
+
+        static List<string> ParseCsvLine(string line)
+        {
+            var cells = new List<string>();
+            if (line == null) return cells;
+            bool inQuotes = false;
+            var current = new StringBuilder();
+            for (int i = 0; i < line.Length; i++)
+            {
+                char ch = line[i];
+                if (inQuotes)
+                {
+                    if (ch == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
+                        else inQuotes = false;
+                    }
+                    else current.Append(ch);
+                }
+                else
+                {
+                    if (ch == '"') inQuotes = true;
+                    else if (ch == ',') { cells.Add(current.ToString()); current.Clear(); }
+                    else current.Append(ch);
+                }
+            }
+            cells.Add(current.ToString());
+            return cells;
+        }
+
+        static List<Dictionary<string, string>> ParseCsvText(string csvText)
+        {
+            var table = new List<List<string>>();
+            using (var reader = new StringReader(csvText ?? ""))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    table.Add(ParseCsvLine(line));
+                }
+            }
+            if (table.Count < 1) throw new Exception("CSV 表格没有表头");
+            var headers = table[0];
+            var result = new List<Dictionary<string, string>>();
+            for (int r = 1; r < table.Count; r++)
+            {
+                var cells = table[r];
+                var row = new Dictionary<string, string>();
+                for (int i = 0; i < headers.Count; i++)
+                {
+                    string header = (headers[i] ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(header)) continue;
+                    row[header] = i < cells.Count ? (cells[i] ?? "").Trim() : "";
+                }
+                if (row.Values.Any(v => !string.IsNullOrWhiteSpace(v))) result.Add(row);
+            }
+            return result;
+        }
+
+        static List<Dictionary<string, string>> ReadCsvImportRowsFromRequest(CsvImportRequest req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.Data)) throw new Exception("请选择要导入的 CSV 文件");
+            if (!string.IsNullOrEmpty(req.FileName) && !req.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                throw new Exception("仅支持 .csv 格式文件");
+            string text = DecodeCsvImportData(req.Data);
+            if (text.Length > 25 * 1024 * 1024) throw new Exception("CSV 文件不能超过 25MB");
+            return ParseCsvText(text);
+        }
+
+        static List<Dictionary<string, string>> ReadCsvImportRows(HttpListenerContext ctx)
+        {
+            return ReadCsvImportRowsFromRequest(Json.Deserialize<CsvImportRequest>(ReadBody(ctx.Request)));
+        }
+
+        static void WriteCsvDownload(HttpListenerContext ctx, string filename, string csvContent)
+        {
+            byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csvContent)).ToArray();
+            ctx.Response.ContentType = "text/csv; charset=utf-8";
+            ctx.Response.AddHeader("Content-Disposition", "attachment; filename=" + filename);
+            ctx.Response.ContentLength64 = bytes.Length;
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            ctx.Response.Close();
+        }
+
+        static readonly string[] BomCsvHeaders = new[] {
+            "BOM编号","BOM版本","产品名称","机型编号","机型名称","总材料成本","BOM备注","BOM创建时间","BOM更新时间",
+            "明细序号","物料编号","物料名称","规格","单位","用量","原始单价","价格类型","税率","不含税单价","金额","价格来源时间","明细备注"
+        };
+
+        static string BuildBomCsvRow(BomItem bom, BomDetail line, int lineNo)
+        {
+            var fields = new List<string>
+            {
+                bom.Code, bom.Version, bom.ProductName, bom.ModelCode, bom.ModelName,
+                bom.TotalMaterialCost.ToString("0.00"), bom.Note, bom.CreatedAt, bom.UpdatedAt
+            };
+            if (line != null)
+            {
+                fields.Add(lineNo.ToString());
+                fields.Add(line.MaterialCode);
+                fields.Add(line.MaterialName);
+                fields.Add(line.Spec);
+                fields.Add(line.Unit);
+                fields.Add(line.Quantity.ToString("0.####"));
+                fields.Add(line.OriginalPrice.ToString("0.####"));
+                fields.Add(ExportPriceTypeLabel(line.PriceType));
+                fields.Add(line.TaxRate.ToString("0.##"));
+                fields.Add(line.NoTaxPrice.ToString("0.####"));
+                fields.Add(line.Amount.ToString("0.00"));
+                fields.Add(line.PriceSourceTime);
+                fields.Add(line.Note);
+            }
+            else
+            {
+                fields.Add("");
+                fields.AddRange(new[] { "", "", "", "", "", "", "", "", "", "", "", "" });
+            }
+            return string.Join(",", fields.Select(Csv));
+        }
+
+        static void ExportBomCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Join(",", BomCsvHeaders.Select(Csv)));
+            foreach (var bom in LoadBom())
+            {
+                var items = bom.Items ?? new List<BomDetail>();
+                if (items.Count == 0) sb.AppendLine(BuildBomCsvRow(bom, null, 0));
+                else for (int i = 0; i < items.Count; i++) sb.AppendLine(BuildBomCsvRow(bom, items[i], i + 1));
+            }
+            WriteCsvDownload(ctx, "BOM表_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv", sb.ToString());
+        }
+
+        static void ExportBomTemplateCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Join(",", BomCsvHeaders.Select(Csv)));
+            sb.AppendLine(string.Join(",", new[] {
+                "BOM-DEMO","V1","示例产品","MODEL-DEMO","示例机型","","示例备注","","",
+                "1","WL-DEMO","示例物料","规格A","个","1","10","不含税价","10","10","10","","明细备注"
+            }.Select(Csv)));
+            WriteCsvDownload(ctx, "BOM导入模板.csv", sb.ToString());
+        }
+
+        static BomItem BuildBomFromImportGroup(List<Dictionary<string, string>> groupRows, decimal defaultTaxRate, List<Material> materials, List<string> warnings, List<string> errors, ref int failedRows, int firstRowNo)
+        {
+            var first = groupRows[0];
+            string code = Cell(first, "BOM编号");
+            string version = Cell(first, "BOM版本");
+            if (string.IsNullOrWhiteSpace(code)) { errors.Add("第" + firstRowNo + "行：BOM编号不能为空"); failedRows++; return null; }
+            if (string.IsNullOrWhiteSpace(version)) { errors.Add("第" + firstRowNo + "行：BOM版本不能为空"); failedRows++; return null; }
+            var item = new BomItem
+            {
+                Code = code.Trim(),
+                Version = version.Trim(),
+                ProductName = Cell(first, "产品名称"),
+                ModelCode = Cell(first, "机型编号"),
+                ModelName = Cell(first, "机型名称"),
+                Note = Cell(first, "BOM备注"),
+                Status = "启用",
+                Items = new List<BomDetail>()
+            };
+            if (string.IsNullOrWhiteSpace(item.ModelCode)) item.ModelCode = "-";
+            if (string.IsNullOrWhiteSpace(item.ModelName)) item.ModelName = "-";
+            if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = "-";
+            int rowNo = firstRowNo;
+            foreach (var row in groupRows)
+            {
+                string materialCode = Cell(row, "物料编号");
+                if (string.IsNullOrWhiteSpace(materialCode))
+                {
+                    if (row != first)
+                    {
+                        string mc = Cell(row, "机型编号"), mn = Cell(row, "机型名称"), pn = Cell(row, "产品名称");
+                        if (!string.IsNullOrWhiteSpace(mc)) item.ModelCode = mc;
+                        if (!string.IsNullOrWhiteSpace(mn)) item.ModelName = mn;
+                        if (!string.IsNullOrWhiteSpace(pn)) item.ProductName = pn;
+                        if (!string.IsNullOrWhiteSpace(Cell(row, "BOM备注"))) item.Note = Cell(row, "BOM备注");
+                    }
+                    rowNo++;
+                    continue;
+                }
+                string qtyText = Cell(row, "用量");
+                decimal quantity;
+                if (!TryParseDecimalField(qtyText, out quantity) || quantity <= 0)
+                {
+                    errors.Add("第" + rowNo + "行：用量必须是大于 0 的数字");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                string origText = Cell(row, "原始单价");
+                string noTaxText = Cell(row, "不含税单价");
+                string amountText = Cell(row, "金额");
+                string taxText = Cell(row, "税率");
+                decimal originalPrice, noTaxPrice, amount, taxRate;
+                if (!string.IsNullOrWhiteSpace(origText) && !TryParseDecimalField(origText, out originalPrice))
+                {
+                    errors.Add("第" + rowNo + "行：原始单价必须是数字");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(noTaxText) && !TryParseDecimalField(noTaxText, out noTaxPrice))
+                {
+                    errors.Add("第" + rowNo + "行：不含税单价必须是数字");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(amountText) && !TryParseDecimalField(amountText, out amount))
+                {
+                    errors.Add("第" + rowNo + "行：金额必须是数字");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(taxText) && !TryParseDecimalField(taxText, out taxRate))
+                {
+                    errors.Add("第" + rowNo + "行：税率必须是数字");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                string priceTypeRaw = Cell(row, "价格类型");
+                string priceType;
+                if (string.IsNullOrWhiteSpace(priceTypeRaw)) priceType = "不含税";
+                else if (!TryNormalizeImportPriceType(priceTypeRaw, out priceType))
+                {
+                    errors.Add("第" + rowNo + "行：价格类型只能是含税价或不含税价");
+                    failedRows++;
+                    rowNo++;
+                    continue;
+                }
+                taxRate = string.IsNullOrWhiteSpace(taxText) ? defaultTaxRate : Money(taxText);
+                if (taxRate < 0) taxRate = 0;
+                originalPrice = string.IsNullOrWhiteSpace(origText) ? 0 : Money(origText);
+                noTaxPrice = string.IsNullOrWhiteSpace(noTaxText) ? 0 : Money(noTaxText);
+                if (string.IsNullOrWhiteSpace(noTaxText) && !string.IsNullOrWhiteSpace(origText))
+                    noTaxPrice = CalcNoTaxUnitPrice(originalPrice, priceType, taxRate);
+                else if (string.IsNullOrWhiteSpace(origText) && !string.IsNullOrWhiteSpace(noTaxText))
+                    originalPrice = noTaxPrice;
+                amount = string.IsNullOrWhiteSpace(amountText) ? CalcLineAmount(quantity, noTaxPrice) : Money(amountText);
+                var line = new BomDetail
+                {
+                    MaterialCode = materialCode.Trim(),
+                    MaterialName = Cell(row, "物料名称"),
+                    Spec = string.IsNullOrWhiteSpace(Cell(row, "规格")) ? "-" : Cell(row, "规格"),
+                    Unit = string.IsNullOrWhiteSpace(Cell(row, "单位")) ? "-" : Cell(row, "单位"),
+                    Quantity = quantity,
+                    OriginalPrice = originalPrice,
+                    PriceType = priceType,
+                    TaxRate = taxRate,
+                    NoTaxPrice = noTaxPrice,
+                    Amount = amount,
+                    PriceSourceTime = Cell(row, "价格来源时间"),
+                    Note = Cell(row, "明细备注")
+                };
+                if (string.IsNullOrWhiteSpace(line.PriceSourceTime))
+                    line.PriceSourceTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                var mat = materials.FirstOrDefault(m => string.Equals(m.Code, line.MaterialCode, StringComparison.OrdinalIgnoreCase));
+                if (mat != null)
+                {
+                    line.MaterialId = mat.Id;
+                    if (string.IsNullOrWhiteSpace(line.MaterialName)) line.MaterialName = mat.NameSpec;
+                    if (line.Unit == "-") line.Unit = string.IsNullOrWhiteSpace(mat.QuantityUnit) ? "-" : mat.QuantityUnit;
+                }
+                else
+                {
+                    line.MaterialId = "";
+                    warnings.Add("第" + rowNo + "行：物料编号 " + line.MaterialCode + " 不存在，仅作为 BOM 快照导入");
+                }
+                item.Items.Add(line);
+                rowNo++;
+            }
+            return item;
+        }
+
+        static void ImportBomCsv(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<CsvImportRequest>(ReadBody(ctx.Request));
+            if (req == null || string.IsNullOrWhiteSpace(req.Data)) { WriteJson(ctx, new { error = "请选择要导入的 CSV 文件" }, 400); return; }
+            var rows = ReadCsvImportRowsFromRequest(req);
+            var list = LoadBom();
+            var materials = LoadMaterials();
+            var taxRate = LoadSystemSettings().TaxRate;
+            var groups = new Dictionary<string, List<Dictionary<string, string>>>();
+            var groupFirstRow = new Dictionary<string, int>();
+            int rowNo = 1;
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            int failedRows = 0;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                string code = Cell(row, "BOM编号"), version = Cell(row, "BOM版本");
+                if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(version) && string.IsNullOrWhiteSpace(Cell(row, "物料编号")))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：BOM编号和BOM版本不能为空");
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(version))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：BOM编号和BOM版本不能为空");
+                    continue;
+                }
+                string key = BomConflictKey(code, version);
+                if (!groups.ContainsKey(key)) { groups[key] = new List<Dictionary<string, string>>(); groupFirstRow[key] = rowNo; }
+                groups[key].Add(row);
+            }
+            var conflicts = groups.Keys.Where(k => list.Any(x => string.Equals(x.Code, k.Split('|')[0], StringComparison.OrdinalIgnoreCase) && string.Equals(x.Version ?? "", k.Split('|')[1], StringComparison.OrdinalIgnoreCase))).ToList();
+            var actions = req.ConflictActions ?? new Dictionary<string, string>();
+            if (conflicts.Count > 0)
+            {
+                var unresolved = conflicts.Where(k => !actions.ContainsKey(k) || string.IsNullOrWhiteSpace(actions[k])).ToList();
+                if (unresolved.Count > 0)
+                {
+                    WriteJson(ctx, new TableImportResult { NeedsConflictDecision = true, Conflicts = conflicts.ToArray() });
+                    return;
+                }
+            }
+            int added = 0, updated = 0, skipped = 0;
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            foreach (var kv in groups)
+            {
+                string key = kv.Key;
+                var existing = list.FirstOrDefault(x => string.Equals(x.Code, key.Split('|')[0], StringComparison.OrdinalIgnoreCase) && string.Equals(x.Version ?? "", key.Split('|')[1], StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    string action = (actions.ContainsKey(key) ? actions[key] : "").Trim().ToLowerInvariant();
+                    if (action == "skip" || action == "跳过") { skipped++; continue; }
+                    if (action != "overwrite" && action != "覆盖") { skipped++; continue; }
+                }
+                var item = BuildBomFromImportGroup(kv.Value, taxRate, materials, warnings, errors, ref failedRows, groupFirstRow[key]);
+                if (item == null) continue;
+                RecalcBomLines(item, taxRate);
+                if (existing != null)
+                {
+                    item.Id = existing.Id;
+                    item.Code = existing.Code;
+                    item.CreatedAt = existing.CreatedAt;
+                    item.UpdatedAt = now;
+                    list[list.IndexOf(existing)] = item;
+                    updated++;
+                }
+                else
+                {
+                    item.Id = Guid.NewGuid().ToString("N");
+                    item.CreatedAt = string.IsNullOrWhiteSpace(Cell(kv.Value[0], "BOM创建时间")) ? now : Cell(kv.Value[0], "BOM创建时间");
+                    item.UpdatedAt = string.IsNullOrWhiteSpace(Cell(kv.Value[0], "BOM更新时间")) ? now : Cell(kv.Value[0], "BOM更新时间");
+                    BumpSequenceIfNeeded(BomSequenceFile, "BOM", item.Code);
+                    list.Insert(0, item);
+                    added++;
+                }
+            }
+            if (added > 0 || updated > 0) SaveBom(list);
+            Audit(user, "导入BOM", "新增" + added + "，更新" + updated + "，跳过" + skipped + "，失败" + failedRows + "行");
+            WriteJson(ctx, new TableImportResult { Added = added, Updated = updated, Skipped = skipped, FailedRows = failedRows, Errors = errors.ToArray(), Warnings = warnings.ToArray() });
+        }
+
+        static readonly string[] ModelCostCsvHeaders = new[] {
+            "机型编号","机型名称","产品名称","BOM编号","BOM版本","材料成本","总成本","备注","创建时间","更新时间"
+        };
+
+        static readonly string[] ModelCostIgnoredHeaders = new[] { "人工成本", "制造费用", "其他费用", "运费" };
+
+        static void ExportModelCostsCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Join(",", ModelCostCsvHeaders.Select(Csv)));
+            foreach (var x in LoadModelCosts())
+            {
+                sb.AppendLine(string.Join(",", new[] {
+                    x.ModelCode, x.ModelName, x.ProductName, x.BomCode, x.BomVersion,
+                    x.MaterialCost.ToString("0.00"), x.TotalCost.ToString("0.00"),
+                    x.Note, x.CreatedAt, x.UpdatedAt
+                }.Select(Csv)));
+            }
+            WriteCsvDownload(ctx, "机型成本_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv", sb.ToString());
+        }
+
+        static void ExportModelCostTemplateCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Join(",", ModelCostCsvHeaders.Select(Csv)));
+            sb.AppendLine(string.Join(",", new[] {
+                "MODEL-DEMO","示例机型","示例产品","BOM-DEMO","V1","100","100","示例备注","",""
+            }.Select(Csv)));
+            WriteCsvDownload(ctx, "机型成本导入模板.csv", sb.ToString());
+        }
+
+        static void ImportModelCostsCsv(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<CsvImportRequest>(ReadBody(ctx.Request));
+            if (req == null || string.IsNullOrWhiteSpace(req.Data)) { WriteJson(ctx, new { error = "请选择要导入的 CSV 文件" }, 400); return; }
+            var rows = ReadCsvImportRowsFromRequest(req);
+            var list = LoadModelCosts();
+            var bomList = LoadBom();
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            int failedRows = 0, added = 0, updated = 0, skipped = 0;
+            if (rows.Count > 0)
+            {
+                var allHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in rows) foreach (var k in row.Keys) allHeaders.Add(k);
+                foreach (var h in ModelCostIgnoredHeaders)
+                    if (allHeaders.Contains(h)) warnings.Add("导入文件包含已忽略字段：" + h);
+            }
+            var conflictKeys = new HashSet<string>();
+            int previewRow = 1;
+            foreach (var row in rows)
+            {
+                previewRow++;
+                string modelCode = Cell(row, "机型编号"), bomCode = Cell(row, "BOM编号"), bomVersion = Cell(row, "BOM版本");
+                if (string.IsNullOrWhiteSpace(modelCode) || string.IsNullOrWhiteSpace(bomCode) || string.IsNullOrWhiteSpace(bomVersion)) continue;
+                string key = ModelCostConflictKey(modelCode, bomCode, bomVersion);
+                if (list.Any(x => string.Equals(x.ModelCode, modelCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomCode, bomCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomVersion ?? "", bomVersion.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    conflictKeys.Add(key);
+            }
+            var actions = req.ConflictActions ?? new Dictionary<string, string>();
+            if (conflictKeys.Count > 0)
+            {
+                var unresolved = conflictKeys.Where(k => !actions.ContainsKey(k) || string.IsNullOrWhiteSpace(actions[k])).ToList();
+                if (unresolved.Count > 0)
+                {
+                    WriteJson(ctx, new TableImportResult { NeedsConflictDecision = true, Conflicts = conflictKeys.ToArray() });
+                    return;
+                }
+            }
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            int rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                string modelCode = Cell(row, "机型编号");
+                string modelName = Cell(row, "机型名称");
+                string bomCode = Cell(row, "BOM编号");
+                string bomVersion = Cell(row, "BOM版本");
+                if (string.IsNullOrWhiteSpace(modelCode))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：机型编号不能为空");
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(modelName))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：机型名称不能为空");
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(bomCode))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：BOM编号不能为空");
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(bomVersion))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：BOM版本不能为空");
+                    continue;
+                }
+                string matText = Cell(row, "材料成本");
+                decimal materialCost;
+                if (string.IsNullOrWhiteSpace(matText) || !TryParseDecimalField(matText, out materialCost))
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：材料成本必须是数字");
+                    continue;
+                }
+                string totalText = Cell(row, "总成本");
+                decimal totalCost = materialCost;
+                if (!string.IsNullOrWhiteSpace(totalText))
+                {
+                    decimal parsedTotal;
+                    if (!TryParseDecimalField(totalText, out parsedTotal))
+                    {
+                        failedRows++;
+                        errors.Add("第" + rowNo + "行：总成本必须是数字");
+                        continue;
+                    }
+                    if (parsedTotal != materialCost)
+                        warnings.Add("第" + rowNo + "行：总成本已自动修正为材料成本");
+                    totalCost = materialCost;
+                }
+                var bom = bomList.FirstOrDefault(b => string.Equals(b.Code, bomCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(b.Version ?? "", bomVersion.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (bom == null)
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：BOM " + bomCode + " " + bomVersion + " 不存在");
+                    continue;
+                }
+                string key = ModelCostConflictKey(modelCode, bomCode, bomVersion);
+                var existing = list.FirstOrDefault(x => string.Equals(x.ModelCode, modelCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomCode, bomCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomVersion ?? "", bomVersion.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    string action = (actions.ContainsKey(key) ? actions[key] : "").Trim().ToLowerInvariant();
+                    if (action == "skip" || action == "跳过") { skipped++; continue; }
+                    if (action != "overwrite" && action != "覆盖") { skipped++; continue; }
+                }
+                var item = new ModelCost
+                {
+                    ModelCode = modelCode.Trim(),
+                    ModelName = modelName.Trim(),
+                    ProductName = string.IsNullOrWhiteSpace(Cell(row, "产品名称")) ? bom.ProductName : Cell(row, "产品名称"),
+                    BomId = bom.Id,
+                    BomCode = bom.Code,
+                    BomVersion = bom.Version,
+                    MaterialCost = Math.Round(materialCost, 2),
+                    TotalCost = Math.Round(totalCost, 2),
+                    Note = Cell(row, "备注")
+                };
+                if (existing != null)
+                {
+                    item.Id = existing.Id;
+                    item.CreatedAt = existing.CreatedAt;
+                    item.UpdatedAt = string.IsNullOrWhiteSpace(Cell(row, "更新时间")) ? now : Cell(row, "更新时间");
+                    list[list.IndexOf(existing)] = item;
+                    updated++;
+                }
+                else
+                {
+                    item.Id = Guid.NewGuid().ToString("N");
+                    item.CreatedAt = string.IsNullOrWhiteSpace(Cell(row, "创建时间")) ? now : Cell(row, "创建时间");
+                    item.UpdatedAt = string.IsNullOrWhiteSpace(Cell(row, "更新时间")) ? now : Cell(row, "更新时间");
+                    list.Insert(0, item);
+                    added++;
+                }
+            }
+            if (added > 0 || updated > 0) SaveModelCosts(list);
+            Audit(user, "导入机型成本", "新增" + added + "，更新" + updated + "，跳过" + skipped + "，失败" + failedRows + "行");
+            WriteJson(ctx, new TableImportResult { Added = added, Updated = updated, Skipped = skipped, FailedRows = failedRows, Errors = errors.ToArray(), Warnings = warnings.ToArray() });
         }
 
         static void ExportCsv(HttpListenerContext ctx)
