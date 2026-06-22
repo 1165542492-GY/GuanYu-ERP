@@ -203,13 +203,9 @@ namespace SupplierErpApp
             "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
             "material.view","material.add","material.edit","material.delete","material.batch_delete",
             "finance.view","finance.add","finance.edit","finance.delete",
-<<<<<<< HEAD
             "bom.view","bom.add","bom.edit","bom.delete",
             "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete",
             "settings.view","settings.account","settings.password","settings.tax_rate"
-=======
-            "settings.view","settings.account","settings.password"
->>>>>>> origin/main
         };
         const string AdminUsername = "admin";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
@@ -258,13 +254,10 @@ namespace SupplierErpApp
                     EnsureLegacyCodes();
                     if (!File.Exists(FinanceFile)) File.WriteAllText(FinanceFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(OpeningFile)) File.WriteAllText(OpeningFile, Json.Serialize(new OpeningBalances()), new UTF8Encoding(false));
-<<<<<<< HEAD
                     if (!File.Exists(BomFile)) File.WriteAllText(BomFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(BomSequenceFile)) File.WriteAllText(BomSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(ModelCostFile)) File.WriteAllText(ModelCostFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(SystemSettingsFile)) File.WriteAllText(SystemSettingsFile, Json.Serialize(new SystemSettings { TaxRate = 10 }), new UTF8Encoding(false));
-=======
->>>>>>> origin/main
                     EnsureUsersFile();
                     LoadUsers();
                     StartServer();
@@ -365,11 +358,7 @@ namespace SupplierErpApp
                 if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; ImportCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.batch_delete")) return; BatchDeleteCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; BatchAddCustomers(ctx, user); return; }
-<<<<<<< HEAD
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "material.view") && !HasPermission(user, "bom.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadMaterials()); return; }
-=======
-                if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "material.view")) return; WriteJson(ctx, LoadMaterials()); return; }
->>>>>>> origin/main
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; AddMaterial(ctx, user); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "material.edit")) return; UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "material.delete")) return; DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
@@ -386,7 +375,6 @@ namespace SupplierErpApp
                 if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.view")) return; ExportCustomersCsv(ctx); return; }
                 if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.view")) return; ExportMaterialsCsv(ctx); return; }
                 if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
-<<<<<<< HEAD
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.tax_rate")) return; SaveTaxRate(ctx, user); return; }
                 if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBom()); return; }
@@ -397,8 +385,6 @@ namespace SupplierErpApp
                 if (path == "/api/model-costs" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.add")) return; AddModelCost(ctx, user); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "model_cost.edit")) return; UpdateModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "model_cost.delete")) return; DeleteModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
-=======
->>>>>>> origin/main
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -565,7 +551,6 @@ namespace SupplierErpApp
             return false;
         }
 
-<<<<<<< HEAD
         static bool CanReadTaxRate(UserSession user)
         {
             return HasPermission(user, "settings.tax_rate") || HasPermission(user, "bom.view") || HasPermission(user, "model_cost.view");
@@ -858,8 +843,6 @@ namespace SupplierErpApp
             WriteJson(ctx, new { ok = true });
         }
 
-=======
->>>>>>> origin/main
         static PermissionGroup[] GetPermissionDefinitions()
         {
             return new[]
@@ -891,7 +874,6 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "finance.edit", Label = "修改" },
                     new PermissionItem { Key = "finance.delete", Label = "删除" }
                 }},
-<<<<<<< HEAD
                 new PermissionGroup { Module = "BOM表", Items = new[] {
                     new PermissionItem { Key = "bom.view", Label = "查看" },
                     new PermissionItem { Key = "bom.add", Label = "新增" },
@@ -909,12 +891,6 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "settings.account", Label = "账号管理" },
                     new PermissionItem { Key = "settings.password", Label = "修改密码" },
                     new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" }
-=======
-                new PermissionGroup { Module = "系统设置", Items = new[] {
-                    new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
-                    new PermissionItem { Key = "settings.account", Label = "账号管理" },
-                    new PermissionItem { Key = "settings.password", Label = "修改密码" }
->>>>>>> origin/main
                 }}
             };
         }
@@ -1368,11 +1344,7 @@ namespace SupplierErpApp
                         Id = Guid.NewGuid().ToString("N"),
                         Code = NextCode(MaterialSequenceFile, "WL", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
                         Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
-<<<<<<< HEAD
                         TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
-=======
-                        TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, Note = input.Note,
->>>>>>> origin/main
                         Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
                         UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
                     };
