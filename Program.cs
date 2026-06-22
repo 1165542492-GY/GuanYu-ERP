@@ -10,13 +10,32 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
-using System.Web.Script.Serialization;
 using System.Xml.Linq;
 using System.Windows.Forms;
 
 namespace SupplierErpApp
 {
+    public sealed class JsonCodec
+    {
+        static readonly JsonSerializerOptions Options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            IncludeFields = true
+        };
+
+        public string Serialize(object value)
+        {
+            return JsonSerializer.Serialize(value, Options);
+        }
+
+        public T Deserialize<T>(string json)
+        {
+            return JsonSerializer.Deserialize<T>(json, Options);
+        }
+    }
+
     public class Supplier
     {
         public string Id { get; set; }
@@ -61,6 +80,7 @@ namespace SupplierErpApp
         public string QuantityUnit { get; set; }
         public decimal TaxPrice { get; set; }
         public decimal NoTaxPrice { get; set; }
+        public string PriceType { get; set; }
         public string Note { get; set; }
         public string Status { get; set; }
         public string UpdatedAt { get; set; }
@@ -95,6 +115,72 @@ namespace SupplierErpApp
         public decimal PersonalPrivate { get; set; }
     }
 
+    public class SystemSettings
+    {
+        public decimal TaxRate { get; set; }
+    }
+
+    public class TaxRateRequest { public decimal TaxRate { get; set; } }
+
+    public class BomDetail
+    {
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
+        public string MaterialName { get; set; }
+        public string Spec { get; set; }
+        public string Unit { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal OriginalPrice { get; set; }
+        public decimal OriginalUnitPrice
+        {
+            get { return OriginalPrice; }
+            set { OriginalPrice = value; }
+        }
+        public string PriceType { get; set; }
+        public decimal TaxRate { get; set; }
+        public decimal NoTaxPrice { get; set; }
+        public decimal UnitPriceWithoutTax
+        {
+            get { return NoTaxPrice; }
+            set { NoTaxPrice = value; }
+        }
+        public decimal Amount { get; set; }
+        public string PriceSourceTime { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class BomItem
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string ModelCode { get; set; }
+        public string ModelName { get; set; }
+        public string ProductName { get; set; }
+        public string Version { get; set; }
+        public string Status { get; set; }
+        public decimal TotalMaterialCost { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+        public List<BomDetail> Items { get; set; }
+    }
+
+    public class ModelCost
+    {
+        public string Id { get; set; }
+        public string ModelCode { get; set; }
+        public string ModelName { get; set; }
+        public string ProductName { get; set; }
+        public string BomVersion { get; set; }
+        public string BomId { get; set; }
+        public string BomCode { get; set; }
+        public decimal MaterialCost { get; set; }
+        public decimal TotalCost { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+    }
+
     public class LoginRequest { public string Username { get; set; } public string Password { get; set; } }
     public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool IsAdmin { get; set; } public string[] Permissions { get; set; } }
     public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
@@ -109,7 +195,7 @@ namespace SupplierErpApp
     {
         static readonly object DataLock = new object();
         static readonly object SessionLock = new object();
-        static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 50 * 1024 * 1024 };
+        static readonly JsonCodec Json = new JsonCodec();
         static readonly Dictionary<string, UserSession> Sessions = new Dictionary<string, UserSession>();
         static List<UserDef> Users = new List<UserDef>();
         static readonly string[] AllPermissionKeys = {
@@ -117,7 +203,13 @@ namespace SupplierErpApp
             "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
             "material.view","material.add","material.edit","material.delete","material.batch_delete",
             "finance.view","finance.add","finance.edit","finance.delete",
+<<<<<<< HEAD
+            "bom.view","bom.add","bom.edit","bom.delete",
+            "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete",
+            "settings.view","settings.account","settings.password","settings.tax_rate"
+=======
             "settings.view","settings.account","settings.password"
+>>>>>>> origin/main
         };
         const string AdminUsername = "admin";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
@@ -132,6 +224,10 @@ namespace SupplierErpApp
         static readonly string MaterialSequenceFile = Path.Combine(DataDir, "material_sequence.json");
         static readonly string FinanceFile = Path.Combine(DataDir, "finance.json");
         static readonly string OpeningFile = Path.Combine(DataDir, "finance_opening.json");
+        static readonly string BomFile = Path.Combine(DataDir, "bom.json");
+        static readonly string BomSequenceFile = Path.Combine(DataDir, "bom_sequence.json");
+        static readonly string ModelCostFile = Path.Combine(DataDir, "model_costs.json");
+        static readonly string SystemSettingsFile = Path.Combine(DataDir, "system_settings.json");
         static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
@@ -162,6 +258,13 @@ namespace SupplierErpApp
                     EnsureLegacyCodes();
                     if (!File.Exists(FinanceFile)) File.WriteAllText(FinanceFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(OpeningFile)) File.WriteAllText(OpeningFile, Json.Serialize(new OpeningBalances()), new UTF8Encoding(false));
+<<<<<<< HEAD
+                    if (!File.Exists(BomFile)) File.WriteAllText(BomFile, "[]", new UTF8Encoding(false));
+                    if (!File.Exists(BomSequenceFile)) File.WriteAllText(BomSequenceFile, "0", new UTF8Encoding(false));
+                    if (!File.Exists(ModelCostFile)) File.WriteAllText(ModelCostFile, "[]", new UTF8Encoding(false));
+                    if (!File.Exists(SystemSettingsFile)) File.WriteAllText(SystemSettingsFile, Json.Serialize(new SystemSettings { TaxRate = 10 }), new UTF8Encoding(false));
+=======
+>>>>>>> origin/main
                     EnsureUsersFile();
                     LoadUsers();
                     StartServer();
@@ -202,7 +305,11 @@ namespace SupplierErpApp
 
         static void OpenBrowser()
         {
-            Process.Start("http://127.0.0.1:" + Port + "/");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "http://127.0.0.1:" + Port + "/",
+                UseShellExecute = true
+            });
         }
 
         static void StartServer()
@@ -258,7 +365,11 @@ namespace SupplierErpApp
                 if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; ImportCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.batch_delete")) return; BatchDeleteCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; BatchAddCustomers(ctx, user); return; }
+<<<<<<< HEAD
+                if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "material.view") && !HasPermission(user, "bom.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadMaterials()); return; }
+=======
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "material.view")) return; WriteJson(ctx, LoadMaterials()); return; }
+>>>>>>> origin/main
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; AddMaterial(ctx, user); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "material.edit")) return; UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "material.delete")) return; DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
@@ -275,6 +386,19 @@ namespace SupplierErpApp
                 if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.view")) return; ExportCustomersCsv(ctx); return; }
                 if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.view")) return; ExportMaterialsCsv(ctx); return; }
                 if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
+<<<<<<< HEAD
+                if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
+                if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.tax_rate")) return; SaveTaxRate(ctx, user); return; }
+                if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBom()); return; }
+                if (path == "/api/bom" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.add")) return; AddBom(ctx, user); return; }
+                if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "bom.edit")) return; UpdateBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
+                if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "bom.delete")) return; DeleteBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
+                if (path == "/api/model-costs" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.view")) return; WriteJson(ctx, LoadModelCosts()); return; }
+                if (path == "/api/model-costs" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.add")) return; AddModelCost(ctx, user); return; }
+                if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "model_cost.edit")) return; UpdateModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
+                if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "model_cost.delete")) return; DeleteModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
+=======
+>>>>>>> origin/main
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -441,6 +565,301 @@ namespace SupplierErpApp
             return false;
         }
 
+<<<<<<< HEAD
+        static bool CanReadTaxRate(UserSession user)
+        {
+            return HasPermission(user, "settings.tax_rate") || HasPermission(user, "bom.view") || HasPermission(user, "model_cost.view");
+        }
+
+        static string NormalizePriceType(string priceType)
+        {
+            return string.Equals(priceType, "含税", StringComparison.OrdinalIgnoreCase) ? "含税" : "不含税";
+        }
+
+        static decimal GetMaterialOriginalPrice(Material material)
+        {
+            if (material == null) return 0;
+            return NormalizePriceType(material.PriceType) == "含税" ? material.TaxPrice : material.NoTaxPrice;
+        }
+
+        static decimal CalcNoTaxUnitPrice(decimal originalPrice, string priceType, decimal taxRate)
+        {
+            if (NormalizePriceType(priceType) == "含税")
+            {
+                if (taxRate < 0) taxRate = 0;
+                return Math.Round(originalPrice / (1 + taxRate / 100m), 4);
+            }
+            return originalPrice;
+        }
+
+        static decimal CalcLineAmount(decimal quantity, decimal noTaxPrice)
+        {
+            return Math.Round(quantity * noTaxPrice, 2);
+        }
+
+        static void RecalcBomLines(BomItem item, decimal defaultTaxRate)
+        {
+            if (item.Items == null) item.Items = new List<BomDetail>();
+            decimal total = 0;
+            foreach (var line in item.Items)
+            {
+                line.PriceType = NormalizePriceType(line.PriceType);
+                if (line.TaxRate <= 0) line.TaxRate = defaultTaxRate;
+                line.NoTaxPrice = CalcNoTaxUnitPrice(line.OriginalPrice, line.PriceType, line.TaxRate);
+                line.Amount = CalcLineAmount(line.Quantity, line.NoTaxPrice);
+                total += line.Amount;
+            }
+            item.TotalMaterialCost = Math.Round(total, 2);
+        }
+
+        static void ValidateBom(BomItem item)
+        {
+            if (item == null) throw new Exception("BOM 资料不能为空");
+            if (string.IsNullOrWhiteSpace(item.ModelCode)) throw new Exception("机型编号不能为空");
+            if (string.IsNullOrWhiteSpace(item.ModelName)) throw new Exception("机型名称不能为空");
+            if (string.IsNullOrWhiteSpace(item.ProductName)) throw new Exception("产品名称不能为空");
+            item.ModelCode = item.ModelCode.Trim();
+            item.ModelName = item.ModelName.Trim();
+            item.ProductName = item.ProductName.Trim();
+            item.Version = (item.Version ?? "").Trim();
+            item.Note = (item.Note ?? "").Trim();
+            item.Status = string.IsNullOrWhiteSpace(item.Status) ? "启用" : item.Status.Trim();
+            if (item.Items == null || item.Items.Count == 0) throw new Exception("请至少添加一条 BOM 明细");
+            foreach (var line in item.Items)
+            {
+                if (string.IsNullOrWhiteSpace(line.MaterialCode)) throw new Exception("BOM 明细必须选择物料");
+                if (line.Quantity <= 0) throw new Exception("BOM 明细用量必须大于零");
+                line.MaterialName = (line.MaterialName ?? "").Trim();
+                line.Spec = (line.Spec ?? "").Trim();
+                line.Unit = (line.Unit ?? "").Trim();
+                line.Note = (line.Note ?? "").Trim();
+                line.PriceSourceTime = (line.PriceSourceTime ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(line.PriceSourceTime))
+                    line.PriceSourceTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+        }
+
+        static void ValidateModelCost(ModelCost item)
+        {
+            if (item == null) throw new Exception("机型成本资料不能为空");
+            if (string.IsNullOrWhiteSpace(item.BomId)) throw new Exception("请选择 BOM");
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void ValidateModelCostFilled(ModelCost item)
+        {
+            if (string.IsNullOrWhiteSpace(item.ModelCode)) throw new Exception("机型编号不能为空");
+            item.ModelName = (item.ModelName ?? "").Trim();
+            item.ProductName = (item.ProductName ?? "").Trim();
+            item.BomVersion = (item.BomVersion ?? "").Trim();
+            item.BomCode = (item.BomCode ?? "").Trim();
+        }
+
+        static SystemSettings LoadSystemSettings()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(SystemSettingsFile)) return new SystemSettings { TaxRate = 10 };
+                string text = File.ReadAllText(SystemSettingsFile, Encoding.UTF8);
+                var settings = Json.Deserialize<SystemSettings>(text) ?? new SystemSettings();
+                if (settings.TaxRate < 0) settings.TaxRate = 0;
+                return settings;
+            }
+        }
+
+        static void SaveSystemSettingsFile(SystemSettings settings)
+        {
+            lock (DataLock)
+            {
+                string temp = SystemSettingsFile + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(settings), new UTF8Encoding(false));
+                if (File.Exists(SystemSettingsFile))
+                {
+                    string backup = Path.Combine(BackupDir, "system_settings_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    File.Replace(temp, SystemSettingsFile, backup);
+                }
+                else File.Move(temp, SystemSettingsFile);
+                CleanBackups();
+            }
+        }
+
+        static void SaveTaxRate(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<TaxRateRequest>(ReadBody(ctx.Request));
+            if (req == null) { WriteJson(ctx, new { error = "请求无效" }, 400); return; }
+            if (req.TaxRate < 0) { WriteJson(ctx, new { error = "税率不能小于 0" }, 400); return; }
+            var settings = LoadSystemSettings();
+            settings.TaxRate = req.TaxRate;
+            SaveSystemSettingsFile(settings);
+            Audit(user, "修改税率", settings.TaxRate.ToString("0.##") + "%");
+            WriteJson(ctx, settings);
+        }
+
+        static List<BomItem> LoadBom()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(BomFile)) return new List<BomItem>();
+                string text = File.ReadAllText(BomFile, Encoding.UTF8);
+                return Json.Deserialize<List<BomItem>>(text) ?? new List<BomItem>();
+            }
+        }
+
+        static void SaveBom(List<BomItem> items)
+        {
+            lock (DataLock)
+            {
+                string temp = BomFile + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
+                if (File.Exists(BomFile))
+                {
+                    string backup = Path.Combine(BackupDir, "bom_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    File.Replace(temp, BomFile, backup);
+                }
+                else File.Move(temp, BomFile);
+                CleanBackups();
+            }
+        }
+
+        static void AddBom(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
+            ValidateBom(item);
+            var taxRate = LoadSystemSettings().TaxRate;
+            RecalcBomLines(item, taxRate);
+            var list = LoadBom();
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(BomSequenceFile, "BOM", list.Select(x => x.Code));
+            item.CreatedAt = now;
+            item.UpdatedAt = now;
+            list.Insert(0, item);
+            SaveBom(list);
+            Audit(user, "新增BOM", item.Code + " " + item.ModelName);
+            WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateBom(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
+            ValidateBom(input);
+            var list = LoadBom();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
+            var taxRate = LoadSystemSettings().TaxRate;
+            foreach (var line in input.Items)
+            {
+                if (line.TaxRate <= 0) line.TaxRate = taxRate;
+            }
+            RecalcBomLines(input, taxRate);
+            input.Id = item.Id;
+            input.Code = item.Code;
+            input.CreatedAt = item.CreatedAt;
+            input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            list[list.IndexOf(item)] = input;
+            SaveBom(list);
+            Audit(user, "修改BOM", input.Code + " " + input.ModelName);
+            WriteJson(ctx, input);
+        }
+
+        static void DeleteBom(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadBom();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
+            list.Remove(item);
+            SaveBom(list);
+            Audit(user, "删除BOM", item.Code + " " + item.ModelName);
+            WriteJson(ctx, new { ok = true });
+        }
+
+        static List<ModelCost> LoadModelCosts()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(ModelCostFile)) return new List<ModelCost>();
+                string text = File.ReadAllText(ModelCostFile, Encoding.UTF8);
+                return Json.Deserialize<List<ModelCost>>(text) ?? new List<ModelCost>();
+            }
+        }
+
+        static void SaveModelCosts(List<ModelCost> items)
+        {
+            lock (DataLock)
+            {
+                string temp = ModelCostFile + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
+                if (File.Exists(ModelCostFile))
+                {
+                    string backup = Path.Combine(BackupDir, "model_costs_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    File.Replace(temp, ModelCostFile, backup);
+                }
+                else File.Move(temp, ModelCostFile);
+                CleanBackups();
+            }
+        }
+
+        static void FillModelCostFromBom(ModelCost item)
+        {
+            var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
+            if (bom == null) throw new Exception("所选 BOM 不存在");
+            item.ModelCode = bom.ModelCode;
+            item.ModelName = bom.ModelName;
+            item.ProductName = bom.ProductName;
+            item.BomVersion = bom.Version;
+            item.BomCode = bom.Code;
+            item.MaterialCost = bom.TotalMaterialCost;
+            item.TotalCost = item.MaterialCost;
+        }
+
+        static void AddModelCost(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<ModelCost>(ReadBody(ctx.Request));
+            ValidateModelCost(item);
+            FillModelCostFromBom(item);
+            ValidateModelCostFilled(item);
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            item.Id = Guid.NewGuid().ToString("N");
+            item.CreatedAt = now;
+            item.UpdatedAt = now;
+            var list = LoadModelCosts();
+            list.Insert(0, item);
+            SaveModelCosts(list);
+            Audit(user, "新增机型成本", item.ModelCode + " " + item.ModelName);
+            WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateModelCost(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<ModelCost>(ReadBody(ctx.Request));
+            ValidateModelCost(input);
+            var list = LoadModelCosts();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
+            FillModelCostFromBom(input);
+            ValidateModelCostFilled(input);
+            input.Id = item.Id;
+            input.CreatedAt = item.CreatedAt;
+            input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            list[list.IndexOf(item)] = input;
+            SaveModelCosts(list);
+            Audit(user, "修改机型成本", input.ModelCode + " " + input.ModelName);
+            WriteJson(ctx, input);
+        }
+
+        static void DeleteModelCost(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadModelCosts();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
+            list.Remove(item);
+            SaveModelCosts(list);
+            Audit(user, "删除机型成本", item.ModelCode + " " + item.ModelName);
+            WriteJson(ctx, new { ok = true });
+        }
+
+=======
+>>>>>>> origin/main
         static PermissionGroup[] GetPermissionDefinitions()
         {
             return new[]
@@ -472,10 +891,30 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "finance.edit", Label = "修改" },
                     new PermissionItem { Key = "finance.delete", Label = "删除" }
                 }},
+<<<<<<< HEAD
+                new PermissionGroup { Module = "BOM表", Items = new[] {
+                    new PermissionItem { Key = "bom.view", Label = "查看" },
+                    new PermissionItem { Key = "bom.add", Label = "新增" },
+                    new PermissionItem { Key = "bom.edit", Label = "修改" },
+                    new PermissionItem { Key = "bom.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "机型成本", Items = new[] {
+                    new PermissionItem { Key = "model_cost.view", Label = "查看" },
+                    new PermissionItem { Key = "model_cost.add", Label = "新增" },
+                    new PermissionItem { Key = "model_cost.edit", Label = "修改" },
+                    new PermissionItem { Key = "model_cost.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "系统设置", Items = new[] {
+                    new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
+                    new PermissionItem { Key = "settings.account", Label = "账号管理" },
+                    new PermissionItem { Key = "settings.password", Label = "修改密码" },
+                    new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" }
+=======
                 new PermissionGroup { Module = "系统设置", Items = new[] {
                     new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
                     new PermissionItem { Key = "settings.account", Label = "账号管理" },
                     new PermissionItem { Key = "settings.password", Label = "修改密码" }
+>>>>>>> origin/main
                 }}
             };
         }
@@ -861,7 +1300,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(item);
             var list = LoadMaterials();
             if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商的相同物料已经存在" }, 409); return; }
-            item.Id=Guid.NewGuid().ToString("N"); item.Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)); item.Status="启用"; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
+            item.Id=Guid.NewGuid().ToString("N"); item.Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)); item.PriceType=NormalizePriceType(item.PriceType); item.Status="启用"; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
             list.Insert(0,item); SaveMaterials(list); Audit(user,"新增物料",item.Code+" "+item.NameSpec); WriteJson(ctx,item,201);
         }
 
@@ -871,7 +1310,7 @@ namespace SupplierErpApp
             var list=LoadMaterials(); var item=list.FirstOrDefault(x=>x.Id==id);
             if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}
             if(list.Any(x=>x.Id!=id&&string.Equals(x.Supplier,input.Supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,input.NameSpec,StringComparison.OrdinalIgnoreCase))){WriteJson(ctx,new{error="该供应商的相同物料已经存在"},409);return;}
-            item.Supplier=input.Supplier;item.NameSpec=input.NameSpec;item.QuantityUnit=input.QuantityUnit;item.TaxPrice=input.TaxPrice;item.NoTaxPrice=input.NoTaxPrice;item.Note=input.Note;item.Status=string.IsNullOrEmpty(input.Status)?"启用":input.Status;item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");item.UpdatedBy=user.DisplayName;
+            item.Supplier=input.Supplier;item.NameSpec=input.NameSpec;item.QuantityUnit=input.QuantityUnit;item.TaxPrice=input.TaxPrice;item.NoTaxPrice=input.NoTaxPrice;item.PriceType=NormalizePriceType(input.PriceType);item.Note=input.Note;item.Status=string.IsNullOrEmpty(input.Status)?"启用":input.Status;item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");item.UpdatedBy=user.DisplayName;
             SaveMaterials(list);Audit(user,"修改物料",item.Code+" "+item.NameSpec);WriteJson(ctx,item);
         }
 
@@ -929,7 +1368,11 @@ namespace SupplierErpApp
                         Id = Guid.NewGuid().ToString("N"),
                         Code = NextCode(MaterialSequenceFile, "WL", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
                         Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
+<<<<<<< HEAD
+                        TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
+=======
                         TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, Note = input.Note,
+>>>>>>> origin/main
                         Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
                         UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
                     };
@@ -1111,7 +1554,7 @@ namespace SupplierErpApp
         static void ImportMaterials(HttpListenerContext ctx,UserSession user)
         {
             var rows=ReadImportRows(ctx);var list=LoadMaterials();var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+            foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
             if(imported>0)SaveMaterials(list);Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
@@ -1133,8 +1576,8 @@ namespace SupplierErpApp
 
         static void ExportMaterialsCsv(HttpListenerContext ctx)
         {
-            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,数量/单位,含税价,不含税价,备注,状态,最后更新,操作人");
-            foreach(var x in LoadMaterials())sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,x.QuantityUnit,x.TaxPrice.ToString("0.00"),x.NoTaxPrice.ToString("0.00"),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
+            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,数量/单位,含税价,不含税价,价格类型,备注,状态,最后更新,操作人");
+            foreach(var x in LoadMaterials())sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,x.QuantityUnit,x.TaxPrice.ToString("0.00"),x.NoTaxPrice.ToString("0.00"),NormalizePriceType(x.PriceType),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
             byte[] bytes=Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();ctx.Response.ContentType="text/csv; charset=utf-8";ctx.Response.AddHeader("Content-Disposition","attachment; filename=materials_"+DateTime.Now.ToString("yyyyMMdd")+".csv");ctx.Response.ContentLength64=bytes.Length;ctx.Response.OutputStream.Write(bytes,0,bytes.Length);ctx.Response.Close();
         }
 

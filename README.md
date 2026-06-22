@@ -2,15 +2,24 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
+<<<<<<< HEAD
+- 当前版本：Ver2.3
+=======
 - 当前版本：Ver2.2
+>>>>>>> origin/main
 - 运行平台：Windows
 - 服务端口：`8787`
-- 技术结构：C#/.NET Framework、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
+- 技术结构：C#/.NET 8、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
 
 ## 已有功能
 
 - 用户登录、退出及会话管理
 - 系统管理员账号与子账号权限管理（Ver2.2）
+<<<<<<< HEAD
+- 生产管理：BOM表、机型成本（Ver2.3）
+- 系统设置税率修改（Ver2.3）
+=======
+>>>>>>> origin/main
 - 首页应收、应付、库存物料和财务收支综合看板
 - 供应商、客户、物料档案的新增、查询、修改、删除、Excel 导入和 CSV 导出
 - 供应商、客户、物料的批量添加与批量删除
@@ -35,14 +44,47 @@
 仓库管理
   采购单、采购入库、领用出库、库存（占位）
 
+<<<<<<< HEAD
+生产管理
+  BOM表、机型成本
+
+=======
+>>>>>>> origin/main
 财务管理
   财务收支、应收款（占位）、应付款（占位）
 
 设置
+<<<<<<< HEAD
+  系统设置
+```
+
+已实现功能：首页、供应商管理、客户管理、物料管理、财务收支、BOM表、机型成本、税率修改。其余菜单为占位入口，点击后提示「该功能开发中」。
+
+## 生产管理（Ver2.3）
+
+路径：生产管理 → BOM表 / 机型成本
+
+### BOM表
+
+- 维护产品 / 机型的物料清单，自动计算材料成本
+- BOM 明细从「物料管理」选择物料，读取当前最新单价与价格类型
+- 价格类型为「含税」时，按系统税率换算不含税单价：`不含税单价 = 含税单价 ÷ (1 + 税率 / 100)`
+- 价格类型为「不含税」时，直接使用不含税价
+- 保存 BOM 时锁定明细价格快照（含价格来源时间），已保存 BOM 不受后续物料涨价/降价影响
+- 编辑 BOM 时可点击「重新取最新物料价格」手动刷新全部明细价格
+- 保存时锁定明细税率，已保存 BOM 不受后续税率修改影响
+
+### 机型成本
+
+- 选择 BOM 后自动带出机型信息与材料成本
+- 机型成本当前仅统计 BOM 材料成本，总成本 = 材料成本
+- 材料成本来自 BOM 价格快照，不会随物料管理最新价格自动变化
+=======
   系统设置（占位）
 ```
 
 已实现功能：首页、供应商管理、客户管理、物料管理、财务收支。其余菜单为占位入口，点击后提示「该功能开发中」。
+>>>>>>> origin/main
 
 ## 个性化设置
 
@@ -60,13 +102,24 @@
 
 路径：设置 → 系统设置
 
+<<<<<<< HEAD
+包含 6 个入口：账号管理、修改密码、数据备份、数据恢复、系统参数、税率修改。
+=======
 包含 5 个入口：账号管理、修改密码、数据备份、数据恢复、系统参数。
+>>>>>>> origin/main
 
 **Ver2.2 已实现：**
 
 - **账号管理**：系统管理员（admin）可新增、编辑、删除子账号，并为子账号勾选模块权限
 - **修改密码**：当前登录用户可修改自己的密码（需具备相应权限；admin 默认拥有）
 
+<<<<<<< HEAD
+**Ver2.3 已实现：**
+
+- **税率修改**：设置系统默认税率（默认 10%），用于 BOM 含税价换算不含税价；保存到 `system_settings.json`
+
+=======
+>>>>>>> origin/main
 数据备份、数据恢复、系统参数仍为占位入口，后续版本逐步实现。
 
 ## 账号与权限（Ver2.2）
@@ -85,7 +138,11 @@
 - 由系统管理员在「设置 → 系统设置 → 账号管理」中新增
 - 默认角色：普通用户
 - 默认无业务权限，需管理员手动勾选
+<<<<<<< HEAD
+- 权限控制供应商、客户、物料、财务收支、BOM表、机型成本及系统设置相关权限
+=======
 - 权限控制供应商、客户、物料、财务收支的查看/新增/修改/删除/批量删除，以及系统设置相关权限
+>>>>>>> origin/main
 
 ### 账号数据
 
@@ -99,14 +156,21 @@
 - `Material.html`：物料管理界面
 - `Finance.html`：财务收支界面
 - `app.manifest`：Windows 管理员权限及系统兼容性声明
+<<<<<<< HEAD
+- `ERP.csproj`：.NET 8 WinForms 项目文件
+=======
 - `GuanYuERP.csproj`：MSBuild 项目文件
 - `build.ps1`：一键编译并生成安装包
+>>>>>>> origin/main
 - `安装说明.txt`：随安装包分发的用户使用说明
 
 程序运行时会将四个 HTML 文件作为嵌入资源，由 `Program.cs` 组合后提供给浏览器。
 
 ## 一键打包（推荐）
 
+<<<<<<< HEAD
+安装 .NET 8 SDK 后，在仓库根目录执行：
+=======
 适合不会编程的使用场景。在源码目录 `01-源代码` 中执行：
 
 ```powershell
@@ -147,32 +211,17 @@ C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系
 ## 手动编译方式
 
 如需手工编译，也可使用 Windows 自带的 .NET Framework C# 编译器。在仓库根目录执行：
+>>>>>>> origin/main
 
 ```powershell
-$csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-
-& $csc /nologo /target:winexe /out:GuanYuERP.exe `
-  /win32manifest:app.manifest `
-  /resource:App.html,SupplierErpApp.App.html `
-  /resource:Customer.html,SupplierErpApp.Customer.html `
-  /resource:Material.html,SupplierErpApp.Material.html `
-  /resource:Finance.html,SupplierErpApp.Finance.html `
-  /reference:System.dll `
-  /reference:System.Core.dll `
-  /reference:System.Web.Extensions.dll `
-  /reference:System.Windows.Forms.dll `
-  /reference:System.Drawing.dll `
-  /reference:System.Xml.Linq.dll `
-  /reference:System.IO.Compression.dll `
-  /reference:System.IO.Compression.FileSystem.dll `
-  Program.cs
+dotnet build
 ```
 
-如果系统只有 32 位 .NET Framework，请将编译器路径中的 `Framework64` 改为 `Framework`。
+项目会按 `ERP.csproj` 编译为 .NET 8 Windows WinForms 程序，四个 HTML 文件会继续作为嵌入资源打包。
 
 ## 运行方式
 
-1. 编译生成 `GuanYuERP.exe`。
+1. 编译生成 `ERP.exe`。
 2. 以管理员身份运行该程序。
 3. 程序启动后会驻留在 Windows 系统托盘，并自动打开默认浏览器。
 4. 本机通过 `http://127.0.0.1:8787/` 访问。
