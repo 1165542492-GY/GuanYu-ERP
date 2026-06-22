@@ -2,7 +2,7 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
-- 当前版本：Ver1.7
+- 当前版本：Ver1.8
 - 运行平台：Windows
 - 服务端口：`8787`
 - 技术结构：C#/.NET Framework、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
@@ -48,16 +48,32 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 脚本会自动完成以下步骤：
 
-1. 使用 MSBuild 编译 `GuanYuERP.csproj`
-2. 生成 `GuanYuERP.exe`
-3. 打包 `GuanYuERP.exe`、`安装说明.txt`、`VERSION.md`
-4. 输出安装包到：
+1. 扫描 `02-安装包` 目录，识别已有安装包的最新版本号
+2. 自动生成下一个版本号（例如已有 `Ver1.7` 则生成 `Ver1.8`）
+3. 使用 MSBuild 编译 `GuanYuERP.csproj`
+4. 生成 `GuanYuERP.exe`
+5. 打包 `GuanYuERP.exe`、`安装说明.txt`、`VERSION.md`
+6. 输出安装包到固定目录：
 
 ```text
-C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系统Ver1.7.zip
+C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系统Ver版本号.zip
 ```
 
-解压后即可使用。首次运行请右键 `GuanYuERP.exe`，选择“以管理员身份运行”。
+7. 自动解压到：
+
+```text
+C:\Users\Administrator\Documents\冠誉ERP项目\02-安装包\冠誉ERP管理系统Ver版本号\
+```
+
+8. 新版本生成成功后，将旧版本 zip 和旧版本解压文件夹移动到 Windows 回收站（不永久删除）
+
+版本递增规则：
+
+- `Ver1.7 → Ver1.8 → Ver1.9 → Ver2.0 → Ver2.1`
+
+最终 `02-安装包` 目录只保留最新版本 zip 和最新版本解压文件夹。`build.ps1` 不会自动修改 `README.md` 和 `VERSION.md`，版本说明仍由开发时手动维护。
+
+解压文件夹中的 `GuanYuERP.exe` 可直接使用。首次运行请右键 `GuanYuERP.exe`，选择“以管理员身份运行”。
 
 ## 手动编译方式
 
