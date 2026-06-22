@@ -96,8 +96,14 @@ namespace SupplierErpApp
     }
 
     public class LoginRequest { public string Username { get; set; } public string Password { get; set; } }
-    public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } }
-    public class UserDef { public string Username; public string DisplayName; public string Role; public string PasswordHash; }
+    public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool IsAdmin { get; set; } public string[] Permissions { get; set; } }
+    public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
+    public class UserPublic { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } public string PermissionSummary { get; set; } }
+    public class CreateUserRequest { public string Username { get; set; } public string Password { get; set; } public string DisplayName { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
+    public class UpdateUserRequest { public string DisplayName { get; set; } public bool Enabled { get; set; } public string Password { get; set; } public string[] Permissions { get; set; } }
+    public class ChangePasswordRequest { public string OldPassword { get; set; } public string NewPassword { get; set; } }
+    public class PermissionGroup { public string Module { get; set; } public PermissionItem[] Items { get; set; } }
+    public class PermissionItem { public string Key { get; set; } public string Label { get; set; } }
 
     public static class Program
     {
@@ -105,15 +111,19 @@ namespace SupplierErpApp
         static readonly object SessionLock = new object();
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 50 * 1024 * 1024 };
         static readonly Dictionary<string, UserSession> Sessions = new Dictionary<string, UserSession>();
-        static readonly List<UserDef> Users = new List<UserDef>
-        {
-            new UserDef { Username="admin", DisplayName="系统管理员", Role="管理员", PasswordHash="240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9" },
-            new UserDef { Username="caigou", DisplayName="采购人员", Role="采购", PasswordHash="8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92" },
-            new UserDef { Username="caiwu", DisplayName="财务人员", Role="财务", PasswordHash="8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92" },
-            new UserDef { Username="boss", DisplayName="管理人员", Role="管理层", PasswordHash="8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92" }
+        static List<UserDef> Users = new List<UserDef>();
+        static readonly string[] AllPermissionKeys = {
+            "supplier.view","supplier.add","supplier.edit","supplier.delete","supplier.batch_delete",
+            "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
+            "material.view","material.add","material.edit","material.delete","material.batch_delete",
+            "finance.view","finance.add","finance.edit","finance.delete",
+            "settings.view","settings.account","settings.password"
         };
+        const string AdminUsername = "admin";
+        const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
 
         static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "智造ERP供应商管理");
+        static readonly string UsersFile = Path.Combine(DataDir, "users.json");
         static readonly string DataFile = Path.Combine(DataDir, "suppliers.json");
         static readonly string SupplierSequenceFile = Path.Combine(DataDir, "supplier_sequence.json");
         static readonly string CustomerFile = Path.Combine(DataDir, "customers.json");
@@ -152,6 +162,8 @@ namespace SupplierErpApp
                     EnsureLegacyCodes();
                     if (!File.Exists(FinanceFile)) File.WriteAllText(FinanceFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(OpeningFile)) File.WriteAllText(OpeningFile, Json.Serialize(new OpeningBalances()), new UTF8Encoding(false));
+                    EnsureUsersFile();
+                    LoadUsers();
                     StartServer();
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
@@ -225,38 +237,44 @@ namespace SupplierErpApp
                 UserSession user = Authenticate(ctx);
                 if (user == null) { WriteJson(ctx, new { error = "请先登录" }, 401); return; }
                 if (path == "/api/me") { WriteJson(ctx, user); return; }
+                if (path == "/api/permissions" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, GetPermissionDefinitions()); return; }
+                if (path == "/api/me/password" && ctx.Request.HttpMethod == "PUT") { ChangePassword(ctx, user); return; }
+                if (path == "/api/users" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "settings.account")) return; ListUsers(ctx); return; }
+                if (path == "/api/users" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "settings.account")) return; CreateUser(ctx, user); return; }
+                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.account")) return; UpdateUser(ctx, user, path.Substring("/api/users/".Length)); return; }
+                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "settings.account")) return; DeleteUser(ctx, user, path.Substring("/api/users/".Length)); return; }
                 if (path == "/api/info") { WriteJson(ctx, new { ip = GetLanIp(), port = Port, dataDir = DataDir }); return; }
-                if (path == "/api/suppliers" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadSuppliers()); return; }
-                if (path == "/api/suppliers" && ctx.Request.HttpMethod == "POST") { AddSupplier(ctx, user); return; }
-                if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "PUT") { UpdateSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
-                if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "DELETE") { DeleteSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
-                if (path == "/api/suppliers/import" && ctx.Request.HttpMethod == "POST") { ImportSuppliers(ctx, user); return; }
-                if (path == "/api/suppliers/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteSuppliers(ctx, user); return; }
-                if (path == "/api/suppliers/batch" && ctx.Request.HttpMethod == "POST") { BatchAddSuppliers(ctx, user); return; }
-                if (path == "/api/customers" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadCustomers()); return; }
-                if (path == "/api/customers" && ctx.Request.HttpMethod == "POST") { AddCustomer(ctx, user); return; }
-                if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "PUT") { UpdateCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
-                if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "DELETE") { DeleteCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
-                if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { ImportCustomers(ctx, user); return; }
-                if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteCustomers(ctx, user); return; }
-                if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { BatchAddCustomers(ctx, user); return; }
-                if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadMaterials()); return; }
-                if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { AddMaterial(ctx, user); return; }
-                if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
-                if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
-                if (path == "/api/materials/import" && ctx.Request.HttpMethod == "POST") { ImportMaterials(ctx, user); return; }
-                if (path == "/api/materials/batch-delete" && ctx.Request.HttpMethod == "POST") { BatchDeleteMaterials(ctx, user); return; }
-                if (path == "/api/materials/batch" && ctx.Request.HttpMethod == "POST") { BatchAddMaterials(ctx, user); return; }
-                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadOpeningBalances()); return; }
-                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { SaveOpeningBalances(ctx, user); return; }
-                if (path == "/api/finance" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, LoadFinance()); return; }
-                if (path == "/api/finance" && ctx.Request.HttpMethod == "POST") { AddFinance(ctx, user); return; }
-                if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "PUT") { UpdateFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
-                if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "DELETE") { DeleteFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
-                if (path == "/api/export") { ExportCsv(ctx); return; }
-                if (path == "/api/customers/export") { ExportCustomersCsv(ctx); return; }
-                if (path == "/api/materials/export") { ExportMaterialsCsv(ctx); return; }
-                if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
+                if (path == "/api/suppliers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "supplier.view")) return; WriteJson(ctx, LoadSuppliers()); return; }
+                if (path == "/api/suppliers" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; AddSupplier(ctx, user); return; }
+                if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "supplier.edit")) return; UpdateSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
+                if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "supplier.delete")) return; DeleteSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
+                if (path == "/api/suppliers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; ImportSuppliers(ctx, user); return; }
+                if (path == "/api/suppliers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.batch_delete")) return; BatchDeleteSuppliers(ctx, user); return; }
+                if (path == "/api/suppliers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; BatchAddSuppliers(ctx, user); return; }
+                if (path == "/api/customers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "customer.view")) return; WriteJson(ctx, LoadCustomers()); return; }
+                if (path == "/api/customers" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; AddCustomer(ctx, user); return; }
+                if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "customer.edit")) return; UpdateCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
+                if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "customer.delete")) return; DeleteCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
+                if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; ImportCustomers(ctx, user); return; }
+                if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.batch_delete")) return; BatchDeleteCustomers(ctx, user); return; }
+                if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; BatchAddCustomers(ctx, user); return; }
+                if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "material.view")) return; WriteJson(ctx, LoadMaterials()); return; }
+                if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; AddMaterial(ctx, user); return; }
+                if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "material.edit")) return; UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
+                if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "material.delete")) return; DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
+                if (path == "/api/materials/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; ImportMaterials(ctx, user); return; }
+                if (path == "/api/materials/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.batch_delete")) return; BatchDeleteMaterials(ctx, user); return; }
+                if (path == "/api/materials/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; BatchAddMaterials(ctx, user); return; }
+                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.view")) return; WriteJson(ctx, LoadOpeningBalances()); return; }
+                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; SaveOpeningBalances(ctx, user); return; }
+                if (path == "/api/finance" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.view")) return; WriteJson(ctx, LoadFinance()); return; }
+                if (path == "/api/finance" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finance.add")) return; AddFinance(ctx, user); return; }
+                if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; UpdateFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
+                if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finance.delete")) return; DeleteFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
+                if (path == "/api/export") { if (!RequirePermission(ctx, user, "supplier.view")) return; ExportCsv(ctx); return; }
+                if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.view")) return; ExportCustomersCsv(ctx); return; }
+                if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.view")) return; ExportMaterialsCsv(ctx); return; }
+                if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -298,14 +316,19 @@ namespace SupplierErpApp
         static void Login(HttpListenerContext ctx)
         {
             var req = Json.Deserialize<LoginRequest>(ReadBody(ctx.Request));
-            var user = Users.FirstOrDefault(x => string.Equals(x.Username, req == null ? "" : req.Username, StringComparison.OrdinalIgnoreCase));
+            var user = FindUser(req == null ? "" : req.Username);
             if (user == null || !FixedEquals(user.PasswordHash, Sha256(req == null ? "" : req.Password)))
             {
                 Audit(null, "登录失败", req == null ? "" : req.Username);
                 WriteJson(ctx, new { error = "账号或密码不正确" }, 401); return;
             }
+            if (!user.Enabled)
+            {
+                Audit(null, "登录失败", user.Username + "（已禁用）");
+                WriteJson(ctx, new { error = "账号已禁用" }, 403); return;
+            }
             string token = Guid.NewGuid().ToString("N");
-            var session = new UserSession { Username = user.Username, DisplayName = user.DisplayName, Role = user.Role };
+            var session = ToSession(user);
             lock (SessionLock) Sessions[token] = session;
             var cookie = new Cookie("ERPSESSION", token, "/"); cookie.HttpOnly = true; ctx.Response.Cookies.Add(cookie);
             Audit(session, "登录", "成功");
@@ -326,7 +349,242 @@ namespace SupplierErpApp
         {
             var c = ctx.Request.Cookies["ERPSESSION"];
             if (c == null || string.IsNullOrEmpty(c.Value)) return null;
-            lock (SessionLock) { UserSession s; return Sessions.TryGetValue(c.Value, out s) ? s : null; }
+            lock (SessionLock)
+            {
+                UserSession s;
+                if (!Sessions.TryGetValue(c.Value, out s)) return null;
+                var user = FindUser(s.Username);
+                if (user == null || !user.Enabled) return null;
+                return ToSession(user);
+            }
+        }
+
+        static void EnsureUsersFile()
+        {
+            if (File.Exists(UsersFile)) return;
+            var admin = new List<UserDef>
+            {
+                new UserDef
+                {
+                    Username = AdminUsername,
+                    DisplayName = "系统管理员",
+                    Role = "系统管理员",
+                    PasswordHash = DefaultAdminPasswordHash,
+                    Enabled = true,
+                    Permissions = new string[0]
+                }
+            };
+            File.WriteAllText(UsersFile, Json.Serialize(admin), new UTF8Encoding(false));
+        }
+
+        static void LoadUsers()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(UsersFile)) { Users = new List<UserDef>(); return; }
+                string text = File.ReadAllText(UsersFile, Encoding.UTF8);
+                Users = Json.Deserialize<List<UserDef>>(text) ?? new List<UserDef>();
+            }
+        }
+
+        static void SaveUsers()
+        {
+            lock (DataLock)
+            {
+                string temp = UsersFile + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(Users), new UTF8Encoding(false));
+                if (File.Exists(UsersFile)) File.Replace(temp, UsersFile, Path.Combine(BackupDir, "users_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"));
+                else File.Move(temp, UsersFile);
+                CleanBackups();
+            }
+        }
+
+        static UserDef FindUser(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username)) return null;
+            return Users.FirstOrDefault(x => string.Equals(x.Username, username.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        static bool IsAdminUser(UserSession user) { return user != null && user.IsAdmin; }
+        static bool IsAdminUsername(string username) { return string.Equals(username, AdminUsername, StringComparison.OrdinalIgnoreCase); }
+
+        static UserSession ToSession(UserDef user)
+        {
+            bool isAdmin = IsAdminUsername(user.Username);
+            return new UserSession
+            {
+                Username = user.Username,
+                DisplayName = user.DisplayName,
+                Role = user.Role,
+                IsAdmin = isAdmin,
+                Permissions = isAdmin ? AllPermissionKeys : NormalizePermissions(user.Permissions)
+            };
+        }
+
+        static string[] NormalizePermissions(string[] permissions)
+        {
+            if (permissions == null || permissions.Length == 0) return new string[0];
+            return permissions.Where(p => !string.IsNullOrWhiteSpace(p) && AllPermissionKeys.Contains(p)).Distinct().ToArray();
+        }
+
+        static bool HasPermission(UserSession user, string permission)
+        {
+            if (user == null) return false;
+            if (user.IsAdmin) return true;
+            return user.Permissions != null && user.Permissions.Contains(permission);
+        }
+
+        static bool RequirePermission(HttpListenerContext ctx, UserSession user, string permission)
+        {
+            if (HasPermission(user, permission)) return true;
+            WriteJson(ctx, new { error = "无权限操作" }, 403);
+            return false;
+        }
+
+        static PermissionGroup[] GetPermissionDefinitions()
+        {
+            return new[]
+            {
+                new PermissionGroup { Module = "供应商管理", Items = new[] {
+                    new PermissionItem { Key = "supplier.view", Label = "查看" },
+                    new PermissionItem { Key = "supplier.add", Label = "新增" },
+                    new PermissionItem { Key = "supplier.edit", Label = "修改" },
+                    new PermissionItem { Key = "supplier.delete", Label = "删除" },
+                    new PermissionItem { Key = "supplier.batch_delete", Label = "批量删除" }
+                }},
+                new PermissionGroup { Module = "客户管理", Items = new[] {
+                    new PermissionItem { Key = "customer.view", Label = "查看" },
+                    new PermissionItem { Key = "customer.add", Label = "新增" },
+                    new PermissionItem { Key = "customer.edit", Label = "修改" },
+                    new PermissionItem { Key = "customer.delete", Label = "删除" },
+                    new PermissionItem { Key = "customer.batch_delete", Label = "批量删除" }
+                }},
+                new PermissionGroup { Module = "物料管理", Items = new[] {
+                    new PermissionItem { Key = "material.view", Label = "查看" },
+                    new PermissionItem { Key = "material.add", Label = "新增" },
+                    new PermissionItem { Key = "material.edit", Label = "修改" },
+                    new PermissionItem { Key = "material.delete", Label = "删除" },
+                    new PermissionItem { Key = "material.batch_delete", Label = "批量删除" }
+                }},
+                new PermissionGroup { Module = "财务收支", Items = new[] {
+                    new PermissionItem { Key = "finance.view", Label = "查看" },
+                    new PermissionItem { Key = "finance.add", Label = "新增" },
+                    new PermissionItem { Key = "finance.edit", Label = "修改" },
+                    new PermissionItem { Key = "finance.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "系统设置", Items = new[] {
+                    new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
+                    new PermissionItem { Key = "settings.account", Label = "账号管理" },
+                    new PermissionItem { Key = "settings.password", Label = "修改密码" }
+                }}
+            };
+        }
+
+        static string BuildPermissionSummary(UserDef user)
+        {
+            if (IsAdminUsername(user.Username)) return "全部权限";
+            var perms = NormalizePermissions(user.Permissions);
+            if (perms.Length == 0) return "无权限";
+            if (perms.Length == AllPermissionKeys.Length) return "全部权限";
+            var labels = new Dictionary<string, string>();
+            foreach (var g in GetPermissionDefinitions())
+                foreach (var item in g.Items) labels[item.Key] = g.Module + "·" + item.Label;
+            return string.Join("、", perms.Take(6).Select(p => labels.ContainsKey(p) ? labels[p] : p)) + (perms.Length > 6 ? "…" : "");
+        }
+
+        static UserPublic ToPublic(UserDef user)
+        {
+            return new UserPublic
+            {
+                Username = user.Username,
+                DisplayName = user.DisplayName,
+                Role = user.Role,
+                Enabled = user.Enabled,
+                Permissions = IsAdminUsername(user.Username) ? AllPermissionKeys : NormalizePermissions(user.Permissions),
+                PermissionSummary = BuildPermissionSummary(user)
+            };
+        }
+
+        static void InvalidateUserSessions(string username)
+        {
+            lock (SessionLock)
+            {
+                foreach (var key in Sessions.Where(x => string.Equals(x.Value.Username, username, StringComparison.OrdinalIgnoreCase)).Select(x => x.Key).ToList())
+                    Sessions.Remove(key);
+            }
+        }
+
+        static void ListUsers(HttpListenerContext ctx)
+        {
+            WriteJson(ctx, Users.Select(ToPublic).OrderBy(x => x.Username).ToList());
+        }
+
+        static void CreateUser(HttpListenerContext ctx, UserSession actor)
+        {
+            var req = Json.Deserialize<CreateUserRequest>(ReadBody(ctx.Request));
+            if (req == null || string.IsNullOrWhiteSpace(req.Username)) { WriteJson(ctx, new { error = "账户名不能为空" }, 400); return; }
+            if (string.IsNullOrWhiteSpace(req.Password)) { WriteJson(ctx, new { error = "密码不能为空" }, 400); return; }
+            string username = req.Username.Trim();
+            if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能创建同名主账号" }, 409); return; }
+            if (FindUser(username) != null) { WriteJson(ctx, new { error = "账户名已存在" }, 409); return; }
+            var user = new UserDef
+            {
+                Username = username,
+                DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? username : req.DisplayName.Trim(),
+                Role = "普通用户",
+                PasswordHash = Sha256(req.Password),
+                Enabled = req.Enabled,
+                Permissions = NormalizePermissions(req.Permissions)
+            };
+            Users.Add(user);
+            SaveUsers();
+            Audit(actor, "新增子账号", user.Username);
+            WriteJson(ctx, ToPublic(user), 201);
+        }
+
+        static void UpdateUser(HttpListenerContext ctx, UserSession actor, string username)
+        {
+            if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能修改主账号权限或状态" }, 403); return; }
+            var user = FindUser(username);
+            if (user == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
+            var req = Json.Deserialize<UpdateUserRequest>(ReadBody(ctx.Request));
+            if (req == null) { WriteJson(ctx, new { error = "请求无效" }, 400); return; }
+            if (!string.IsNullOrWhiteSpace(req.DisplayName)) user.DisplayName = req.DisplayName.Trim();
+            user.Enabled = req.Enabled;
+            user.Permissions = NormalizePermissions(req.Permissions);
+            if (!string.IsNullOrWhiteSpace(req.Password)) user.PasswordHash = Sha256(req.Password);
+            SaveUsers();
+            InvalidateUserSessions(user.Username);
+            Audit(actor, "编辑子账号", user.Username);
+            WriteJson(ctx, ToPublic(user));
+        }
+
+        static void DeleteUser(HttpListenerContext ctx, UserSession actor, string username)
+        {
+            if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能删除主账号" }, 403); return; }
+            var user = FindUser(username);
+            if (user == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
+            Users.Remove(user);
+            SaveUsers();
+            InvalidateUserSessions(user.Username);
+            Audit(actor, "删除子账号", user.Username);
+            WriteJson(ctx, new { ok = true });
+        }
+
+        static void ChangePassword(HttpListenerContext ctx, UserSession user)
+        {
+            if (!HasPermission(user, "settings.password")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; }
+            var req = Json.Deserialize<ChangePasswordRequest>(ReadBody(ctx.Request));
+            if (req == null || string.IsNullOrWhiteSpace(req.OldPassword)) { WriteJson(ctx, new { error = "请输入旧密码" }, 400); return; }
+            if (string.IsNullOrWhiteSpace(req.NewPassword)) { WriteJson(ctx, new { error = "请输入新密码" }, 400); return; }
+            var def = FindUser(user.Username);
+            if (def == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
+            if (!FixedEquals(def.PasswordHash, Sha256(req.OldPassword))) { WriteJson(ctx, new { error = "旧密码不正确" }, 401); return; }
+            def.PasswordHash = Sha256(req.NewPassword);
+            SaveUsers();
+            InvalidateUserSessions(def.Username);
+            Audit(user, "修改密码", def.Username);
+            WriteJson(ctx, new { ok = true });
         }
 
         static List<Supplier> LoadSuppliers()
