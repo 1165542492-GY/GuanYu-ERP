@@ -1,0 +1,41 @@
+# Local Codex and Visual Studio state
+.codex/
+.vs/
+
+# Build output
+bin/
+obj/
+build/
+dist/
+out/
+publish/
+*.exe
+*.dll
+*.pdb
+*.mdb
+
+# Release archives
+*.zip
+*.7z
+*.rar
+
+# Runtime data
+suppliers.json
+supplier_sequence.json
+customers.json
+customer_sequence.json
+materials.json
+material_sequence.json
+finance.json
+finance_opening.json
+backups/
+backup/
+
+# Logs, temporary files and local backups
+operation.log
+*.log
+*.tmp
+*.bak
+*.backup
+*.user
+*.suo
