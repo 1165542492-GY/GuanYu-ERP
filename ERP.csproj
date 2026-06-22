@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>SupplierErpApp</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="App.html" LogicalName="SupplierErpApp.App.html" />
+    <EmbeddedResource Include="Customer.html" LogicalName="SupplierErpApp.Customer.html" />
+    <EmbeddedResource Include="Finance.html" LogicalName="SupplierErpApp.Finance.html" />
+    <EmbeddedResource Include="Material.html" LogicalName="SupplierErpApp.Material.html" />
+  </ItemGroup>
+</Project>
