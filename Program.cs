@@ -193,6 +193,129 @@ namespace SupplierErpApp
         public string UpdatedAt { get; set; }
     }
 
+    public class ContractSetting
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string Type { get; set; }
+        public string Name { get; set; }
+        public string Content { get; set; }
+        public bool IsDefault { get; set; }
+        public string Status { get; set; }
+        public int Sort { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+    }
+
+    public class ContractDetailLine
+    {
+        public int Seq { get; set; }
+        public string DeviceName { get; set; }
+        public string ModelSpec { get; set; }
+        public decimal Quantity { get; set; }
+        public string Unit { get; set; }
+        public decimal UnitPrice { get; set; }
+        public bool TaxIncluded { get; set; }
+        public decimal TaxRate { get; set; }
+        public decimal NoTaxUnitPrice { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class ContractAccessoryLine
+    {
+        public int Seq { get; set; }
+        public string Name { get; set; }
+        public string Spec { get; set; }
+        public string Quantity { get; set; }
+        public string Unit { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class ContractConfigLine
+    {
+        public int Seq { get; set; }
+        public string Category { get; set; }
+        public string Item { get; set; }
+        public string Brand { get; set; }
+        public string Spec { get; set; }
+        public string Quantity { get; set; }
+        public string Unit { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class ContractTechParamLine
+    {
+        public int Seq { get; set; }
+        public string Category { get; set; }
+        public string Name { get; set; }
+        public string Value { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class ContractItem
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string Name { get; set; }
+        public string CustomerCode { get; set; }
+        public string PartyAName { get; set; }
+        public string PartyAContact { get; set; }
+        public string PartyAPhone { get; set; }
+        public string PartyAAddress { get; set; }
+        public string PartyBName { get; set; }
+        public string PartyBContact { get; set; }
+        public string PartyBPhone { get; set; }
+        public string PartyBAddress { get; set; }
+        public string SignDate { get; set; }
+        public string TemplateId { get; set; }
+        public string TemplateCode { get; set; }
+        public string TemplateName { get; set; }
+        public string TemplateContent { get; set; }
+        public string PaymentTerms { get; set; }
+        public string DeliveryTime { get; set; }
+        public string DeliveryPlace { get; set; }
+        public string PackagingMethod { get; set; }
+        public string TransportMethod { get; set; }
+        public string InvoiceType { get; set; }
+        public bool TaxIncluded { get; set; }
+        public decimal TaxRate { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string TotalAmountChinese { get; set; }
+        public decimal DepositRatio { get; set; }
+        public decimal DepositAmount { get; set; }
+        public string DepositAmountChinese { get; set; }
+        public decimal BalanceAmount { get; set; }
+        public string BalanceAmountChinese { get; set; }
+        public int InstallmentMonths { get; set; }
+        public decimal InstallmentAmount { get; set; }
+        public string InstallmentAmountChinese { get; set; }
+        public string InstallmentNote { get; set; }
+        public string ReceivingAccount { get; set; }
+        public string QualityAcceptanceTerms { get; set; }
+        public string AfterSalesTerms { get; set; }
+        public string ExcludedWarranty { get; set; }
+        public string BreachTerms { get; set; }
+        public string InvoiceTitle { get; set; }
+        public string TaxNumber { get; set; }
+        public string AccountHolder { get; set; }
+        public string BankBranch { get; set; }
+        public string CompanyAccount { get; set; }
+        public string PersonalAccount { get; set; }
+        public string BankRoutingNo { get; set; }
+        public string Status { get; set; }
+        public string InternalNote { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+        public List<ContractDetailLine> Items { get; set; }
+        public List<ContractAccessoryLine> Accessories { get; set; }
+        public List<ContractConfigLine> ConfigItems { get; set; }
+        public List<ContractTechParamLine> TechParams { get; set; }
+    }
+
+    public class ContractPreviewResult { public string Html { get; set; } }
+
     public class LoginRequest { public string Username { get; set; } public string Password { get; set; } }
     public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool IsAdmin { get; set; } public string[] Permissions { get; set; } }
     public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
@@ -217,6 +340,8 @@ namespace SupplierErpApp
             "finance.view","finance.add","finance.edit","finance.delete",
             "bom.view","bom.add","bom.edit","bom.delete","bom.export","bom.import",
             "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
+            "contract.view","contract.add","contract.edit","contract.delete","contract.preview","contract.print",
+            "contract_setting.view","contract_setting.add","contract_setting.edit","contract_setting.delete",
             "settings.view","settings.account","settings.password","settings.tax_rate"
         };
         const string AdminUsername = "admin";
@@ -236,6 +361,10 @@ namespace SupplierErpApp
         static readonly string BomSequenceFile = Path.Combine(DataDir, "bom_sequence.json");
         static readonly string ModelCostFile = Path.Combine(DataDir, "model_costs.json");
         static readonly string SystemSettingsFile = Path.Combine(DataDir, "system_settings.json");
+        static readonly string ContractSettingsFile = Path.Combine(DataDir, "contract_settings.json");
+        static readonly string ContractSettingSequenceFile = Path.Combine(DataDir, "contract_setting_sequence.json");
+        static readonly string ContractsFile = Path.Combine(DataDir, "contracts.json");
+        static readonly string ContractSequenceFile = Path.Combine(DataDir, "contract_sequence.json");
         static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
@@ -270,6 +399,11 @@ namespace SupplierErpApp
                     if (!File.Exists(BomSequenceFile)) File.WriteAllText(BomSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(ModelCostFile)) File.WriteAllText(ModelCostFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(SystemSettingsFile)) File.WriteAllText(SystemSettingsFile, Json.Serialize(new SystemSettings { TaxRate = 10 }), new UTF8Encoding(false));
+                    if (!File.Exists(ContractSettingsFile)) File.WriteAllText(ContractSettingsFile, "[]", new UTF8Encoding(false));
+                    if (!File.Exists(ContractSettingSequenceFile)) File.WriteAllText(ContractSettingSequenceFile, "0", new UTF8Encoding(false));
+                    if (!File.Exists(ContractsFile)) File.WriteAllText(ContractsFile, "[]", new UTF8Encoding(false));
+                    if (!File.Exists(ContractSequenceFile)) File.WriteAllText(ContractSequenceFile, "0", new UTF8Encoding(false));
+                    EnsureDefaultContractSettings();
                     EnsureUsersFile();
                     LoadUsers();
                     StartServer();
@@ -403,6 +537,16 @@ namespace SupplierErpApp
                 if (path == "/api/model-costs" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.add")) return; AddModelCost(ctx, user); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "model_cost.edit")) return; UpdateModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "model_cost.delete")) return; DeleteModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
+                if (path == "/api/contract-settings" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "contract_setting.view")) return; WriteJson(ctx, LoadContractSettings()); return; }
+                if (path == "/api/contract-settings" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract_setting.add")) return; AddContractSetting(ctx, user); return; }
+                if (path.StartsWith("/api/contract-settings/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "contract_setting.edit")) return; UpdateContractSetting(ctx, user, path.Substring("/api/contract-settings/".Length)); return; }
+                if (path.StartsWith("/api/contract-settings/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "contract_setting.delete")) return; DeleteContractSetting(ctx, user, path.Substring("/api/contract-settings/".Length)); return; }
+                if (path == "/api/contracts" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "contract.view")) return; WriteJson(ctx, LoadContracts()); return; }
+                if (path == "/api/contracts" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.add")) return; AddContract(ctx, user); return; }
+                if (path.StartsWith("/api/contracts/") && path.EndsWith("/preview") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "contract.preview")) return; PreviewContract(ctx, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/preview".Length)); return; }
+                if (path.StartsWith("/api/contracts/") && path.EndsWith("/void") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.edit")) return; VoidContract(ctx, user, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/void".Length)); return; }
+                if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "contract.edit")) return; UpdateContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
+                if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "contract.delete")) return; DeleteContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -432,6 +576,11 @@ namespace SupplierErpApp
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Material.html"))
             {
                 if (s == null) throw new Exception("物料界面资源缺失");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+            }
+            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Contract.html"))
+            {
+                if (s == null) throw new Exception("合同界面资源缺失");
                 using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
             }
             byte[] bytes = Encoding.UTF8.GetBytes(html);
@@ -907,6 +1056,20 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "model_cost.delete", Label = "删除" },
                     new PermissionItem { Key = "model_cost.export", Label = "导出" },
                     new PermissionItem { Key = "model_cost.import", Label = "导入" }
+                }},
+                new PermissionGroup { Module = "合同管理", Items = new[] {
+                    new PermissionItem { Key = "contract.view", Label = "查看合同" },
+                    new PermissionItem { Key = "contract.add", Label = "新增合同" },
+                    new PermissionItem { Key = "contract.edit", Label = "修改合同" },
+                    new PermissionItem { Key = "contract.delete", Label = "删除合同" },
+                    new PermissionItem { Key = "contract.preview", Label = "预览合同" },
+                    new PermissionItem { Key = "contract.print", Label = "打印合同" }
+                }},
+                new PermissionGroup { Module = "合同资料", Items = new[] {
+                    new PermissionItem { Key = "contract_setting.view", Label = "查看" },
+                    new PermissionItem { Key = "contract_setting.add", Label = "新增" },
+                    new PermissionItem { Key = "contract_setting.edit", Label = "修改" },
+                    new PermissionItem { Key = "contract_setting.delete", Label = "删除" }
                 }},
                 new PermissionGroup { Module = "系统设置", Items = new[] {
                     new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
@@ -2160,6 +2323,521 @@ namespace SupplierErpApp
             var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,数量/单位,含税价,不含税价,价格类型,备注,状态,最后更新,操作人");
             foreach(var x in LoadMaterials())sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,x.QuantityUnit,x.TaxPrice.ToString("0.00"),x.NoTaxPrice.ToString("0.00"),NormalizePriceType(x.PriceType),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
             byte[] bytes=Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();ctx.Response.ContentType="text/csv; charset=utf-8";ctx.Response.AddHeader("Content-Disposition","attachment; filename=materials_"+DateTime.Now.ToString("yyyyMMdd")+".csv");ctx.Response.ContentLength64=bytes.Length;ctx.Response.OutputStream.Write(bytes,0,bytes.Length);ctx.Response.Close();
+        }
+
+        static List<ContractSetting> LoadContractSettings()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(ContractSettingsFile)) return new List<ContractSetting>();
+                return Json.Deserialize<List<ContractSetting>>(File.ReadAllText(ContractSettingsFile, Encoding.UTF8)) ?? new List<ContractSetting>();
+            }
+        }
+
+        static void SaveContractSettings(List<ContractSetting> items)
+        {
+            lock (DataLock)
+            {
+                File.WriteAllText(ContractSettingsFile, Json.Serialize(items), new UTF8Encoding(false));
+            }
+        }
+
+        static List<ContractItem> LoadContracts()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(ContractsFile)) return new List<ContractItem>();
+                return Json.Deserialize<List<ContractItem>>(File.ReadAllText(ContractsFile, Encoding.UTF8)) ?? new List<ContractItem>();
+            }
+        }
+
+        static void SaveContracts(List<ContractItem> items)
+        {
+            lock (DataLock)
+            {
+                File.WriteAllText(ContractsFile, Json.Serialize(items), new UTF8Encoding(false));
+            }
+        }
+
+        static string NowTimeString() { return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); }
+
+        static decimal RoundMoney(decimal v) { return Math.Round(v, 2, MidpointRounding.AwayFromZero); }
+
+        static string ToChineseMoney(decimal amount)
+        {
+            if (amount == 0) return "零元整";
+            string[] digits = { "零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖" };
+            string[] units = { "", "拾", "佰", "仟" };
+            string[] bigUnits = { "", "万", "亿", "兆" };
+            bool negative = amount < 0;
+            amount = Math.Abs(amount);
+            long cents = (long)Math.Round(amount * 100, MidpointRounding.AwayFromZero);
+            long intPart = cents / 100;
+            int jiao = (int)(cents % 100 / 10);
+            int fen = (int)(cents % 10);
+            var sb = new StringBuilder();
+            if (negative) sb.Append("负");
+            if (intPart == 0) sb.Append("零");
+            else
+            {
+                string intStr = intPart.ToString();
+                int len = intStr.Length;
+                for (int i = 0; i < len; i++)
+                {
+                    int digit = intStr[i] - '0';
+                    int pos = len - i - 1;
+                    int unitPos = pos % 4;
+                    int bigUnitPos = pos / 4;
+                    if (digit == 0)
+                    {
+                        if (unitPos == 0 && bigUnitPos > 0) sb.Append(bigUnits[bigUnitPos]);
+                        else if (i < len - 1 && intStr[i + 1] != '0' && sb.Length > 0 && sb[sb.Length - 1] != '零') sb.Append("零");
+                    }
+                    else
+                    {
+                        sb.Append(digits[digit]).Append(units[unitPos]);
+                        if (unitPos == 0 && bigUnitPos > 0) sb.Append(bigUnits[bigUnitPos]);
+                    }
+                }
+            }
+            sb.Append("元");
+            if (jiao == 0 && fen == 0) sb.Append("整");
+            else
+            {
+                if (jiao > 0) sb.Append(digits[jiao]).Append("角");
+                else if (fen > 0) sb.Append("零");
+                if (fen > 0) sb.Append(digits[fen]).Append("分");
+            }
+            return sb.ToString();
+        }
+
+        static void RecalcContractLine(ContractDetailLine line)
+        {
+            if (line.TaxIncluded && line.TaxRate >= 0)
+                line.NoTaxUnitPrice = Math.Round(line.UnitPrice / (1 + line.TaxRate / 100m), 4, MidpointRounding.AwayFromZero);
+            else
+                line.NoTaxUnitPrice = line.UnitPrice;
+            // 销售合同统一优先按不含税金额核算；旧合同的含税单价仍可兼容换算。
+            line.TotalAmount = RoundMoney(line.Quantity * line.NoTaxUnitPrice);
+        }
+
+        static void RecalcContractAmounts(ContractItem item)
+        {
+            item.Items = item.Items ?? new List<ContractDetailLine>();
+            decimal total = 0;
+            int seq = 1;
+            foreach (var line in item.Items)
+            {
+                line.Seq = seq++;
+                RecalcContractLine(line);
+                total += line.TotalAmount;
+            }
+            item.TotalAmount = RoundMoney(total);
+            item.TotalAmountChinese = ToChineseMoney(item.TotalAmount);
+            item.DepositAmount = RoundMoney(item.TotalAmount * item.DepositRatio / 100m);
+            item.DepositAmountChinese = ToChineseMoney(item.DepositAmount);
+            item.BalanceAmount = RoundMoney(item.TotalAmount - item.DepositAmount);
+            item.BalanceAmountChinese = ToChineseMoney(item.BalanceAmount);
+            if (item.InstallmentMonths > 0)
+            {
+                item.InstallmentAmount = RoundMoney(item.BalanceAmount / item.InstallmentMonths);
+                item.InstallmentAmountChinese = ToChineseMoney(item.InstallmentAmount);
+            }
+            else
+            {
+                item.InstallmentAmount = 0;
+                item.InstallmentAmountChinese = "";
+            }
+        }
+
+        static void ApplyTemplateSnapshot(ContractItem item)
+        {
+            var settings = LoadContractSettings();
+            ContractSetting tpl = null;
+            if (!string.IsNullOrWhiteSpace(item.TemplateId))
+                tpl = settings.FirstOrDefault(x => x.Id == item.TemplateId);
+            if (tpl == null)
+                tpl = settings.FirstOrDefault(x => x.Type == "合同范本" && x.IsDefault && x.Status == "启用");
+            if (tpl == null)
+                tpl = settings.FirstOrDefault(x => x.Type == "合同范本" && x.Status == "启用");
+            if (tpl != null)
+            {
+                item.TemplateId = tpl.Id;
+                item.TemplateCode = tpl.Code;
+                item.TemplateName = tpl.Name;
+                item.TemplateContent = tpl.Content;
+            }
+            else if (string.IsNullOrWhiteSpace(item.TemplateContent))
+            {
+                item.TemplateName = "冠誉公司自用销售合同默认范本";
+                item.TemplateContent = GetDefaultContractTemplateHtml();
+            }
+        }
+
+        static void NormalizeContract(ContractItem item)
+        {
+            item.Items = item.Items ?? new List<ContractDetailLine>();
+            item.Accessories = item.Accessories ?? new List<ContractAccessoryLine>();
+            item.ConfigItems = item.ConfigItems ?? new List<ContractConfigLine>();
+            item.TechParams = item.TechParams ?? new List<ContractTechParamLine>();
+            if (string.IsNullOrWhiteSpace(item.PartyBName)) item.PartyBName = "中山市冠誉数控设备有限公司";
+            if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "草稿";
+            int aSeq = 1;
+            foreach (var a in item.Accessories) a.Seq = aSeq++;
+            int cSeq = 1;
+            foreach (var c in item.ConfigItems) c.Seq = cSeq++;
+            int tSeq = 1;
+            foreach (var t in item.TechParams) t.Seq = tSeq++;
+            RecalcContractAmounts(item);
+            ApplyTemplateSnapshot(item);
+        }
+
+        static void ValidateContractSetting(ContractSetting item)
+        {
+            if (string.IsNullOrWhiteSpace(item.Type)) throw new Exception("资料类型不能为空");
+            if (string.IsNullOrWhiteSpace(item.Name)) throw new Exception("资料名称不能为空");
+            if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "启用";
+        }
+
+        static void AddContractSetting(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<ContractSetting>(ReadBody(ctx.Request));
+            ValidateContractSetting(item);
+            var list = LoadContractSettings();
+            string now = NowTimeString();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(ContractSettingSequenceFile, "CS", list.Select(x => x.Code));
+            item.CreatedAt = now;
+            item.UpdatedAt = now;
+            if (item.IsDefault)
+                foreach (var x in list.Where(x => x.Type == item.Type)) x.IsDefault = false;
+            list.Insert(0, item);
+            SaveContractSettings(list);
+            Audit(user, "新增合同资料", item.Code + " " + item.Name);
+            WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateContractSetting(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<ContractSetting>(ReadBody(ctx.Request));
+            ValidateContractSetting(input);
+            var list = LoadContractSettings();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同资料不存在" }, 404); return; }
+            input.Id = item.Id;
+            input.Code = item.Code;
+            input.CreatedAt = item.CreatedAt;
+            input.UpdatedAt = NowTimeString();
+            if (input.IsDefault)
+                foreach (var x in list.Where(x => x.Type == input.Type && x.Id != id)) x.IsDefault = false;
+            list[list.IndexOf(item)] = input;
+            SaveContractSettings(list);
+            Audit(user, "修改合同资料", input.Code + " " + input.Name);
+            WriteJson(ctx, input);
+        }
+
+        static void DeleteContractSetting(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadContractSettings();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同资料不存在" }, 404); return; }
+            list.Remove(item);
+            SaveContractSettings(list);
+            Audit(user, "删除合同资料", item.Code + " " + item.Name);
+            WriteJson(ctx, new { ok = true });
+        }
+
+        static void AddContract(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<ContractItem>(ReadBody(ctx.Request));
+            if (string.IsNullOrWhiteSpace(item.Name)) throw new Exception("合同名称不能为空");
+            if (string.IsNullOrWhiteSpace(item.PartyAName)) throw new Exception("甲方名称不能为空");
+            if (item.Items == null || item.Items.Count == 0) throw new Exception("请至少添加一条设备明细");
+            NormalizeContract(item);
+            var list = LoadContracts();
+            string now = NowTimeString();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(ContractSequenceFile, "HT", list.Select(x => x.Code));
+            item.CreatedAt = now;
+            item.UpdatedAt = now;
+            list.Insert(0, item);
+            SaveContracts(list);
+            Audit(user, "新增合同", item.Code + " " + item.Name);
+            WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateContract(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<ContractItem>(ReadBody(ctx.Request));
+            if (string.IsNullOrWhiteSpace(input.Name)) throw new Exception("合同名称不能为空");
+            if (string.IsNullOrWhiteSpace(input.PartyAName)) throw new Exception("甲方名称不能为空");
+            if (input.Items == null || input.Items.Count == 0) throw new Exception("请至少添加一条设备明细");
+            var list = LoadContracts();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
+            input.Id = item.Id;
+            input.Code = item.Code;
+            input.CreatedAt = item.CreatedAt;
+            input.UpdatedAt = NowTimeString();
+            if (string.IsNullOrWhiteSpace(input.TemplateContent)) input.TemplateContent = item.TemplateContent;
+            NormalizeContract(input);
+            list[list.IndexOf(item)] = input;
+            SaveContracts(list);
+            Audit(user, "修改合同", input.Code + " " + input.Name);
+            WriteJson(ctx, input);
+        }
+
+        static void DeleteContract(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadContracts();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
+            list.Remove(item);
+            SaveContracts(list);
+            Audit(user, "删除合同", item.Code + " " + item.Name);
+            WriteJson(ctx, new { ok = true });
+        }
+
+        static void VoidContract(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadContracts();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
+            item.Status = "已作废";
+            item.UpdatedAt = NowTimeString();
+            SaveContracts(list);
+            Audit(user, "作废合同", item.Code + " " + item.Name);
+            WriteJson(ctx, item);
+        }
+
+        static void PreviewContract(HttpListenerContext ctx, string id)
+        {
+            var item = LoadContracts().FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
+            // 预览始终重新按不含税口径计算，兼容历史合同中保存的含税合计。
+            RecalcContractAmounts(item);
+            string html = BuildContractPreviewHtml(item);
+            WriteJson(ctx, new ContractPreviewResult { Html = html });
+        }
+
+        static string BuildContractPreviewHtml(ContractItem item)
+        {
+            string template = item.TemplateContent;
+            if (string.IsNullOrWhiteSpace(template) || IsLegacyDefaultContractTemplate(item.TemplateName, template))
+                template = GetDefaultContractTemplateHtml();
+            var map = new Dictionary<string, string>
+            {
+                ["{{合同编号}}"] = item.Code ?? "",
+                ["{{合同名称}}"] = item.Name ?? "",
+                ["{{签订日期}}"] = item.SignDate ?? "",
+                ["{{甲方名称}}"] = item.PartyAName ?? "",
+                ["{{甲方联系人}}"] = item.PartyAContact ?? "",
+                ["{{甲方电话}}"] = item.PartyAPhone ?? "",
+                ["{{甲方地址}}"] = item.PartyAAddress ?? "",
+                ["{{乙方名称}}"] = item.PartyBName ?? "",
+                ["{{乙方联系人}}"] = item.PartyBContact ?? "",
+                ["{{乙方电话}}"] = item.PartyBPhone ?? "",
+                ["{{乙方地址}}"] = item.PartyBAddress ?? "",
+                ["{{设备明细}}"] = BuildDeviceDetailTable(item.Items),
+                ["{{随机配件}}"] = BuildAccessoryTable(item.Accessories),
+                ["{{付款方式}}"] = (item.PaymentTerms ?? "").Replace("\n", "<br>"),
+                ["{{定金金额}}"] = item.DepositAmount.ToString("0.00"),
+                ["{{定金金额大写}}"] = item.DepositAmountChinese ?? "",
+                ["{{余款金额}}"] = item.BalanceAmount.ToString("0.00"),
+                ["{{余款金额大写}}"] = item.BalanceAmountChinese ?? "",
+                ["{{分期说明}}"] = (item.InstallmentNote ?? "").Replace("\n", "<br>"),
+                ["{{交货时间}}"] = item.DeliveryTime ?? "",
+                ["{{交货地点}}"] = item.DeliveryPlace ?? "",
+                ["{{包装方式}}"] = item.PackagingMethod ?? "",
+                ["{{运输方式}}"] = item.TransportMethod ?? "",
+                ["{{质量验收条款}}"] = (item.QualityAcceptanceTerms ?? "").Replace("\n", "<br>"),
+                ["{{售后维修条款}}"] = (item.AfterSalesTerms ?? "").Replace("\n", "<br>"),
+                ["{{不保修范围}}"] = (item.ExcludedWarranty ?? "").Replace("\n", "<br>"),
+                ["{{违约责任}}"] = (item.BreachTerms ?? "").Replace("\n", "<br>"),
+                ["{{合同总金额}}"] = item.TotalAmount.ToString("0.00"),
+                ["{{合同总金额大写}}"] = item.TotalAmountChinese ?? "",
+                ["{{是否含税}}"] = item.TaxIncluded ? "含税" : "不含税",
+                ["{{税率}}"] = item.TaxRate.ToString("0.##") + "%",
+                ["{{开票类型}}"] = item.InvoiceType ?? "",
+                ["{{备注}}"] = (item.InternalNote ?? "").Replace("\n", "<br>"),
+                ["{{开票名称}}"] = item.InvoiceTitle ?? "",
+                ["{{纳税人识别号}}"] = item.TaxNumber ?? "",
+                ["{{开户名称}}"] = item.AccountHolder ?? "",
+                ["{{开户行}}"] = item.BankBranch ?? "",
+                ["{{公司账号}}"] = item.CompanyAccount ?? "",
+                ["{{私人账号}}"] = item.PersonalAccount ?? "",
+                ["{{行号}}"] = item.BankRoutingNo ?? "",
+                ["{{设备配置表}}"] = BuildConfigTable(item.ConfigItems),
+                ["{{技术参数表}}"] = BuildTechParamTable(item.TechParams),
+                ["{{甲方签字}}"] = "________________",
+                ["{{乙方签字}}"] = "________________",
+                ["{{甲方签约日期}}"] = item.SignDate ?? "",
+                ["{{乙方签约日期}}"] = item.SignDate ?? ""
+            };
+            var html = template;
+            foreach (var kv in map) html = html.Replace(kv.Key, kv.Value);
+            if (!html.Contains("class=\"contract-document\"") && !html.Contains("class='contract-document'"))
+                html = "<article class=\"contract-document\">" + html + "</article>";
+            return html;
+        }
+
+        static string BuildDeviceDetailTable(List<ContractDetailLine> items)
+        {
+            if (items == null || items.Count == 0) return "<p>无</p>";
+            var sb = new StringBuilder();
+            sb.Append("<table class=\"device-detail-table\"><thead><tr><th>设备名称</th><th>型号规格</th><th>数量/单位</th><th>单价/不含税</th><th>合计金额/不含税</th><th>备注</th></tr></thead><tbody>");
+            foreach (var x in items)
+                sb.Append("<tr><td>").Append(HtmlEncode(x.DeviceName)).Append("</td><td>").Append(HtmlEncode(x.ModelSpec)).Append("</td><td>").Append(x.Quantity.ToString("0.##")).Append("/").Append(HtmlEncode(x.Unit)).Append("</td><td>").Append(x.NoTaxUnitPrice.ToString("0.00")).Append("</td><td>").Append(x.TotalAmount.ToString("0.00")).Append("</td><td>").Append(HtmlEncode(x.Note)).Append("</td></tr>");
+            sb.Append("</tbody></table>");
+            return sb.ToString();
+        }
+
+        static bool IsLegacyDefaultContractTemplate(string templateName, string content)
+        {
+            if (!string.Equals(templateName, "冠誉设备购销合同默认范本", StringComparison.OrdinalIgnoreCase)) return false;
+            return string.IsNullOrWhiteSpace(content) || content.Contains("签订日期：{{签订日期}}。甲乙双方经友好协商");
+        }
+
+        static string BuildAccessoryTable(List<ContractAccessoryLine> items)
+        {
+            if (items == null || items.Count == 0) return "<p>无</p>";
+            var sb = new StringBuilder();
+            sb.Append("<table><thead><tr><th>序号</th><th>配件名称</th><th>规格型号</th><th>数量</th><th>单位</th><th>备注</th></tr></thead><tbody>");
+            foreach (var x in items)
+                sb.Append("<tr><td>").Append(x.Seq).Append("</td><td>").Append(HtmlEncode(x.Name)).Append("</td><td>").Append(HtmlEncode(x.Spec)).Append("</td><td>").Append(HtmlEncode(x.Quantity)).Append("</td><td>").Append(HtmlEncode(x.Unit)).Append("</td><td>").Append(HtmlEncode(x.Note)).Append("</td></tr>");
+            sb.Append("</tbody></table>");
+            return sb.ToString();
+        }
+
+        static string BuildConfigTable(List<ContractConfigLine> items)
+        {
+            if (items == null || items.Count == 0) return "<p>无</p>";
+            var sb = new StringBuilder();
+            sb.Append("<table><thead><tr><th>序号</th><th>分类</th><th>项目</th><th>产品/品牌</th><th>规格型号</th><th>数量</th><th>单位</th><th>备注</th></tr></thead><tbody>");
+            foreach (var x in items)
+                sb.Append("<tr><td>").Append(x.Seq).Append("</td><td>").Append(HtmlEncode(x.Category)).Append("</td><td>").Append(HtmlEncode(x.Item)).Append("</td><td>").Append(HtmlEncode(x.Brand)).Append("</td><td>").Append(HtmlEncode(x.Spec)).Append("</td><td>").Append(HtmlEncode(x.Quantity)).Append("</td><td>").Append(HtmlEncode(x.Unit)).Append("</td><td>").Append(HtmlEncode(x.Note)).Append("</td></tr>");
+            sb.Append("</tbody></table>");
+            return sb.ToString();
+        }
+
+        static string BuildTechParamTable(List<ContractTechParamLine> items)
+        {
+            if (items == null || items.Count == 0) return "<p>无</p>";
+            var sb = new StringBuilder();
+            sb.Append("<table><thead><tr><th>序号</th><th>分类</th><th>名称</th><th>规格/型号/数值</th><th>备注</th></tr></thead><tbody>");
+            foreach (var x in items)
+                sb.Append("<tr><td>").Append(x.Seq).Append("</td><td>").Append(HtmlEncode(x.Category)).Append("</td><td>").Append(HtmlEncode(x.Name)).Append("</td><td>").Append(HtmlEncode(x.Value)).Append("</td><td>").Append(HtmlEncode(x.Note)).Append("</td></tr>");
+            sb.Append("</tbody></table>");
+            return sb.ToString();
+        }
+
+        static string HtmlEncode(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+        }
+
+        static void EnsureDefaultContractSettings()
+        {
+            var list = LoadContractSettings();
+            var legacyDefault = list.FirstOrDefault(x => x.Type == "合同范本" && x.Name == "冠誉设备购销合同默认范本");
+            if (legacyDefault != null && IsLegacyDefaultContractTemplate(legacyDefault.Name, legacyDefault.Content))
+            {
+                legacyDefault.Name = "冠誉公司自用销售合同默认范本";
+                legacyDefault.Content = GetDefaultContractTemplateHtml();
+                legacyDefault.Note = "系统预置公司自用销售合同 HTML 范本（不含税）";
+                legacyDefault.UpdatedAt = NowTimeString();
+                SaveContractSettings(list);
+                return;
+            }
+            if (list.Any(x => x.Type == "合同范本")) return;
+            string now = NowTimeString();
+            list.Add(new ContractSetting
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Code = "CS01",
+                Type = "合同范本",
+                Name = "冠誉公司自用销售合同默认范本",
+                Content = GetDefaultContractTemplateHtml(),
+                IsDefault = true,
+                Status = "启用",
+                Sort = 1,
+                Note = "系统预置公司自用销售合同 HTML 范本（不含税）",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            list.Add(new ContractSetting
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Code = "CS02",
+                Type = "付款方式",
+                Name = "标准付款方式（30%定金+5期余款）",
+                Content = "1、定金：合同签订后甲方支付合同总金额定金30%。\n2、余款：合同余款分五个月等额支付。\n3、所有权保留：甲方付清全部货款前，设备所有权归乙方所有，甲方仅享有使用权。",
+                IsDefault = true,
+                Status = "启用",
+                Sort = 1,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            list.Add(new ContractSetting
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Code = "CS03",
+                Type = "公司资料",
+                Name = "冠誉公司资料",
+                Content = "中山市冠誉数控设备有限公司\n地址：广东省中山市\n联系人：王浪\n电话：18988541298",
+                IsDefault = true,
+                Status = "启用",
+                Sort = 1,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            if (!File.Exists(ContractSettingSequenceFile) || File.ReadAllText(ContractSettingSequenceFile).Trim() == "0")
+                File.WriteAllText(ContractSettingSequenceFile, "3", new UTF8Encoding(false));
+            SaveContractSettings(list);
+        }
+
+        static string GetDefaultContractTemplateHtml()
+        {
+            return @"<article class=""contract-document"">
+<div class=""ct-header"">专业设计制造销售：数控车床、车铣复合车床、双主轴数控车床、自动化方案定制-王浪 18988541298</div>
+<p class=""ct-contract-no"">合同编号：{{合同编号}}</p>
+<h2>中山市冠誉数控设备有限公司销售合同</h2>
+<div class=""ct-parties""><p>甲方（需方）：{{甲方名称}}</p><p>乙方（供方）：中山市冠誉数控设备有限公司</p></div>
+<p class=""ct-intro"">甲乙双方本着平等互利、诚实信用的原则，就甲方向乙方购买设备事宜，经友好协商，达成如下协议</p>
+<h3>一、合同主体与签订背景</h3>
+<p>甲乙双方经友好协商，就设备购销事宜达成一致，旨在明确双方的权利、义务和责任，确保交易的顺利进行，特签订以下合同。</p>
+<h3>二、设备名称、规格、数量、单价</h3>
+{{设备明细}}
+<div class=""ct-amount-lines""><p>小写（不含税）：¥{{合同总金额}}元</p><p>大写（不含税）：{{合同总金额大写}}</p></div>
+<h3>三、随机配件</h3>
+{{随机配件}}
+<h3>四、付款方式与期限</h3>
+<p>{{付款方式}}</p>
+<p>定金：{{定金金额}} 元（大写：{{定金金额大写}}）；余款：{{余款金额}} 元（大写：{{余款金额大写}}）。{{分期说明}}</p>
+<h3>五、交货时间、地点、包装及运输</h3>
+<p>交货时间：{{交货时间}}；交货地点：{{交货地点}}；包装方式：{{包装方式}}；运输方式：{{运输方式}}。</p>
+<h3>六、质量标准与检验验收</h3>
+<p>{{质量验收条款}}</p>
+<h3>七、售后维修</h3>
+<p>{{售后维修条款}}</p>
+<h3>八、不保修范围</h3>
+<p>{{不保修范围}}</p>
+<h3>九、违约责任</h3>
+<p>{{违约责任}}</p>
+<h3>十、合同生效</h3>
+<p>本合同一式贰份，甲乙双方各执壹份，自双方签字盖章之日起生效。</p>
+<table style=""width:100%;margin-top:30px""><tr><td>甲方签字/盖章：{{甲方签字}}<br>日期：{{甲方签约日期}}</td><td>乙方签字/盖章：{{乙方签字}}<br>日期：{{乙方签约日期}}</td></tr></table>
+<h3>十一、开票信息及收款账户</h3>
+<p>开票名称：{{开票名称}} &nbsp; 纳税人识别号：{{纳税人识别号}}<br>
+开户名称：{{开户名称}} &nbsp; 开户行：{{开户行}}<br>
+公司账号：{{公司账号}} &nbsp; 私人账号：{{私人账号}} &nbsp; 行号：{{行号}}</p>
+<h3>十二、设备配置表</h3>
+{{设备配置表}}
+<h3>十三、技术参数表</h3>
+{{技术参数表}}
+<p style=""margin-top:20px"">备注：{{备注}}</p>
+</article>";
         }
 
         static string ManualBackup()
