@@ -159,6 +159,7 @@ namespace SupplierErpApp
         public decimal Amount { get; set; }
         public string PriceSourceTime { get; set; }
         public string Note { get; set; }
+        public bool PriceMissing { get; set; }
     }
 
     public class BomItem
@@ -175,6 +176,8 @@ namespace SupplierErpApp
         public string CreatedAt { get; set; }
         public string UpdatedAt { get; set; }
         public List<BomDetail> Items { get; set; }
+        public bool PriceMissing { get; set; }
+        public string MissingPriceMaterials { get; set; }
     }
 
     public class ModelCost
@@ -191,6 +194,8 @@ namespace SupplierErpApp
         public string Note { get; set; }
         public string CreatedAt { get; set; }
         public string UpdatedAt { get; set; }
+        public bool PriceMissing { get; set; }
+        public string MissingPriceMaterials { get; set; }
     }
 
     public class ContractSetting
@@ -337,7 +342,7 @@ namespace SupplierErpApp
             "supplier.view","supplier.add","supplier.edit","supplier.delete","supplier.batch_delete",
             "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
             "material.view","material.add","material.edit","material.delete","material.batch_delete",
-            "finance.view","finance.add","finance.edit","finance.delete",
+            "finance.view","finance.add","finance.edit","finance.delete","finance.import",
             "bom.view","bom.add","bom.edit","bom.delete","bom.export","bom.import",
             "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
             "contract.view","contract.add","contract.edit","contract.delete","contract.preview","contract.print",
@@ -515,6 +520,8 @@ namespace SupplierErpApp
                 if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; SaveOpeningBalances(ctx, user); return; }
                 if (path == "/api/finance" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.view")) return; WriteJson(ctx, LoadFinance()); return; }
                 if (path == "/api/finance" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finance.add")) return; AddFinance(ctx, user); return; }
+                if (path == "/api/finance/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finance.import")) return; ImportFinance(ctx, user); return; }
+                if (path == "/api/finance/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.import")) return; ExportFinanceTemplateCsv(ctx); return; }
                 if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; UpdateFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
                 if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finance.delete")) return; DeleteFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
                 if (path == "/api/export") { if (!RequirePermission(ctx, user, "supplier.view")) return; ExportCsv(ctx); return; }
@@ -526,14 +533,14 @@ namespace SupplierErpApp
                 if (path == "/api/bom/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.export")) return; ExportBomCsv(ctx); return; }
                 if (path == "/api/bom/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.import")) return; ExportBomTemplateCsv(ctx); return; }
                 if (path == "/api/bom/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.import")) return; ImportBomCsv(ctx, user); return; }
-                if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBom()); return; }
+                if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBomWithCurrentPrices()); return; }
                 if (path == "/api/bom" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.add")) return; AddBom(ctx, user); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "bom.edit")) return; UpdateBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "bom.delete")) return; DeleteBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
                 if (path == "/api/model-costs/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.export")) return; ExportModelCostsCsv(ctx); return; }
                 if (path == "/api/model-costs/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.import")) return; ExportModelCostTemplateCsv(ctx); return; }
                 if (path == "/api/model-costs/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.import")) return; ImportModelCostsCsv(ctx, user); return; }
-                if (path == "/api/model-costs" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.view")) return; WriteJson(ctx, LoadModelCosts()); return; }
+                if (path == "/api/model-costs" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "model_cost.view")) return; WriteJson(ctx, LoadModelCostsWithCurrentPrices()); return; }
                 if (path == "/api/model-costs" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "model_cost.add")) return; AddModelCost(ctx, user); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "model_cost.edit")) return; UpdateModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
                 if (path.StartsWith("/api/model-costs/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "model_cost.delete")) return; DeleteModelCost(ctx, user, path.Substring("/api/model-costs/".Length)); return; }
@@ -708,6 +715,7 @@ namespace SupplierErpApp
         {
             if (user == null) return false;
             if (user.IsAdmin) return true;
+            if (permission == "finance.import" && user.Permissions != null && user.Permissions.Contains("finance.add")) return true;
             return user.Permissions != null && user.Permissions.Contains(permission);
         }
 
@@ -857,6 +865,39 @@ namespace SupplierErpApp
             }
         }
 
+        static void ApplyCurrentMaterialPrices(BomItem item)
+        {
+            if (item == null) return;
+            var materials = LoadMaterials();
+            decimal taxRate = LoadSystemSettings().TaxRate, total = 0;
+            var missing = new List<string>();
+            foreach (var line in item.Items ?? new List<BomDetail>())
+            {
+                var material = materials.FirstOrDefault(x => (!string.IsNullOrWhiteSpace(line.MaterialId) && x.Id == line.MaterialId) || (!string.IsNullOrWhiteSpace(line.MaterialCode) && x.Code == line.MaterialCode));
+                if (material != null)
+                {
+                    line.MaterialId = material.Id; line.MaterialCode = material.Code; line.MaterialName = material.NameSpec;
+                    line.Unit = string.IsNullOrWhiteSpace(material.QuantityUnit) ? line.Unit : material.QuantityUnit;
+                    line.PriceType = NormalizePriceType(material.PriceType); line.OriginalPrice = GetMaterialOriginalPrice(material);
+                    line.TaxRate = taxRate; line.PriceSourceTime = material.UpdatedAt;
+                }
+                line.PriceMissing = material == null || line.OriginalPrice <= 0;
+                if (line.PriceMissing) missing.Add(string.IsNullOrWhiteSpace(line.MaterialName) ? (line.MaterialCode ?? "未命名物料") : line.MaterialName);
+                line.NoTaxPrice = CalcNoTaxUnitPrice(line.OriginalPrice, line.PriceType, line.TaxRate);
+                line.Amount = CalcLineAmount(line.Quantity, line.NoTaxPrice); total += line.Amount;
+            }
+            item.TotalMaterialCost = Math.Round(total, 2);
+            item.PriceMissing = missing.Count > 0;
+            item.MissingPriceMaterials = string.Join("、", missing.Distinct());
+        }
+
+        static List<BomItem> LoadBomWithCurrentPrices()
+        {
+            var list = LoadBom();
+            foreach (var item in list) ApplyCurrentMaterialPrices(item);
+            return list;
+        }
+
         static void SaveBom(List<BomItem> items)
         {
             lock (DataLock)
@@ -877,8 +918,7 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
             ValidateBom(item);
-            var taxRate = LoadSystemSettings().TaxRate;
-            RecalcBomLines(item, taxRate);
+            ApplyCurrentMaterialPrices(item);
             var list = LoadBom();
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             item.Id = Guid.NewGuid().ToString("N");
@@ -898,12 +938,7 @@ namespace SupplierErpApp
             var list = LoadBom();
             var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
-            var taxRate = LoadSystemSettings().TaxRate;
-            foreach (var line in input.Items)
-            {
-                if (line.TaxRate <= 0) line.TaxRate = taxRate;
-            }
-            RecalcBomLines(input, taxRate);
+            ApplyCurrentMaterialPrices(input);
             input.Id = item.Id;
             input.Code = item.Code;
             input.CreatedAt = item.CreatedAt;
@@ -935,6 +970,20 @@ namespace SupplierErpApp
             }
         }
 
+        static List<ModelCost> LoadModelCostsWithCurrentPrices()
+        {
+            var list = LoadModelCosts();
+            var boms = LoadBomWithCurrentPrices();
+            foreach (var item in list)
+            {
+                var bom = boms.FirstOrDefault(x => x.Id == item.BomId);
+                if (bom == null) continue;
+                item.MaterialCost = bom.TotalMaterialCost; item.TotalCost = item.MaterialCost;
+                item.PriceMissing = bom.PriceMissing; item.MissingPriceMaterials = bom.MissingPriceMaterials;
+            }
+            return list;
+        }
+
         static void SaveModelCosts(List<ModelCost> items)
         {
             lock (DataLock)
@@ -955,6 +1004,7 @@ namespace SupplierErpApp
         {
             var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
             if (bom == null) throw new Exception("所选 BOM 不存在");
+            ApplyCurrentMaterialPrices(bom);
             item.ModelCode = bom.ModelCode;
             item.ModelName = bom.ModelName;
             item.ProductName = bom.ProductName;
@@ -962,6 +1012,8 @@ namespace SupplierErpApp
             item.BomCode = bom.Code;
             item.MaterialCost = bom.TotalMaterialCost;
             item.TotalCost = item.MaterialCost;
+            item.PriceMissing = bom.PriceMissing;
+            item.MissingPriceMaterials = bom.MissingPriceMaterials;
         }
 
         static void AddModelCost(HttpListenerContext ctx, UserSession user)
@@ -1039,7 +1091,8 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "finance.view", Label = "查看" },
                     new PermissionItem { Key = "finance.add", Label = "新增" },
                     new PermissionItem { Key = "finance.edit", Label = "修改" },
-                    new PermissionItem { Key = "finance.delete", Label = "删除" }
+                    new PermissionItem { Key = "finance.delete", Label = "删除" },
+                    new PermissionItem { Key = "finance.import", Label = "导入" }
                 }},
                 new PermissionGroup { Module = "BOM表", Items = new[] {
                     new PermissionItem { Key = "bom.view", Label = "查看" },
@@ -1477,7 +1530,9 @@ namespace SupplierErpApp
 
         static void DeleteMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list=LoadMaterials();var item=list.FirstOrDefault(x=>x.Id==id);if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}list.Remove(item);SaveMaterials(list);Audit(user,"删除物料",item.Code+" "+item.NameSpec);WriteJson(ctx,new{ok=true});
+            var list=LoadMaterials();var item=list.FirstOrDefault(x=>x.Id==id);if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}
+            if(LoadBom().Any(b=>(b.Items??new List<BomDetail>()).Any(x=>x.MaterialId==item.Id||(!string.IsNullOrWhiteSpace(item.Code)&&x.MaterialCode==item.Code)))){WriteJson(ctx,new{error="该物料已被 BOM 使用，不能删除。如需删除，请先从 BOM 表中移除该物料。"},409);return;}
+            list.Remove(item);SaveMaterials(list);Audit(user,"删除物料",item.Code+" "+item.NameSpec);WriteJson(ctx,new{ok=true});
         }
 
         static void BatchDeleteMaterials(HttpListenerContext ctx, UserSession user)
@@ -1489,6 +1544,9 @@ namespace SupplierErpApp
             var list = LoadMaterials();
             var removed = list.Where(x => ids.Contains(x.Id)).ToList();
             if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的物料" }, 404); return; }
+            var boms = LoadBom();
+            if (removed.Any(item => boms.Any(b => (b.Items ?? new List<BomDetail>()).Any(x => x.MaterialId == item.Id || (!string.IsNullOrWhiteSpace(item.Code) && x.MaterialCode == item.Code)))))
+            { WriteJson(ctx, new { error = "该物料已被 BOM 使用，不能删除。如需删除，请先从 BOM 表中移除该物料。" }, 409); return; }
             foreach (var item in removed) list.Remove(item);
             SaveMaterials(list);
             Audit(user, "批量删除物料", "共" + removed.Count + "条");
@@ -1616,6 +1674,79 @@ namespace SupplierErpApp
             list.Remove(item); SaveFinance(list); Audit(user, "删除收支", item.Date + " " + item.AccountType + " " + item.Purpose); WriteJson(ctx, new { ok = true });
         }
 
+        static void ExportFinanceTemplateCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("收支类型,日期,分类,金额,对方单位/客户/供应商,摘要/备注,经办人,付款方式/收款方式,账户类型");
+            sb.AppendLine("收入,2026-01-01,整机销售,10000,示例客户,示例摘要,张三,公司公户（现金）,公户");
+            WriteCsvDownload(ctx, "财务收支导入模板.csv", sb.ToString());
+        }
+
+        static bool TryParseFinanceDate(string value, out DateTime date)
+        {
+            value = (value ?? "").Trim();
+            if (DateTime.TryParse(value, out date)) return true;
+            double serial;
+            if (double.TryParse(value, out serial) && serial > 0 && serial < 2958466)
+            {
+                try { date = DateTime.FromOADate(serial); return true; } catch { }
+            }
+            date = default(DateTime);
+            return false;
+        }
+
+        static void ImportFinance(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<ImportRequest>(ReadBody(ctx.Request));
+            if (req == null || string.IsNullOrWhiteSpace(req.Data)) { WriteJson(ctx, new { error = "请选择导入文件" }, 400); return; }
+            List<Dictionary<string, string>> rows;
+            if ((req.FileName ?? "").EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                rows = ReadImportRowsFromRequest(req);
+            else if ((req.FileName ?? "").EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                rows = ReadCsvImportRowsFromRequest(new CsvImportRequest { FileName = req.FileName, Data = req.Data });
+            else { WriteJson(ctx, new { error = "仅支持 .csv 或 .xlsx 格式文件" }, 400); return; }
+
+            var list = LoadFinance();
+            var errors = new List<string>();
+            int imported = 0, rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    string type = Cell(row, "收支类型", "类型");
+                    string dateText = Cell(row, "日期", "收支日期");
+                    string category = Cell(row, "分类", "收付款用途", "用途");
+                    string amountText = Cell(row, "金额", "收支金额");
+                    if (type != "收入" && type != "支出") throw new Exception("收支类型必须是收入或支出");
+                    DateTime date;
+                    if (string.IsNullOrWhiteSpace(dateText)) throw new Exception("日期不能为空");
+                    if (!TryParseFinanceDate(dateText, out date)) throw new Exception("日期格式不正确");
+                    if (string.IsNullOrWhiteSpace(category)) throw new Exception("分类不能为空");
+                    decimal amount;
+                    if (string.IsNullOrWhiteSpace(amountText)) throw new Exception("金额不能为空");
+                    if (!TryParseDecimalField(amountText.Replace("¥", "").Replace("￥", "").Replace(",", ""), out amount)) throw new Exception("金额必须为数字");
+                    if (amount <= 0) throw new Exception("金额必须大于 0");
+                    string account = Cell(row, "账户类型", "账户");
+                    if (string.IsNullOrWhiteSpace(account)) account = "公户";
+                    var item = new FinanceTransaction {
+                        Id = Guid.NewGuid().ToString("N"), Date = date.ToString("yyyy-MM-dd"), AccountType = account,
+                        Receipt = type == "收入" ? amount : 0, Payment = type == "支出" ? amount : 0,
+                        Purpose = category, Counterparty = Cell(row, "对方单位/客户/供应商", "对方单位", "客户", "供应商", "对方账户主体"),
+                        Note = Cell(row, "摘要/备注", "摘要", "备注"), PaymentMethod = Cell(row, "付款方式/收款方式", "付款方式", "收款方式", "收付款方式"),
+                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = Cell(row, "经办人", "操作人")
+                    };
+                    if (string.IsNullOrWhiteSpace(item.UpdatedBy)) item.UpdatedBy = user.DisplayName;
+                    ValidateFinance(item);
+                    list.Add(item); imported++;
+                }
+                catch (Exception ex) { errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported > 0) SaveFinance(list);
+            Audit(user, "导入财务收支", "成功" + imported + "条，失败" + errors.Count + "条");
+            WriteJson(ctx, new { imported = imported, failed = errors.Count, errors = errors.ToArray() });
+        }
+
         static void ValidateFinance(FinanceTransaction item)
         {
             if (item == null) throw new Exception("收支记录不能为空");
@@ -1655,7 +1786,11 @@ namespace SupplierErpApp
 
         static List<Dictionary<string,string>> ReadImportRows(HttpListenerContext ctx)
         {
-            var req=Json.Deserialize<ImportRequest>(ReadBody(ctx.Request));
+            return ReadImportRowsFromRequest(Json.Deserialize<ImportRequest>(ReadBody(ctx.Request)));
+        }
+
+        static List<Dictionary<string,string>> ReadImportRowsFromRequest(ImportRequest req)
+        {
             if(req==null||string.IsNullOrWhiteSpace(req.Data))throw new Exception("请选择要导入的 Excel 文件");
             if(!string.IsNullOrEmpty(req.FileName)&&!req.FileName.EndsWith(".xlsx",StringComparison.OrdinalIgnoreCase))throw new Exception("仅支持 .xlsx 格式文件");
             string encoded=req.Data;int comma=encoded.IndexOf(',');if(comma>=0)encoded=encoded.Substring(comma+1);
