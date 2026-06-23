@@ -106,6 +106,18 @@ Ver2.8 已实现销售、采购、生产领用/成品入库、库存汇总、应
 6. 删除操作应弹出确认；弹窗点击遮罩不应关闭
 7. 验证 Ver2.7 功能未受影响：删除链路、机型成本启停、BOM 弹窗、字典选项
 
+### 一键清空测试数据（仅 admin）
+
+路径：设置 → 系统设置 → **数据维护**
+
+- 用于测试阶段快速清空业务测试数据，避免逐条删除
+- **默认二次密码**：`88888888`（与 ERP 登录密码无关，保存在 `system_settings.json` 的 `ClearDataPassword` 字段）
+- 清空前自动备份到 `backups/backup_before_clear_yyyyMMdd_HHmmss/`
+- 双重确认：第一层 confirm 提示 → 第二层输入二次密码 + 确认文字「确认清空」
+- **会清空**：客户、供应商、物料、BOM、机型成本、合同、财务收支/期初、Ver2.8 全部业务 JSON
+- **不会清空**：users.json、system_settings.json（含二次密码）、dictionary_options.json、contract_settings.json（合同模板/基础资料）
+- 子账号无入口；调用 `POST /api/admin/clear-test-data` 非 admin 返回 403
+
 ### 预留联动（本版未实现）
 
 - 销售订单 ↔ 销售出库自动下推

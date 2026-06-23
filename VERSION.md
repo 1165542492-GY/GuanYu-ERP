@@ -55,6 +55,15 @@
 3. 删除确认与弹窗遮罩行为
 4. Ver2.7 删除链路、机型成本启停、BOM 弹窗、字典选项回归
 
+**一键清空测试数据（仅 admin）**
+
+- 入口：系统设置 → 数据维护 → 一键清空测试数据
+- 默认二次密码：`88888888`（存于 `system_settings.json` → `ClearDataPassword`）
+- 清空前自动备份：`backups/backup_before_clear_yyyyMMdd_HHmmss/`
+- 接口：`POST /api/admin/clear-test-data`，请求体 `{ password, confirmText: "确认清空" }`
+- 保留：users.json、system_settings.json、dictionary_options.json、contract_settings.json
+- 密码错误返回：「二次密码错误，禁止清空数据」
+
 ## Ver2.7
 
 当前代码版本：冠誉ERP管理系统 Ver2.7。

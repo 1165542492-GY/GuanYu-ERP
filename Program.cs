@@ -130,9 +130,11 @@ namespace SupplierErpApp
     public class SystemSettings
     {
         public decimal TaxRate { get; set; }
+        public string ClearDataPassword { get; set; }
     }
 
     public class TaxRateRequest { public decimal TaxRate { get; set; } }
+    public class ClearTestDataRequest { public string Password { get; set; } public string ConfirmText { get; set; } }
 
     public class BomDetail
     {
@@ -510,6 +512,7 @@ namespace SupplierErpApp
             "payable.view","payable.add","payable.edit","payable.delete"
         };
         const string AdminUsername = "admin";
+        const string DefaultClearDataPassword = "88888888";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
 
         static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "智造ERP供应商管理");
@@ -580,7 +583,8 @@ namespace SupplierErpApp
                     if (!File.Exists(BomFile)) File.WriteAllText(BomFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(BomSequenceFile)) File.WriteAllText(BomSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(ModelCostFile)) File.WriteAllText(ModelCostFile, "[]", new UTF8Encoding(false));
-                    if (!File.Exists(SystemSettingsFile)) File.WriteAllText(SystemSettingsFile, Json.Serialize(new SystemSettings { TaxRate = 10 }), new UTF8Encoding(false));
+                    if (!File.Exists(SystemSettingsFile)) File.WriteAllText(SystemSettingsFile, Json.Serialize(new SystemSettings { TaxRate = 10, ClearDataPassword = DefaultClearDataPassword }), new UTF8Encoding(false));
+                    EnsureSystemSettingsDefaults();
                     if (!File.Exists(ContractSettingsFile)) File.WriteAllText(ContractSettingsFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(ContractSettingSequenceFile)) File.WriteAllText(ContractSettingSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(ContractsFile)) File.WriteAllText(ContractsFile, "[]", new UTF8Encoding(false));
@@ -771,6 +775,7 @@ namespace SupplierErpApp
                 if (path == "/api/payables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "payable.add")) return; AddPayable(ctx, user); return; }
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "payable.edit")) return; UpdatePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
+                if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -1089,11 +1094,30 @@ namespace SupplierErpApp
         {
             lock (DataLock)
             {
-                if (!File.Exists(SystemSettingsFile)) return new SystemSettings { TaxRate = 10 };
+                if (!File.Exists(SystemSettingsFile)) return new SystemSettings { TaxRate = 10, ClearDataPassword = DefaultClearDataPassword };
                 string text = File.ReadAllText(SystemSettingsFile, Encoding.UTF8);
                 var settings = Json.Deserialize<SystemSettings>(text) ?? new SystemSettings();
                 if (settings.TaxRate < 0) settings.TaxRate = 0;
+                if (string.IsNullOrWhiteSpace(settings.ClearDataPassword)) settings.ClearDataPassword = DefaultClearDataPassword;
                 return settings;
+            }
+        }
+
+        static void EnsureSystemSettingsDefaults()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(SystemSettingsFile))
+                {
+                    SaveSystemSettingsFile(new SystemSettings { TaxRate = 10, ClearDataPassword = DefaultClearDataPassword });
+                    return;
+                }
+                var settings = Json.Deserialize<SystemSettings>(File.ReadAllText(SystemSettingsFile, Encoding.UTF8)) ?? new SystemSettings();
+                if (string.IsNullOrWhiteSpace(settings.ClearDataPassword))
+                {
+                    settings.ClearDataPassword = DefaultClearDataPassword;
+                    SaveSystemSettingsFile(settings);
+                }
             }
         }
 
@@ -4007,6 +4031,102 @@ namespace SupplierErpApp
                 TotalQuantity = RoundMoney(items.Sum(x => x.Quantity)),
                 Items = items.ToArray()
             };
+        }
+
+        struct ClearDataFileSpec
+        {
+            public string Path;
+            public string FileName;
+            public string EmptyContent;
+        }
+
+        static ClearDataFileSpec[] GetClearTestDataFileSpecs()
+        {
+            return new[]
+            {
+                new ClearDataFileSpec { Path = DataFile, FileName = "suppliers.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = SupplierSequenceFile, FileName = "supplier_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = CustomerFile, FileName = "customers.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = CustomerSequenceFile, FileName = "customer_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = MaterialFile, FileName = "materials.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = MaterialSequenceFile, FileName = "material_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = FinanceFile, FileName = "finance.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = OpeningFile, FileName = "finance_opening.json", EmptyContent = Json.Serialize(new OpeningBalances()) },
+                new ClearDataFileSpec { Path = BomFile, FileName = "bom.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = BomSequenceFile, FileName = "bom_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = ModelCostFile, FileName = "model_costs.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = ContractsFile, FileName = "contracts.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = ContractSequenceFile, FileName = "contract_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = SalesOrdersFile, FileName = "sales_orders.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = SalesOrderSequenceFile, FileName = "sales_order_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = SalesOutboundsFile, FileName = "sales_outbounds.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = SalesOutboundSequenceFile, FileName = "sales_outbound_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = PurchaseOrdersFile, FileName = "purchase_orders.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = PurchaseOrderSequenceFile, FileName = "purchase_order_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = PurchaseInboundsFile, FileName = "purchase_inbounds.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = PurchaseInboundSequenceFile, FileName = "purchase_inbound_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = ProductionPicksFile, FileName = "production_picks.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = FinishedInboundSequenceFile, FileName = "finished_inbound_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = ReceivablesFile, FileName = "receivables.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = ReceivableSequenceFile, FileName = "receivable_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = PayablesFile, FileName = "payables.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = PayableSequenceFile, FileName = "payable_sequence.json", EmptyContent = "0" }
+            };
+        }
+
+        static string BackupBeforeClearTestData(ClearDataFileSpec[] specs)
+        {
+            string folderName = "backup_before_clear_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string folder = Path.Combine(BackupDir, folderName);
+            Directory.CreateDirectory(folder);
+            foreach (var spec in specs)
+            {
+                if (!File.Exists(spec.Path)) continue;
+                File.Copy(spec.Path, Path.Combine(folder, spec.FileName), true);
+            }
+            return folder;
+        }
+
+        static void ClearTestData(HttpListenerContext ctx, UserSession user)
+        {
+            if (!IsAdminUser(user)) { WriteJson(ctx, new { error = "仅管理员可执行此操作" }, 403); return; }
+            var req = Json.Deserialize<ClearTestDataRequest>(ReadBody(ctx.Request));
+            string password = (req == null ? null : req.Password) ?? "";
+            string confirmText = (req == null ? null : req.ConfirmText) ?? "";
+            if (!string.Equals(confirmText.Trim(), "确认清空", StringComparison.Ordinal)) { WriteJson(ctx, new { error = "确认文字不正确，请准确输入“确认清空”" }, 400); return; }
+            var settings = LoadSystemSettings();
+            if (!string.Equals(password, settings.ClearDataPassword ?? DefaultClearDataPassword, StringComparison.Ordinal))
+            {
+                WriteJson(ctx, new { error = "二次密码错误，禁止清空数据" }, 403);
+                return;
+            }
+            var specs = GetClearTestDataFileSpecs();
+            string backupFolder;
+            try
+            {
+                lock (DataLock)
+                {
+                    Directory.CreateDirectory(BackupDir);
+                    backupFolder = BackupBeforeClearTestData(specs);
+                    foreach (var spec in specs)
+                        File.WriteAllText(spec.Path, spec.EmptyContent, new UTF8Encoding(false));
+                }
+                EnsureBusinessDataFiles();
+                Audit(user, "清空测试数据", "备份目录：" + Path.GetFileName(backupFolder));
+                WriteJson(ctx, new
+                {
+                    message = "测试数据已清空",
+                    backupFolder = Path.GetFileName(backupFolder),
+                    backupPath = backupFolder,
+                    clearedFiles = specs.Select(x => x.FileName).ToArray()
+                });
+            }
+            catch (Exception ex)
+            {
+                WriteJson(ctx, new { error = "备份或清空失败：" + ex.Message }, 500);
+            }
         }
 
         static string ManualBackup()
