@@ -192,10 +192,24 @@ namespace SupplierErpApp
         public decimal MaterialCost { get; set; }
         public decimal TotalCost { get; set; }
         public string Note { get; set; }
+        public string Status { get; set; }
         public string CreatedAt { get; set; }
         public string UpdatedAt { get; set; }
         public bool PriceMissing { get; set; }
         public string MissingPriceMaterials { get; set; }
+    }
+
+    public class DictionaryOption
+    {
+        public string Id { get; set; }
+        public string Category { get; set; }
+        public string Name { get; set; }
+        public string Value { get; set; }
+        public string Status { get; set; }
+        public int SortOrder { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
     }
 
     public class ContractSetting
@@ -370,6 +384,7 @@ namespace SupplierErpApp
         static readonly string ContractSettingSequenceFile = Path.Combine(DataDir, "contract_setting_sequence.json");
         static readonly string ContractsFile = Path.Combine(DataDir, "contracts.json");
         static readonly string ContractSequenceFile = Path.Combine(DataDir, "contract_sequence.json");
+        static readonly string DictionaryOptionsFile = Path.Combine(DataDir, "dictionary_options.json");
         static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
@@ -408,6 +423,7 @@ namespace SupplierErpApp
                     if (!File.Exists(ContractSettingSequenceFile)) File.WriteAllText(ContractSettingSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(ContractsFile)) File.WriteAllText(ContractsFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(ContractSequenceFile)) File.WriteAllText(ContractSequenceFile, "0", new UTF8Encoding(false));
+                    EnsureDefaultDictionaryOptions();
                     EnsureDefaultContractSettings();
                     EnsureUsersFile();
                     LoadUsers();
@@ -530,6 +546,10 @@ namespace SupplierErpApp
                 if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.tax_rate")) return; SaveTaxRate(ctx, user); return; }
+                if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "GET") { if (!CanReadDictionaryOptions(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } ListDictionaryOptions(ctx); return; }
+                if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; AddDictionaryOption(ctx, user); return; }
+                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; UpdateDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
+                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; DeleteDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
                 if (path == "/api/bom/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.export")) return; ExportBomCsv(ctx); return; }
                 if (path == "/api/bom/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.import")) return; ExportBomTemplateCsv(ctx); return; }
                 if (path == "/api/bom/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.import")) return; ImportBomCsv(ctx, user); return; }
@@ -804,6 +824,54 @@ namespace SupplierErpApp
             if (item == null) throw new Exception("机型成本资料不能为空");
             if (string.IsNullOrWhiteSpace(item.BomId)) throw new Exception("请选择 BOM");
             item.Note = (item.Note ?? "").Trim();
+            item.Status = string.IsNullOrWhiteSpace(item.Status) ? "启用" : item.Status.Trim();
+            if (item.Status != "启用" && item.Status != "停用") throw new Exception("状态只能是启用或停用");
+        }
+
+        static bool IsMaterialUsedByBom(string materialId, string materialCode)
+        {
+            return GetBomsUsingMaterial(materialId, materialCode).Count > 0;
+        }
+
+        static List<BomItem> GetBomsUsingMaterial(string materialId, string materialCode)
+        {
+            return LoadBom().Where(b => (b.Items ?? new List<BomDetail>()).Any(x => x.MaterialId == materialId || (!string.IsNullOrWhiteSpace(materialCode) && x.MaterialCode == materialCode))).ToList();
+        }
+
+        static string FormatMaterialDeleteBlockedMessage(List<BomItem> boms)
+        {
+            string msg = "该物料已被 BOM 使用，不能删除。请先删除相关 BOM 后再删除该物料。";
+            if (boms == null || boms.Count == 0) return msg;
+            var refs = boms.Take(10).Select(b => (string.IsNullOrWhiteSpace(b.Code) ? "" : b.Code) + " " + b.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0);
+            msg += " 引用 BOM：" + string.Join("、", refs);
+            if (boms.Count > 10) msg += " 等共" + boms.Count + "条";
+            return msg;
+        }
+
+        static bool IsBomUsedByModelCost(string bomId)
+        {
+            return GetModelCostsUsingBom(bomId).Count > 0;
+        }
+
+        static List<ModelCost> GetModelCostsUsingBom(string bomId)
+        {
+            return LoadModelCosts().Where(x => x.BomId == bomId).ToList();
+        }
+
+        static string FormatBomDeleteBlockedMessage(List<ModelCost> costs)
+        {
+            string msg = "该 BOM 已被机型成本使用，不能删除。请先删除相关机型成本后再删除该 BOM。";
+            if (costs == null || costs.Count == 0) return msg;
+            var refs = costs.Take(10).Select(x => (string.IsNullOrWhiteSpace(x.ModelCode) ? "" : x.ModelCode) + " " + x.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0);
+            msg += " 引用机型成本：" + string.Join("、", refs);
+            if (costs.Count > 10) msg += " 等共" + costs.Count + "条";
+            return msg;
+        }
+
+        static bool IsSupplierUsedByMaterial(string company)
+        {
+            if (string.IsNullOrWhiteSpace(company)) return false;
+            return LoadMaterials().Any(x => string.Equals(x.Supplier, company, StringComparison.OrdinalIgnoreCase));
         }
 
         static void ValidateModelCostFilled(ModelCost item)
@@ -954,6 +1022,7 @@ namespace SupplierErpApp
             var list = LoadBom();
             var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
+            if (IsBomUsedByModelCost(id)) { WriteJson(ctx, new { error = FormatBomDeleteBlockedMessage(GetModelCostsUsingBom(id)) }, 409); return; }
             list.Remove(item);
             SaveBom(list);
             Audit(user, "删除BOM", item.Code + " " + item.ModelName);
@@ -1000,10 +1069,11 @@ namespace SupplierErpApp
             }
         }
 
-        static void FillModelCostFromBom(ModelCost item)
+        static void FillModelCostFromBom(ModelCost item, bool allowDisabledBom = false)
         {
             var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
             if (bom == null) throw new Exception("所选 BOM 不存在");
+            if (!allowDisabledBom && (bom.Status ?? "启用") != "启用") throw new Exception("所选 BOM 已停用，不能新建或更换为该 BOM");
             ApplyCurrentMaterialPrices(bom);
             item.ModelCode = bom.ModelCode;
             item.ModelName = bom.ModelName;
@@ -1020,12 +1090,13 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<ModelCost>(ReadBody(ctx.Request));
             ValidateModelCost(item);
-            FillModelCostFromBom(item);
+            FillModelCostFromBom(item, false);
             ValidateModelCostFilled(item);
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             item.Id = Guid.NewGuid().ToString("N");
             item.CreatedAt = now;
             item.UpdatedAt = now;
+            if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "启用";
             var list = LoadModelCosts();
             list.Insert(0, item);
             SaveModelCosts(list);
@@ -1040,10 +1111,18 @@ namespace SupplierErpApp
             var list = LoadModelCosts();
             var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
-            FillModelCostFromBom(input);
+            bool sameBom = string.Equals(item.BomId, input.BomId, StringComparison.OrdinalIgnoreCase);
+            FillModelCostFromBom(input, sameBom);
             ValidateModelCostFilled(input);
             input.Id = item.Id;
             input.CreatedAt = item.CreatedAt;
+            input.Status = string.IsNullOrWhiteSpace(input.Status) ? (item.Status ?? "启用") : input.Status.Trim();
+            if (input.Status != "启用" && input.Status != "停用") { WriteJson(ctx, new { error = "状态只能是启用或停用" }, 400); return; }
+            if (input.Status == "启用")
+            {
+                var bomCheck = LoadBom().FirstOrDefault(x => x.Id == input.BomId);
+                if (bomCheck != null && (bomCheck.Status ?? "启用") != "启用") { WriteJson(ctx, new { error = "该机型成本关联的 BOM 已停用，不能启用。" }, 409); return; }
+            }
             input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             list[list.IndexOf(item)] = input;
             SaveModelCosts(list);
@@ -1056,6 +1135,7 @@ namespace SupplierErpApp
             var list = LoadModelCosts();
             var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
+            if ((item.Status ?? "启用") == "启用") { WriteJson(ctx, new { error = "该机型成本当前为启用状态，不能删除。请先停用后再删除。" }, 409); return; }
             list.Remove(item);
             SaveModelCosts(list);
             Audit(user, "删除机型成本", item.ModelCode + " " + item.ModelName);
@@ -1128,9 +1208,206 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
                     new PermissionItem { Key = "settings.account", Label = "账号管理" },
                     new PermissionItem { Key = "settings.password", Label = "修改密码" },
-                    new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" }
+                    new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" },
+                    new PermissionItem { Key = "settings.dictionary", Label = "字典选项" }
                 }}
             };
+        }
+
+        static bool CanReadDictionaryOptions( UserSession user)
+        {
+            return HasPermission(user, "settings.view") || HasPermission(user, "settings.dictionary");
+        }
+
+        static string GetQueryParam(HttpListenerContext ctx, string key)
+        {
+            string q = ctx.Request.Url.Query;
+            if (string.IsNullOrEmpty(q)) return "";
+            foreach (var part in q.TrimStart('?').Split('&'))
+            {
+                if (string.IsNullOrWhiteSpace(part)) continue;
+                var kv = part.Split(new[] { '=' }, 2);
+                if (kv.Length == 2 && string.Equals(Uri.UnescapeDataString(kv[0]), key, StringComparison.OrdinalIgnoreCase))
+                    return Uri.UnescapeDataString(kv[1]);
+            }
+            return "";
+        }
+
+        static readonly string[] DictionaryCategories = new[] {
+            "SupplierType", "CustomerType", "MaterialCategory", "MaterialUnit", "FinanceItem", "ContractType", "OrderCategory", "OtherCategory", "BomStatus", "ModelCostStatus"
+        };
+
+        static List<DictionaryOption> LoadDictionaryOptions()
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(DictionaryOptionsFile)) return new List<DictionaryOption>();
+                string text = File.ReadAllText(DictionaryOptionsFile, Encoding.UTF8);
+                return Json.Deserialize<List<DictionaryOption>>(text) ?? new List<DictionaryOption>();
+            }
+        }
+
+        static void SaveDictionaryOptions(List<DictionaryOption> items)
+        {
+            lock (DataLock)
+            {
+                string temp = DictionaryOptionsFile + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
+                if (File.Exists(DictionaryOptionsFile))
+                {
+                    string backup = Path.Combine(BackupDir, "dictionary_options_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    File.Replace(temp, DictionaryOptionsFile, backup);
+                }
+                else File.Move(temp, DictionaryOptionsFile);
+                CleanBackups();
+            }
+        }
+
+        static void EnsureDefaultDictionaryOptions()
+        {
+            lock (DataLock)
+            {
+                var list = File.Exists(DictionaryOptionsFile) ? (Json.Deserialize<List<DictionaryOption>>(File.ReadAllText(DictionaryOptionsFile, Encoding.UTF8)) ?? new List<DictionaryOption>()) : new List<DictionaryOption>();
+                if (list.Count > 0) return;
+                string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                var defaults = new List<Tuple<string, string, int>>
+                {
+                    Tuple.Create("SupplierType", "原材料供应商", 1),
+                    Tuple.Create("SupplierType", "外协加工厂", 2),
+                    Tuple.Create("SupplierType", "设备供应商", 3),
+                    Tuple.Create("CustomerType", "终端客户", 1),
+                    Tuple.Create("CustomerType", "经销商", 2),
+                    Tuple.Create("CustomerType", "代理商", 3),
+                    Tuple.Create("MaterialCategory", "原材料", 1),
+                    Tuple.Create("MaterialCategory", "半成品", 2),
+                    Tuple.Create("MaterialCategory", "辅料", 3),
+                    Tuple.Create("MaterialCategory", "包材", 4),
+                    Tuple.Create("MaterialUnit", "个", 1),
+                    Tuple.Create("MaterialUnit", "件", 2),
+                    Tuple.Create("MaterialUnit", "套", 3),
+                    Tuple.Create("MaterialUnit", "kg", 4),
+                    Tuple.Create("MaterialUnit", "m", 5),
+                    Tuple.Create("FinanceItem", "销售收入", 1),
+                    Tuple.Create("FinanceItem", "采购支出", 2),
+                    Tuple.Create("FinanceItem", "办公费用", 3),
+                    Tuple.Create("FinanceItem", "差旅费", 4),
+                    Tuple.Create("ContractType", "设备购销合同", 1),
+                    Tuple.Create("ContractType", "配件购销合同", 2),
+                    Tuple.Create("ContractType", "维保合同", 3),
+                    Tuple.Create("BomStatus", "启用", 1),
+                    Tuple.Create("BomStatus", "停用", 2),
+                    Tuple.Create("ModelCostStatus", "启用", 1),
+                    Tuple.Create("ModelCostStatus", "停用", 2)
+                };
+                foreach (var d in defaults)
+                {
+                    list.Add(new DictionaryOption
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Category = d.Item1,
+                        Name = d.Item2,
+                        Status = "启用",
+                        SortOrder = d.Item3,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
+                SaveDictionaryOptions(list);
+            }
+        }
+
+        static void ValidateDictionaryOption(DictionaryOption item)
+        {
+            if (item == null) throw new Exception("字典项不能为空");
+            if (string.IsNullOrWhiteSpace(item.Category)) throw new Exception("字典分类不能为空");
+            if (Array.IndexOf(DictionaryCategories, item.Category.Trim()) < 0) throw new Exception("字典分类无效");
+            if (string.IsNullOrWhiteSpace(item.Name)) throw new Exception("字典名称不能为空");
+            item.Category = item.Category.Trim();
+            item.Name = item.Name.Trim();
+            item.Value = string.IsNullOrWhiteSpace(item.Value) ? item.Name : item.Value.Trim();
+            item.Note = (item.Note ?? "").Trim();
+            item.Status = string.IsNullOrWhiteSpace(item.Status) ? "启用" : item.Status.Trim();
+            if (item.Status != "启用" && item.Status != "停用") throw new Exception("状态只能是启用或停用");
+        }
+
+        static bool IsDictionaryOptionInUse(DictionaryOption item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Name)) return false;
+            string name = item.Name;
+            switch (item.Category)
+            {
+                case "MaterialUnit":
+                    return LoadMaterials().Any(x => string.Equals(x.QuantityUnit, name, StringComparison.OrdinalIgnoreCase));
+                case "FinanceItem":
+                    return LoadFinance().Any(x => string.Equals(x.Purpose, name, StringComparison.OrdinalIgnoreCase) || string.Equals(x.AccountType, name, StringComparison.OrdinalIgnoreCase));
+                case "BomStatus":
+                    return LoadBom().Any(x => string.Equals(x.Status ?? "启用", name, StringComparison.OrdinalIgnoreCase));
+                case "ModelCostStatus":
+                    return LoadModelCosts().Any(x => string.Equals(x.Status ?? "启用", name, StringComparison.OrdinalIgnoreCase));
+                default:
+                    return false;
+            }
+        }
+
+        static void ListDictionaryOptions(HttpListenerContext ctx)
+        {
+            string category = GetQueryParam(ctx, "category");
+            var list = LoadDictionaryOptions();
+            if (!string.IsNullOrWhiteSpace(category))
+                list = list.Where(x => string.Equals(x.Category, category.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+            list = list.OrderBy(x => x.Category).ThenBy(x => x.SortOrder).ThenBy(x => x.Name).ToList();
+            WriteJson(ctx, list);
+        }
+
+        static void AddDictionaryOption(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<DictionaryOption>(ReadBody(ctx.Request));
+            ValidateDictionaryOption(item);
+            var list = LoadDictionaryOptions();
+            if (list.Any(x => string.Equals(x.Category, item.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, item.Name, StringComparison.OrdinalIgnoreCase)))
+            { WriteJson(ctx, new { error = "该分类下已存在相同名称的字典项" }, 409); return; }
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            item.Id = Guid.NewGuid().ToString("N");
+            if (item.SortOrder <= 0) item.SortOrder = list.Where(x => x.Category == item.Category).Select(x => x.SortOrder).DefaultIfEmpty(0).Max() + 1;
+            item.CreatedAt = now;
+            item.UpdatedAt = now;
+            list.Add(item);
+            SaveDictionaryOptions(list);
+            Audit(user, "新增字典项", item.Category + " " + item.Name);
+            WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateDictionaryOption(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<DictionaryOption>(ReadBody(ctx.Request));
+            var list = LoadDictionaryOptions();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "字典项不存在" }, 404); return; }
+            ValidateDictionaryOption(input);
+            if (list.Any(x => x.Id != id && string.Equals(x.Category, input.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, input.Name, StringComparison.OrdinalIgnoreCase)))
+            { WriteJson(ctx, new { error = "该分类下已存在相同名称的字典项" }, 409); return; }
+            item.Category = input.Category;
+            item.Name = input.Name;
+            item.Value = string.IsNullOrWhiteSpace(input.Value) ? input.Name : input.Value.Trim();
+            item.Note = (input.Note ?? "").Trim();
+            item.Status = input.Status;
+            if (input.SortOrder > 0) item.SortOrder = input.SortOrder;
+            item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            SaveDictionaryOptions(list);
+            Audit(user, "修改字典项", item.Category + " " + item.Name);
+            WriteJson(ctx, item);
+        }
+
+        static void DeleteDictionaryOption(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadDictionaryOptions();
+            var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "字典项不存在" }, 404); return; }
+            if (IsDictionaryOptionInUse(item)) { WriteJson(ctx, new { error = "该字典项已被业务数据使用，不能删除。请改为停用。" }, 409); return; }
+            list.Remove(item);
+            SaveDictionaryOptions(list);
+            Audit(user, "删除字典项", item.Category + " " + item.Name);
+            WriteJson(ctx, new { ok = true });
         }
 
         static string BuildPermissionSummary(UserDef user)
@@ -1289,6 +1566,7 @@ namespace SupplierErpApp
         {
             var list = LoadSuppliers(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "供应商不存在" }, 404); return; }
+            if (IsSupplierUsedByMaterial(item.Company)) { WriteJson(ctx, new { error = "该供应商已被物料使用，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。" }, 409); return; }
             list.Remove(item); SaveSuppliers(list); Audit(user, "删除供应商", item.Company); WriteJson(ctx, new { ok = true });
         }
 
@@ -1301,6 +1579,7 @@ namespace SupplierErpApp
             var list = LoadSuppliers();
             var removed = list.Where(x => ids.Contains(x.Id)).ToList();
             if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的供应商" }, 404); return; }
+            if (removed.Any(item => IsSupplierUsedByMaterial(item.Company))) { WriteJson(ctx, new { error = "所选供应商中存在已被物料使用的记录，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。" }, 409); return; }
             foreach (var item in removed) list.Remove(item);
             SaveSuppliers(list);
             Audit(user, "批量删除供应商", "共" + removed.Count + "条");
@@ -1531,7 +1810,7 @@ namespace SupplierErpApp
         static void DeleteMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
             var list=LoadMaterials();var item=list.FirstOrDefault(x=>x.Id==id);if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}
-            if(LoadBom().Any(b=>(b.Items??new List<BomDetail>()).Any(x=>x.MaterialId==item.Id||(!string.IsNullOrWhiteSpace(item.Code)&&x.MaterialCode==item.Code)))){WriteJson(ctx,new{error="该物料已被 BOM 使用，不能删除。如需删除，请先从 BOM 表中移除该物料。"},409);return;}
+            if(IsMaterialUsedByBom(item.Id,item.Code)){WriteJson(ctx,new{error=FormatMaterialDeleteBlockedMessage(GetBomsUsingMaterial(item.Id,item.Code))},409);return;}
             list.Remove(item);SaveMaterials(list);Audit(user,"删除物料",item.Code+" "+item.NameSpec);WriteJson(ctx,new{ok=true});
         }
 
@@ -1544,9 +1823,20 @@ namespace SupplierErpApp
             var list = LoadMaterials();
             var removed = list.Where(x => ids.Contains(x.Id)).ToList();
             if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的物料" }, 404); return; }
-            var boms = LoadBom();
-            if (removed.Any(item => boms.Any(b => (b.Items ?? new List<BomDetail>()).Any(x => x.MaterialId == item.Id || (!string.IsNullOrWhiteSpace(item.Code) && x.MaterialCode == item.Code)))))
-            { WriteJson(ctx, new { error = "该物料已被 BOM 使用，不能删除。如需删除，请先从 BOM 表中移除该物料。" }, 409); return; }
+            var blocked = removed.Where(item => IsMaterialUsedByBom(item.Id, item.Code)).ToList();
+            if (blocked.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var item in blocked.Take(10))
+                {
+                    var boms = GetBomsUsingMaterial(item.Id, item.Code);
+                    var bomRefs = string.Join("、", boms.Take(3).Select(b => (b.Code ?? "") + " " + b.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0));
+                    parts.Add((item.Code ?? "") + " " + item.NameSpec + (bomRefs.Length > 0 ? "（BOM：" + bomRefs + "）" : ""));
+                }
+                string msg = "以下物料已被 BOM 使用，不能删除。请先删除相关 BOM 后再删除物料。 " + string.Join("；", parts);
+                if (blocked.Count > 10) msg += " 等共" + blocked.Count + "条";
+                WriteJson(ctx, new { error = msg }, 409); return;
+            }
             foreach (var item in removed) list.Remove(item);
             SaveMaterials(list);
             Audit(user, "批量删除物料", "共" + removed.Count + "条");
@@ -2264,7 +2554,7 @@ namespace SupplierErpApp
         }
 
         static readonly string[] ModelCostCsvHeaders = new[] {
-            "机型编号","机型名称","产品名称","BOM编号","BOM版本","材料成本","总成本","备注","创建时间","更新时间"
+            "机型编号","机型名称","产品名称","BOM编号","BOM版本","材料成本","总成本","备注","状态","创建时间","更新时间"
         };
 
         static readonly string[] ModelCostIgnoredHeaders = new[] { "人工成本", "制造费用", "其他费用", "运费" };
@@ -2278,7 +2568,7 @@ namespace SupplierErpApp
                 sb.AppendLine(string.Join(",", new[] {
                     x.ModelCode, x.ModelName, x.ProductName, x.BomCode, x.BomVersion,
                     x.MaterialCost.ToString("0.00"), x.TotalCost.ToString("0.00"),
-                    x.Note, x.CreatedAt, x.UpdatedAt
+                    x.Note, string.IsNullOrWhiteSpace(x.Status) ? "启用" : x.Status, x.CreatedAt, x.UpdatedAt
                 }.Select(Csv)));
             }
             WriteCsvDownload(ctx, "机型成本_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv", sb.ToString());
@@ -2289,7 +2579,7 @@ namespace SupplierErpApp
             var sb = new StringBuilder();
             sb.AppendLine(string.Join(",", ModelCostCsvHeaders.Select(Csv)));
             sb.AppendLine(string.Join(",", new[] {
-                "MODEL-DEMO","示例机型","示例产品","BOM-DEMO","V1","100","100","示例备注","",""
+                "MODEL-DEMO","示例机型","示例产品","BOM-DEMO","V1","100","100","示例备注","启用","",""
             }.Select(Csv)));
             WriteCsvDownload(ctx, "机型成本导入模板.csv", sb.ToString());
         }
@@ -2403,6 +2693,15 @@ namespace SupplierErpApp
                     if (action == "skip" || action == "跳过") { skipped++; continue; }
                     if (action != "overwrite" && action != "覆盖") { skipped++; continue; }
                 }
+                string status = Cell(row, "状态");
+                if (string.IsNullOrWhiteSpace(status)) status = "启用";
+                else status = status.Trim();
+                if (status != "启用" && status != "停用")
+                {
+                    failedRows++;
+                    errors.Add("第" + rowNo + "行：状态只能是启用或停用");
+                    continue;
+                }
                 var item = new ModelCost
                 {
                     ModelCode = modelCode.Trim(),
@@ -2413,7 +2712,8 @@ namespace SupplierErpApp
                     BomVersion = bom.Version,
                     MaterialCost = Math.Round(materialCost, 2),
                     TotalCost = Math.Round(totalCost, 2),
-                    Note = Cell(row, "备注")
+                    Note = Cell(row, "备注"),
+                    Status = status
                 };
                 if (existing != null)
                 {
