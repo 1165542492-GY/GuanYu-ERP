@@ -335,6 +335,143 @@ namespace SupplierErpApp
 
     public class ContractPreviewResult { public string Html { get; set; } }
 
+    public class SalesOrder
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string CustomerName { get; set; }
+        public string MaterialName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
+        public string OrderDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class SalesOutbound
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string CustomerName { get; set; }
+        public string MaterialName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal CostAmount { get; set; }
+        public string OutboundDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class PurchaseOrder
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string SupplierName { get; set; }
+        public string MaterialName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
+        public string OrderDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class PurchaseInbound
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string SupplierName { get; set; }
+        public string MaterialName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal InboundPrice { get; set; }
+        public decimal Amount { get; set; }
+        public string InboundDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class ProductionPick
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string MaterialName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal CostAmount { get; set; }
+        public string PickDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class FinishedInbound
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string ProductName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitCost { get; set; }
+        public decimal Amount { get; set; }
+        public string InboundDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class Receivable
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string CustomerName { get; set; }
+        public decimal ReceivableAmount { get; set; }
+        public decimal ReceivedAmount { get; set; }
+        public decimal UnreceivedAmount { get; set; }
+        public string DueDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class Payable
+    {
+        public string Id { get; set; }
+        public string Code { get; set; }
+        public string SupplierName { get; set; }
+        public decimal PayableAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal UnpaidAmount { get; set; }
+        public string DueDate { get; set; }
+        public string Status { get; set; }
+        public string Note { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class StockItem
+    {
+        public string ItemName { get; set; }
+        public decimal Quantity { get; set; }
+    }
+
+    public class StockSummary
+    {
+        public int ItemCount { get; set; }
+        public decimal TotalQuantity { get; set; }
+        public StockItem[] Items { get; set; }
+    }
+
     public class LoginRequest { public string Username { get; set; } public string Password { get; set; } }
     public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool IsAdmin { get; set; } public string[] Permissions { get; set; } }
     public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
@@ -361,7 +498,16 @@ namespace SupplierErpApp
             "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
             "contract.view","contract.add","contract.edit","contract.delete","contract.preview","contract.print",
             "contract_setting.view","contract_setting.add","contract_setting.edit","contract_setting.delete",
-            "settings.view","settings.account","settings.password","settings.tax_rate"
+            "settings.view","settings.account","settings.password","settings.tax_rate",
+            "sales_order.view","sales_order.add","sales_order.edit","sales_order.delete",
+            "sales_outbound.view","sales_outbound.add","sales_outbound.edit","sales_outbound.delete",
+            "purchase_order.view","purchase_order.add","purchase_order.edit","purchase_order.delete",
+            "purchase_inbound.view","purchase_inbound.add","purchase_inbound.edit","purchase_inbound.delete",
+            "production_pick.view","production_pick.add","production_pick.edit","production_pick.delete",
+            "finished_inbound.view","finished_inbound.add","finished_inbound.edit","finished_inbound.delete",
+            "stock.view",
+            "receivable.view","receivable.add","receivable.edit","receivable.delete",
+            "payable.view","payable.add","payable.edit","payable.delete"
         };
         const string AdminUsername = "admin";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
@@ -385,6 +531,22 @@ namespace SupplierErpApp
         static readonly string ContractsFile = Path.Combine(DataDir, "contracts.json");
         static readonly string ContractSequenceFile = Path.Combine(DataDir, "contract_sequence.json");
         static readonly string DictionaryOptionsFile = Path.Combine(DataDir, "dictionary_options.json");
+        static readonly string SalesOrdersFile = Path.Combine(DataDir, "sales_orders.json");
+        static readonly string SalesOrderSequenceFile = Path.Combine(DataDir, "sales_order_sequence.json");
+        static readonly string SalesOutboundsFile = Path.Combine(DataDir, "sales_outbounds.json");
+        static readonly string SalesOutboundSequenceFile = Path.Combine(DataDir, "sales_outbound_sequence.json");
+        static readonly string PurchaseOrdersFile = Path.Combine(DataDir, "purchase_orders.json");
+        static readonly string PurchaseOrderSequenceFile = Path.Combine(DataDir, "purchase_order_sequence.json");
+        static readonly string PurchaseInboundsFile = Path.Combine(DataDir, "purchase_inbounds.json");
+        static readonly string PurchaseInboundSequenceFile = Path.Combine(DataDir, "purchase_inbound_sequence.json");
+        static readonly string ProductionPicksFile = Path.Combine(DataDir, "production_picks.json");
+        static readonly string ProductionPickSequenceFile = Path.Combine(DataDir, "production_pick_sequence.json");
+        static readonly string FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
+        static readonly string FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
+        static readonly string ReceivablesFile = Path.Combine(DataDir, "receivables.json");
+        static readonly string ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
+        static readonly string PayablesFile = Path.Combine(DataDir, "payables.json");
+        static readonly string PayableSequenceFile = Path.Combine(DataDir, "payable_sequence.json");
         static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
@@ -425,6 +587,7 @@ namespace SupplierErpApp
                     if (!File.Exists(ContractSequenceFile)) File.WriteAllText(ContractSequenceFile, "0", new UTF8Encoding(false));
                     EnsureDefaultDictionaryOptions();
                     EnsureDefaultContractSettings();
+                    EnsureBusinessDataFiles();
                     EnsureUsersFile();
                     LoadUsers();
                     StartServer();
@@ -574,6 +737,40 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/contracts/") && path.EndsWith("/void") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.edit")) return; VoidContract(ctx, user, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/void".Length)); return; }
                 if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "contract.edit")) return; UpdateContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
                 if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "contract.delete")) return; DeleteContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
+                if (path == "/api/sales-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "sales_order.view")) return; WriteJson(ctx, LoadSalesOrders()); return; }
+                if (path == "/api/sales-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; AddSalesOrder(ctx, user); return; }
+                if (path.StartsWith("/api/sales-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "sales_order.edit")) return; UpdateSalesOrder(ctx, user, path.Substring("/api/sales-orders/".Length)); return; }
+                if (path.StartsWith("/api/sales-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_order.delete")) return; DeleteSalesOrder(ctx, user, path.Substring("/api/sales-orders/".Length)); return; }
+                if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "sales_outbound.view")) return; WriteJson(ctx, LoadSalesOutbounds()); return; }
+                if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; AddSalesOutbound(ctx, user); return; }
+                if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "sales_outbound.edit")) return; UpdateSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
+                if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_outbound.delete")) return; DeleteSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
+                if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_order.view")) return; WriteJson(ctx, LoadPurchaseOrders()); return; }
+                if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; AddPurchaseOrder(ctx, user); return; }
+                if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_order.edit")) return; UpdatePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
+                if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_order.delete")) return; DeletePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
+                if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_inbound.view")) return; WriteJson(ctx, LoadPurchaseInbounds()); return; }
+                if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; AddPurchaseInbound(ctx, user); return; }
+                if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_inbound.edit")) return; UpdatePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
+                if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_inbound.delete")) return; DeletePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
+                if (path == "/api/production-picks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; WriteJson(ctx, LoadProductionPicks()); return; }
+                if (path == "/api/production-picks" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionPick(ctx, user); return; }
+                if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
+                if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
+                if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finished_inbound.view")) return; WriteJson(ctx, LoadFinishedInbounds()); return; }
+                if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finished_inbound.add")) return; AddFinishedInbound(ctx, user); return; }
+                if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finished_inbound.edit")) return; UpdateFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
+                if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finished_inbound.delete")) return; DeleteFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
+                if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
+                if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
+                if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
+                if (path == "/api/receivables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "receivable.add")) return; AddReceivable(ctx, user); return; }
+                if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "receivable.edit")) return; UpdateReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
+                if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "receivable.delete")) return; DeleteReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
+                if (path == "/api/payables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "payable.view")) return; WriteJson(ctx, LoadPayables()); return; }
+                if (path == "/api/payables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "payable.add")) return; AddPayable(ctx, user); return; }
+                if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "payable.edit")) return; UpdatePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
+                if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (Exception ex)
@@ -608,6 +805,11 @@ namespace SupplierErpApp
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Contract.html"))
             {
                 if (s == null) throw new Exception("合同界面资源缺失");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+            }
+            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Business.html"))
+            {
+                if (s == null) throw new Exception("业务界面资源缺失");
                 using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
             }
             byte[] bytes = Encoding.UTF8.GetBytes(html);
@@ -1210,6 +1412,57 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "settings.password", Label = "修改密码" },
                     new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" },
                     new PermissionItem { Key = "settings.dictionary", Label = "字典选项" }
+                }},
+                new PermissionGroup { Module = "销售订单", Items = new[] {
+                    new PermissionItem { Key = "sales_order.view", Label = "查看" },
+                    new PermissionItem { Key = "sales_order.add", Label = "新增" },
+                    new PermissionItem { Key = "sales_order.edit", Label = "修改" },
+                    new PermissionItem { Key = "sales_order.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "销售出库", Items = new[] {
+                    new PermissionItem { Key = "sales_outbound.view", Label = "查看" },
+                    new PermissionItem { Key = "sales_outbound.add", Label = "新增" },
+                    new PermissionItem { Key = "sales_outbound.edit", Label = "修改" },
+                    new PermissionItem { Key = "sales_outbound.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "采购单", Items = new[] {
+                    new PermissionItem { Key = "purchase_order.view", Label = "查看" },
+                    new PermissionItem { Key = "purchase_order.add", Label = "新增" },
+                    new PermissionItem { Key = "purchase_order.edit", Label = "修改" },
+                    new PermissionItem { Key = "purchase_order.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "采购入库", Items = new[] {
+                    new PermissionItem { Key = "purchase_inbound.view", Label = "查看" },
+                    new PermissionItem { Key = "purchase_inbound.add", Label = "新增" },
+                    new PermissionItem { Key = "purchase_inbound.edit", Label = "修改" },
+                    new PermissionItem { Key = "purchase_inbound.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "生产领用", Items = new[] {
+                    new PermissionItem { Key = "production_pick.view", Label = "查看" },
+                    new PermissionItem { Key = "production_pick.add", Label = "新增" },
+                    new PermissionItem { Key = "production_pick.edit", Label = "修改" },
+                    new PermissionItem { Key = "production_pick.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "成品入库", Items = new[] {
+                    new PermissionItem { Key = "finished_inbound.view", Label = "查看" },
+                    new PermissionItem { Key = "finished_inbound.add", Label = "新增" },
+                    new PermissionItem { Key = "finished_inbound.edit", Label = "修改" },
+                    new PermissionItem { Key = "finished_inbound.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "库存汇总", Items = new[] {
+                    new PermissionItem { Key = "stock.view", Label = "查看" }
+                }},
+                new PermissionGroup { Module = "应收款", Items = new[] {
+                    new PermissionItem { Key = "receivable.view", Label = "查看" },
+                    new PermissionItem { Key = "receivable.add", Label = "新增" },
+                    new PermissionItem { Key = "receivable.edit", Label = "修改" },
+                    new PermissionItem { Key = "receivable.delete", Label = "删除" }
+                }},
+                new PermissionGroup { Module = "应付款", Items = new[] {
+                    new PermissionItem { Key = "payable.view", Label = "查看" },
+                    new PermissionItem { Key = "payable.add", Label = "新增" },
+                    new PermissionItem { Key = "payable.edit", Label = "修改" },
+                    new PermissionItem { Key = "payable.delete", Label = "删除" }
                 }}
             };
         }
@@ -3273,6 +3526,487 @@ namespace SupplierErpApp
 {{技术参数表}}
 <p style=""margin-top:20px"">备注：{{备注}}</p>
 </article>";
+        }
+
+        static void EnsureBusinessDataFiles()
+        {
+            EnsureJsonFile(SalesOrdersFile);
+            EnsureJsonFile(SalesOrderSequenceFile, "0");
+            EnsureJsonFile(SalesOutboundsFile);
+            EnsureJsonFile(SalesOutboundSequenceFile, "0");
+            EnsureJsonFile(PurchaseOrdersFile);
+            EnsureJsonFile(PurchaseOrderSequenceFile, "0");
+            EnsureJsonFile(PurchaseInboundsFile);
+            EnsureJsonFile(PurchaseInboundSequenceFile, "0");
+            EnsureJsonFile(ProductionPicksFile);
+            EnsureJsonFile(ProductionPickSequenceFile, "0");
+            EnsureJsonFile(FinishedInboundsFile);
+            EnsureJsonFile(FinishedInboundSequenceFile, "0");
+            EnsureJsonFile(ReceivablesFile);
+            EnsureJsonFile(ReceivableSequenceFile, "0");
+            EnsureJsonFile(PayablesFile);
+            EnsureJsonFile(PayableSequenceFile, "0");
+        }
+
+        static void EnsureJsonFile(string path, string defaultContent = "[]")
+        {
+            if (!File.Exists(path)) File.WriteAllText(path, defaultContent, new UTF8Encoding(false));
+        }
+
+        static string TodayText() { return DateTime.Now.ToString("yyyy-MM-dd"); }
+
+        static bool IsConfirmedStatus(string status) { return string.Equals(status ?? "", "已确认", StringComparison.OrdinalIgnoreCase); }
+
+        static string NormalizeDocStatus(string status)
+        {
+            status = (status ?? "").Trim();
+            if (status == "已确认" || status == "草稿" || status == "已取消") return status;
+            return "草稿";
+        }
+
+        static string NormalizeReceivableStatus(decimal receivable, decimal received)
+        {
+            if (received <= 0) return "未收";
+            if (received >= receivable) return "已收";
+            return "部分收";
+        }
+
+        static string NormalizePayableStatus(decimal payable, decimal paid)
+        {
+            if (paid <= 0) return "未付";
+            if (paid >= payable) return "已付";
+            return "部分付";
+        }
+
+        static List<T> LoadJsonList<T>(string file)
+        {
+            lock (DataLock)
+            {
+                if (!File.Exists(file)) return new List<T>();
+                return Json.Deserialize<List<T>>(File.ReadAllText(file, Encoding.UTF8)) ?? new List<T>();
+            }
+        }
+
+        static void SaveJsonList<T>(string file, string backupPrefix, List<T> items)
+        {
+            lock (DataLock)
+            {
+                string temp = file + ".tmp";
+                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
+                if (File.Exists(file))
+                {
+                    string backup = Path.Combine(BackupDir, backupPrefix + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    File.Replace(temp, file, backup);
+                }
+                else File.Move(temp, file);
+                CleanBackups();
+            }
+        }
+
+        static List<SalesOrder> LoadSalesOrders() { return LoadJsonList<SalesOrder>(SalesOrdersFile); }
+        static void SaveSalesOrders(List<SalesOrder> items) { SaveJsonList(SalesOrdersFile, "sales_orders", items); }
+
+        static void ApplySalesOrder(SalesOrder item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.CustomerName = (item.CustomerName ?? "").Trim();
+            item.MaterialName = (item.MaterialName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.CustomerName)) throw new Exception("请填写客户名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
+            if (item.Quantity <= 0) throw new Exception("数量必须大于 0");
+            if (item.UnitPrice < 0) throw new Exception("销售单价不能为负数");
+            item.Amount = CalcLineAmount(item.Quantity, item.UnitPrice);
+            item.OrderDate = string.IsNullOrWhiteSpace(item.OrderDate) ? TodayText() : item.OrderDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddSalesOrder(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<SalesOrder>(ReadBody(ctx.Request)); ApplySalesOrder(item);
+            var list = LoadSalesOrders();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(SalesOrderSequenceFile, "XSDD", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SaveSalesOrders(list);
+            Audit(user, "新增销售订单", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateSalesOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<SalesOrder>(ReadBody(ctx.Request)); ApplySalesOrder(input);
+            var list = LoadSalesOrders(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "销售订单不存在" }, 404); return; }
+            item.CustomerName = input.CustomerName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
+            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SaveSalesOrders(list); Audit(user, "修改销售订单", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeleteSalesOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadSalesOrders(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "销售订单不存在" }, 404); return; }
+            list.Remove(item); SaveSalesOrders(list); Audit(user, "删除销售订单", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<SalesOutbound> LoadSalesOutbounds() { return LoadJsonList<SalesOutbound>(SalesOutboundsFile); }
+        static void SaveSalesOutbounds(List<SalesOutbound> items) { SaveJsonList(SalesOutboundsFile, "sales_outbounds", items); }
+
+        static void ApplySalesOutbound(SalesOutbound item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.CustomerName = (item.CustomerName ?? "").Trim();
+            item.MaterialName = (item.MaterialName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
+            if (item.Quantity <= 0) throw new Exception("出库数量必须大于 0");
+            if (item.CostPrice < 0) throw new Exception("成本单价不能为负数");
+            item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
+            item.OutboundDate = string.IsNullOrWhiteSpace(item.OutboundDate) ? TodayText() : item.OutboundDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddSalesOutbound(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(item);
+            var list = LoadSalesOutbounds();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(SalesOutboundSequenceFile, "XSCK", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SaveSalesOutbounds(list);
+            Audit(user, "新增销售出库", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
+            var list = LoadSalesOutbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "销售出库不存在" }, 404); return; }
+            item.CustomerName = input.CustomerName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
+            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SaveSalesOutbounds(list); Audit(user, "修改销售出库", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeleteSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadSalesOutbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "销售出库不存在" }, 404); return; }
+            list.Remove(item); SaveSalesOutbounds(list); Audit(user, "删除销售出库", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<PurchaseOrder> LoadPurchaseOrders() { return LoadJsonList<PurchaseOrder>(PurchaseOrdersFile); }
+        static void SavePurchaseOrders(List<PurchaseOrder> items) { SaveJsonList(PurchaseOrdersFile, "purchase_orders", items); }
+
+        static void ApplyPurchaseOrder(PurchaseOrder item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.SupplierName = (item.SupplierName ?? "").Trim();
+            item.MaterialName = (item.MaterialName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) throw new Exception("请填写供应商名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
+            if (item.Quantity <= 0) throw new Exception("数量必须大于 0");
+            if (item.UnitPrice < 0) throw new Exception("采购单价不能为负数");
+            item.Amount = CalcLineAmount(item.Quantity, item.UnitPrice);
+            item.OrderDate = string.IsNullOrWhiteSpace(item.OrderDate) ? TodayText() : item.OrderDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddPurchaseOrder(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(item);
+            var list = LoadPurchaseOrders();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(PurchaseOrderSequenceFile, "CGDD", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SavePurchaseOrders(list);
+            Audit(user, "新增采购单", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdatePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(input);
+            var list = LoadPurchaseOrders(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "采购单不存在" }, 404); return; }
+            item.SupplierName = input.SupplierName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
+            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SavePurchaseOrders(list); Audit(user, "修改采购单", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeletePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadPurchaseOrders(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "采购单不存在" }, 404); return; }
+            list.Remove(item); SavePurchaseOrders(list); Audit(user, "删除采购单", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<PurchaseInbound> LoadPurchaseInbounds() { return LoadJsonList<PurchaseInbound>(PurchaseInboundsFile); }
+        static void SavePurchaseInbounds(List<PurchaseInbound> items) { SaveJsonList(PurchaseInboundsFile, "purchase_inbounds", items); }
+
+        static void ApplyPurchaseInbound(PurchaseInbound item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.SupplierName = (item.SupplierName ?? "").Trim();
+            item.MaterialName = (item.MaterialName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
+            if (item.Quantity <= 0) throw new Exception("入库数量必须大于 0");
+            if (item.InboundPrice < 0) throw new Exception("入库单价不能为负数");
+            item.Amount = CalcLineAmount(item.Quantity, item.InboundPrice);
+            item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddPurchaseInbound(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(item);
+            var list = LoadPurchaseInbounds();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(PurchaseInboundSequenceFile, "CGRK", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SavePurchaseInbounds(list);
+            Audit(user, "新增采购入库", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdatePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input);
+            var list = LoadPurchaseInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "采购入库不存在" }, 404); return; }
+            item.SupplierName = input.SupplierName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.InboundPrice = input.InboundPrice; item.Amount = input.Amount; item.InboundDate = input.InboundDate;
+            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SavePurchaseInbounds(list); Audit(user, "修改采购入库", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeletePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadPurchaseInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "采购入库不存在" }, 404); return; }
+            list.Remove(item); SavePurchaseInbounds(list); Audit(user, "删除采购入库", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<ProductionPick> LoadProductionPicks() { return LoadJsonList<ProductionPick>(ProductionPicksFile); }
+        static void SaveProductionPicks(List<ProductionPick> items) { SaveJsonList(ProductionPicksFile, "production_picks", items); }
+
+        static void ApplyProductionPick(ProductionPick item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.MaterialName = (item.MaterialName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
+            if (item.Quantity <= 0) throw new Exception("领用数量必须大于 0");
+            if (item.CostPrice < 0) throw new Exception("成本单价不能为负数");
+            item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
+            item.PickDate = string.IsNullOrWhiteSpace(item.PickDate) ? TodayText() : item.PickDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddProductionPick(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(item);
+            var list = LoadProductionPicks();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(ProductionPickSequenceFile, "SCLL", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SaveProductionPicks(list);
+            Audit(user, "新增生产领用", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateProductionPick(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
+            var list = LoadProductionPicks(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "生产领用不存在" }, 404); return; }
+            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
+            item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
+            item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SaveProductionPicks(list); Audit(user, "修改生产领用", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeleteProductionPick(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadProductionPicks(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "生产领用不存在" }, 404); return; }
+            list.Remove(item); SaveProductionPicks(list); Audit(user, "删除生产领用", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<FinishedInbound> LoadFinishedInbounds() { return LoadJsonList<FinishedInbound>(FinishedInboundsFile); }
+        static void SaveFinishedInbounds(List<FinishedInbound> items) { SaveJsonList(FinishedInboundsFile, "finished_inbounds", items); }
+
+        static void ApplyFinishedInbound(FinishedInbound item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.ProductName = (item.ProductName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.ProductName)) throw new Exception("请填写产品名称");
+            if (item.Quantity <= 0) throw new Exception("入库数量必须大于 0");
+            if (item.UnitCost < 0) throw new Exception("单台成本不能为负数");
+            item.Amount = CalcLineAmount(item.Quantity, item.UnitCost);
+            item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
+            item.Status = NormalizeDocStatus(item.Status);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddFinishedInbound(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(item);
+            var list = LoadFinishedInbounds();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(FinishedInboundSequenceFile, "CPRK", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SaveFinishedInbounds(list);
+            Audit(user, "新增成品入库", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(input);
+            var list = LoadFinishedInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "成品入库不存在" }, 404); return; }
+            item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
+            item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
+            item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SaveFinishedInbounds(list); Audit(user, "修改成品入库", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeleteFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadFinishedInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "成品入库不存在" }, 404); return; }
+            list.Remove(item); SaveFinishedInbounds(list); Audit(user, "删除成品入库", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<Receivable> LoadReceivables() { return LoadJsonList<Receivable>(ReceivablesFile); }
+        static void SaveReceivables(List<Receivable> items) { SaveJsonList(ReceivablesFile, "receivables", items); }
+
+        static void ApplyReceivable(Receivable item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.CustomerName = (item.CustomerName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.CustomerName)) throw new Exception("请填写客户名称");
+            if (item.ReceivableAmount < 0) throw new Exception("应收金额不能为负数");
+            if (item.ReceivedAmount < 0) throw new Exception("已收金额不能为负数");
+            if (item.ReceivedAmount > item.ReceivableAmount) throw new Exception("已收金额不能大于应收金额");
+            item.UnreceivedAmount = RoundMoney(item.ReceivableAmount - item.ReceivedAmount);
+            item.DueDate = (item.DueDate ?? "").Trim();
+            item.Status = NormalizeReceivableStatus(item.ReceivableAmount, item.ReceivedAmount);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddReceivable(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(item);
+            var list = LoadReceivables();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(ReceivableSequenceFile, "YS", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SaveReceivables(list);
+            Audit(user, "新增应收款", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdateReceivable(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(input);
+            var list = LoadReceivables(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "应收款不存在" }, 404); return; }
+            item.CustomerName = input.CustomerName; item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
+            item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SaveReceivables(list); Audit(user, "修改应收款", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeleteReceivable(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadReceivables(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "应收款不存在" }, 404); return; }
+            list.Remove(item); SaveReceivables(list); Audit(user, "删除应收款", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<Payable> LoadPayables() { return LoadJsonList<Payable>(PayablesFile); }
+        static void SavePayables(List<Payable> items) { SaveJsonList(PayablesFile, "payables", items); }
+
+        static void ApplyPayable(Payable item)
+        {
+            if (item == null) throw new Exception("数据不能为空");
+            item.SupplierName = (item.SupplierName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) throw new Exception("请填写供应商名称");
+            if (item.PayableAmount < 0) throw new Exception("应付金额不能为负数");
+            if (item.PaidAmount < 0) throw new Exception("已付金额不能为负数");
+            if (item.PaidAmount > item.PayableAmount) throw new Exception("已付金额不能大于应付金额");
+            item.UnpaidAmount = RoundMoney(item.PayableAmount - item.PaidAmount);
+            item.DueDate = (item.DueDate ?? "").Trim();
+            item.Status = NormalizePayableStatus(item.PayableAmount, item.PaidAmount);
+            item.Note = (item.Note ?? "").Trim();
+        }
+
+        static void AddPayable(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(item);
+            var list = LoadPayables();
+            item.Id = Guid.NewGuid().ToString("N");
+            item.Code = NextCode(PayableSequenceFile, "YF", list.Select(x => x.Code));
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            list.Insert(0, item); SavePayables(list);
+            Audit(user, "新增应付款", item.Code); WriteJson(ctx, item, 201);
+        }
+
+        static void UpdatePayable(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(input);
+            var list = LoadPayables(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "应付款不存在" }, 404); return; }
+            item.SupplierName = input.SupplierName; item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
+            item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+            SavePayables(list); Audit(user, "修改应付款", item.Code); WriteJson(ctx, item);
+        }
+
+        static void DeletePayable(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var list = LoadPayables(); var item = list.FirstOrDefault(x => x.Id == id);
+            if (item == null) { WriteJson(ctx, new { error = "应付款不存在" }, 404); return; }
+            list.Remove(item); SavePayables(list); Audit(user, "删除应付款", item.Code); WriteJson(ctx, new { ok = true });
+        }
+
+        static Dictionary<string, decimal> BuildStockMap()
+        {
+            var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            Action<string, decimal> add = delegate (string name, decimal qty)
+            {
+                name = (name ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(name) || qty == 0) return;
+                decimal cur; map.TryGetValue(name, out cur);
+                map[name] = cur + qty;
+            };
+            foreach (var x in LoadPurchaseInbounds().Where(x => IsConfirmedStatus(x.Status)))
+                add(x.MaterialName, x.Quantity);
+            foreach (var x in LoadFinishedInbounds().Where(x => IsConfirmedStatus(x.Status)))
+                add(x.ProductName, x.Quantity);
+            foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status)))
+                add(x.MaterialName, -x.Quantity);
+            foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status)))
+                add(x.MaterialName, -x.Quantity);
+            return map;
+        }
+
+        static List<StockItem> BuildStockItems()
+        {
+            return BuildStockMap().Select(kv => new StockItem { ItemName = kv.Key, Quantity = RoundMoney(kv.Value) })
+                .OrderBy(x => x.ItemName).ToList();
+        }
+
+        static StockSummary BuildStockSummary()
+        {
+            var items = BuildStockItems();
+            return new StockSummary
+            {
+                ItemCount = items.Count,
+                TotalQuantity = RoundMoney(items.Sum(x => x.Quantity)),
+                Items = items.ToArray()
+            };
         }
 
         static string ManualBackup()

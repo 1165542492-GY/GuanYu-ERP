@@ -1,5 +1,60 @@
 # 版本记录
 
+## Ver2.8
+
+当前代码版本：冠誉ERP管理系统 Ver2.8。
+
+### 主业务基础框架
+
+第一阶段完成销售、采购、库存、应收、应付及生产领用/成品入库的基础页面、模型、接口与 CRUD。不含复杂总账、审批流、加权平均库存核算。
+
+**新增模块**
+
+- 销售订单、销售出库
+- 采购单、采购入库
+- 生产领用、成品入库
+- 库存汇总（只读）
+- 应收款、应付款
+
+**API**
+
+- `GET/POST/PUT/DELETE /api/sales-orders`
+- `GET/POST/PUT/DELETE /api/sales-outbounds`
+- `GET/POST/PUT/DELETE /api/purchase-orders`
+- `GET/POST/PUT/DELETE /api/purchase-inbounds`
+- `GET/POST/PUT/DELETE /api/production-picks`
+- `GET/POST/PUT/DELETE /api/finished-inbounds`
+- `GET /api/stocks`、`GET /api/stocks/summary`
+- `GET/POST/PUT/DELETE /api/receivables`
+- `GET/POST/PUT/DELETE /api/payables`
+
+**计算规则**
+
+- 订单/入库/出库金额按数量×单价自动计算（保留 2 位小数）
+- 应收未收 = 应收 − 已收；应付未付 = 应付 − 已付
+- 库存汇总第一版：仅统计已确认单据（采购入库 + 成品入库 − 销售出库 − 生产领用）
+
+**菜单调整**
+
+- 新增「采购管理」分组（采购单、采购入库）
+- 「仓库管理」仅保留库存汇总
+- 「生产管理」新增生产领用、成品入库
+
+**权限键**
+
+`sales_order.*`、`sales_outbound.*`、`purchase_order.*`、`purchase_inbound.*`、`production_pick.*`、`finished_inbound.*`、`stock.view`、`receivable.*`、`payable.*`
+
+**预留（未联动）**
+
+- 订单下推出入库、业务单据生成应收应付、库存与物料档案统一、字典下拉接入
+
+**测试步骤**
+
+1. admin 登录，9 个模块 CRUD 与搜索
+2. 金额与库存汇总计算验证
+3. 删除确认与弹窗遮罩行为
+4. Ver2.7 删除链路、机型成本启停、BOM 弹窗、字典选项回归
+
 ## Ver2.7
 
 当前代码版本：冠誉ERP管理系统 Ver2.7。
