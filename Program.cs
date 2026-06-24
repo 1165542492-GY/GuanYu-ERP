@@ -184,9 +184,10 @@ namespace SupplierErpApp
     {
         public decimal TaxRate { get; set; }
         public string ClearDataPassword { get; set; }
+        public string UpdatedAt { get; set; }
     }
 
-    public class TaxRateRequest { public decimal TaxRate { get; set; } }
+    public class TaxRateRequest { public decimal TaxRate { get; set; } public string UpdatedAt { get; set; } }
     public class ClearTestDataRequest { public string Password { get; set; } public string ConfirmText { get; set; } }
 
     public class BomDetail
@@ -1409,7 +1410,9 @@ namespace SupplierErpApp
             RunUnderDataLock(() =>
             {
                 var settings = LoadSystemSettings();
+                EnsureEditVersionMatch(settings.UpdatedAt, req.UpdatedAt);
                 settings.TaxRate = req.TaxRate;
+                settings.UpdatedAt = ProfileUpdatedAtNow();
                 SaveSystemSettingsFile(settings);
                 saved = settings;
             });
