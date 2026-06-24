@@ -4992,7 +4992,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(ReceivableSequenceFile, "AR", list.Select(x => x.Code), "YS");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Receivable>(item, true);
             });
@@ -5006,10 +5006,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("应收款不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.CustomerName = input.CustomerName; item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
                 item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
                 item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Receivable>(item, true);
             });
             Audit(user, "修改应收款", saved.Code); WriteJson(ctx, saved);
@@ -5056,7 +5057,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(PayableSequenceFile, "AP", list.Select(x => x.Code), "YF");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Payable>(item, true);
             });
@@ -5070,10 +5071,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("应付款不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.SupplierName = input.SupplierName; item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
                 item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
                 item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Payable>(item, true);
             });
             Audit(user, "修改应付款", saved.Code); WriteJson(ctx, saved);

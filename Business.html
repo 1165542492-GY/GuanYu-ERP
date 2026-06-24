@@ -74,7 +74,7 @@ var bizModules={
 var BIZ_SCROLL_PAGES=['sales-order','sales-outbound','purchase-order','purchase-inbound','production-pick','finished-inbound','receivable','payable','warehouse-stock'];
 var bizState={};
 var bizRefs={salesOrders:[],purchaseOrders:[],materials:[],boms:[],modelCosts:[],customers:[]};
-function bizHasEditConflictView(v){return v==='salesOrderView'||v==='salesOutboundView'||v==='purchaseOrderView'||v==='purchaseInboundView'||v==='productionPickView'||v==='finishedInboundView';}
+function bizHasEditConflictView(v){return v==='salesOrderView'||v==='salesOutboundView'||v==='purchaseOrderView'||v==='purchaseInboundView'||v==='productionPickView'||v==='finishedInboundView'||v==='receivableView'||v==='payableView';}
 function bizId(cfg,k){return cfg.prefix+'_'+k}
 function bizToday(){var d=new Date(),p=function(n){return n<10?'0'+n:''+n};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
 function bizMoney2(v){return Math.round(numVal(v)*100)/100}
