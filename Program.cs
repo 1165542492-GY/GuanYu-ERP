@@ -649,6 +649,7 @@ namespace SupplierErpApp
         static readonly string DefaultListenUrl = "http://0.0.0.0:" + Port;
         static HttpListener Listener;
         static NotifyIcon TrayIcon;
+        static bool StartupBrowserOpened;
 
         [STAThread]
         public static void Main()
@@ -658,7 +659,7 @@ namespace SupplierErpApp
             {
                 if (!created)
                 {
-                    MessageBox.Show("供应商管理系统已经在运行。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("冠誉制造 ERP 已经在运行。\r\n\r\n请查看系统托盘图标，或先关闭已运行的程序后再启动。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 try
@@ -693,7 +694,7 @@ namespace SupplierErpApp
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
                     SetupTray();
-                    OpenBrowser();
+                    OpenBrowserOnStartup();
                     Application.Run();
                 }
                 catch (Exception ex)
@@ -792,7 +793,14 @@ namespace SupplierErpApp
             TrayIcon.Visible = true;
             TrayIcon.ContextMenuStrip = menu;
             TrayIcon.DoubleClick += delegate { OpenBrowser(); };
-            TrayIcon.ShowBalloonTip(2500, "供应商管理系统已启动", "本机：http://127.0.0.1:" + Port + "\r\n局域网：http://192.168.1.28:" + Port, ToolTipIcon.Info);
+            TrayIcon.ShowBalloonTip(2500, "冠誉制造 ERP 已启动", "本机：http://127.0.0.1:" + Port + "\r\n局域网：http://" + GetLanIp() + ":" + Port, ToolTipIcon.Info);
+        }
+
+        static void OpenBrowserOnStartup()
+        {
+            if (StartupBrowserOpened) return;
+            StartupBrowserOpened = true;
+            OpenBrowser();
         }
 
         static string ResolveListenUrl()
@@ -828,8 +836,19 @@ namespace SupplierErpApp
         static void StartServer()
         {
             Listener = new HttpListener();
-            Listener.Prefixes.Add(ToHttpListenerPrefix(ResolveListenUrl()));
-            Listener.Start();
+            string listenUrl = ResolveListenUrl();
+            Listener.Prefixes.Add(ToHttpListenerPrefix(listenUrl));
+            try
+            {
+                Listener.Start();
+            }
+            catch (HttpListenerException ex)
+            {
+                string hint = ex.ErrorCode == 5
+                    ? "请以管理员身份运行「冠誉制造ERP.exe」。"
+                    : "端口 " + Port + " 已被占用，或当前用户无权监听该地址。\r\n\r\n请关闭已运行的「冠誉制造ERP」或其他占用该端口的程序后重试。";
+                throw new InvalidOperationException("ERP Web 服务启动失败（" + listenUrl + "）。\r\n\r\n" + hint + "\r\n\r\n详细信息：" + ex.Message, ex);
+            }
             ThreadPool.QueueUserWorkItem(delegate
             {
                 while (Listener.IsListening)
