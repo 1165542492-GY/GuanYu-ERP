@@ -346,20 +346,33 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 ## 数据目录
 
-运行数据默认保存在：
+ERP 正式业务数据固定保存在 D 盘，便于备份、迁移和查找：
 
 ```text
-C:\ProgramData\智造ERP供应商管理
+D:\冠誉制造ERP\Data          ← 业务 JSON 数据（users.json、suppliers.json 等）
+D:\冠誉制造ERP\Backups       ← 自动备份、手动备份、清空前备份
+D:\冠誉制造ERP\Exports       ← 建议将浏览器导出的 CSV/Excel 保存到此目录
+D:\冠誉制造ERP\Imports       ← 建议将待导入的 Excel/CSV 文件放此目录
 ```
 
-目录中包含供应商、客户、物料、财务和编号序列等 JSON 数据，以及：
+`Data` 目录中包含供应商、客户、物料、财务和编号序列等 JSON 数据，以及：
 
 - `users.json`：登录账号与权限（密码 SHA256 哈希存储）
 - `bom.json`、`model_costs.json`、`system_settings.json`、`dictionary_options.json`：BOM、机型成本、系统税率、字典选项
-- `backups`：自动备份、手动备份（`manual_backup_yyyyMMdd_HHmmss/` 完整目录）及清空前备份（`backup_before_clear_yyyyMMdd_HHmmss/`）
 - `operation.log`：操作审计日志
 
-系统最多保留 50 个 JSON 备份文件。升级或迁移前，请完整备份该数据目录。
+`Backups` 目录包含自动备份、手动备份（`manual_backup_yyyyMMdd_HHmmss/` 完整目录）及清空前备份（`backup_before_clear_yyyyMMdd_HHmmss/`）。
+
+系统最多保留 50 个 JSON 备份文件。升级或迁移前，请完整备份 `D:\冠誉制造ERP` 目录。
+
+### 旧数据目录（历史兼容）
+
+旧版数据目录 `C:\ProgramData\智造ERP供应商管理` **不再作为正式数据目录**。首次启动时，若新目录尚无 JSON 数据且旧目录存在，程序会自动将旧目录下的 JSON 复制到 `D:\冠誉制造ERP\Data`（不删除、不覆盖旧数据）。
+
+### 多电脑与云盘注意事项
+
+- **不要把 ERP 数据目录放在 WPS 云盘、OneDrive、百度网盘等同步目录中**，同步软件可能与程序同时读写 JSON，导致数据损坏。
+- **多电脑使用时，只能在一台主机上运行 ERP.exe**；其他电脑通过浏览器访问主机 IP（如 `http://192.168.x.x:8787`），共用主机上的 D 盘数据。
 
 ## 批量操作与显示设置
 
@@ -397,6 +410,7 @@ Excel 导入功能保持不变。
 - 服务监听局域网端口 `8787`，请按实际网络环境配置 Windows 防火墙。
 - 当前使用 HTTP 明文通信，建议仅在可信局域网内使用，不要直接暴露到公网。
 - 数据由运行程序统一读写，不建议在程序运行时手工编辑 JSON 文件。
+- 正式数据在 `D:\冠誉制造ERP\Data`，请勿放入云盘同步目录；多电脑共用数据时只在一台主机运行 ERP。
 - 数据文件、备份、日志、编译产物和安装包 zip 不应提交到 Git 仓库。
 - 安装包默认输出到仓库外的 `02-安装包` 目录，不会进入 GitHub。
 - 账号数据保存在数据目录的 `users.json` 中，密码以 SHA256 哈希存储；权限同时控制菜单、按钮和后端接口。

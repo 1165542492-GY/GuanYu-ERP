@@ -20,10 +20,14 @@
 - 子账号由系统管理员在「设置 → 系统设置 → 账号管理」中新增并分配权限
 
 四、数据保存位置
-程序运行数据默认保存在：
-C:\ProgramData\智造ERP供应商管理
+ERP 正式业务数据固定保存在 D 盘：
 
-该目录包含：
+D:\冠誉制造ERP\Data          ← 业务 JSON 数据
+D:\冠誉制造ERP\Backups       ← 自动备份、手动备份
+D:\冠誉制造ERP\Exports       ← 建议保存浏览器导出的 CSV/Excel
+D:\冠誉制造ERP\Imports       ← 建议放置待导入的 Excel/CSV 文件
+
+Data 目录包含：
 - 供应商、客户、物料、财务等业务 JSON 数据
 - bom.json（BOM表）、model_costs.json（机型成本）、system_settings.json（系统税率）
 - dictionary_options.json（字典选项，Ver2.7）
@@ -31,10 +35,18 @@ C:\ProgramData\智造ERP供应商管理
 - production_picks.json、finished_inbounds.json、receivables.json、payables.json（Ver2.8）
 - contracts.json（合同）、contract_settings.json（合同资料）
 - users.json 账号与权限数据（密码 SHA256 哈希存储）
-- backups 备份目录
 - operation.log 操作日志
 
-升级、迁移或重装前，请先完整备份上述目录。
+Backups 目录包含程序自动备份、手动备份及清空前备份。
+
+旧版数据目录 C:\ProgramData\智造ERP供应商管理 仅作历史兼容，不再作为正式数据目录。
+首次启动时，若新目录尚无 JSON 数据且旧目录存在，程序会自动复制旧目录 JSON 到新目录（不删除旧目录、不覆盖新目录已有文件）。
+
+重要提示：
+- 不要把 ERP 数据目录放在 WPS 云盘、OneDrive、百度网盘等同步目录中
+- 多电脑使用时，只能在一台主机运行 ERP.exe，其他电脑通过浏览器访问主机 IP
+
+升级、迁移或重装前，请先完整备份 D:\冠誉制造ERP 目录。
 
 五、账号说明
 - admin 为系统主账号，拥有全部权限，不可删除、不可禁用

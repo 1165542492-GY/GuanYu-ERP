@@ -603,7 +603,12 @@ namespace SupplierErpApp
         const string DefaultClearDataPassword = "88888888";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
 
-        static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "智造ERP供应商管理");
+        static readonly string AppRoot = @"D:\冠誉制造ERP";
+        static readonly string LegacyDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "智造ERP供应商管理");
+        static readonly string DataDir = Path.Combine(AppRoot, "Data");
+        static readonly string BackupDir = Path.Combine(AppRoot, "Backups");
+        static readonly string ExportsDir = Path.Combine(AppRoot, "Exports");
+        static readonly string ImportsDir = Path.Combine(AppRoot, "Imports");
         static readonly string UsersFile = Path.Combine(DataDir, "users.json");
         static readonly string DataFile = Path.Combine(DataDir, "suppliers.json");
         static readonly string SupplierSequenceFile = Path.Combine(DataDir, "supplier_sequence.json");
@@ -639,7 +644,6 @@ namespace SupplierErpApp
         static readonly string ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
         static readonly string PayablesFile = Path.Combine(DataDir, "payables.json");
         static readonly string PayableSequenceFile = Path.Combine(DataDir, "payable_sequence.json");
-        static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
         static readonly string DefaultListenUrl = "http://0.0.0.0:" + Port;
@@ -659,8 +663,8 @@ namespace SupplierErpApp
                 }
                 try
                 {
-                    Directory.CreateDirectory(DataDir);
-                    Directory.CreateDirectory(BackupDir);
+                    EnsureDataDirectories();
+                    TryMigrateLegacyData();
                     if (!File.Exists(DataFile)) File.WriteAllText(DataFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(SupplierSequenceFile)) File.WriteAllText(SupplierSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(CustomerFile)) File.WriteAllText(CustomerFile, "[]", new UTF8Encoding(false));
@@ -702,6 +706,76 @@ namespace SupplierErpApp
                     if (TrayIcon != null) TrayIcon.Dispose();
                 }
             }
+        }
+
+        static void EnsureDataDirectories()
+        {
+            Directory.CreateDirectory(AppRoot);
+            Directory.CreateDirectory(DataDir);
+            Directory.CreateDirectory(BackupDir);
+            Directory.CreateDirectory(ExportsDir);
+            Directory.CreateDirectory(ImportsDir);
+        }
+
+        static bool DataDirHasJsonFiles()
+        {
+            return Directory.Exists(DataDir) && Directory.EnumerateFiles(DataDir, "*.json", SearchOption.TopDirectoryOnly).Any();
+        }
+
+        static void CopyLegacyItemIfMissing(string sourcePath, string destPath)
+        {
+            if (File.Exists(destPath) || Directory.Exists(destPath)) return;
+            if (File.Exists(sourcePath)) File.Copy(sourcePath, destPath, false);
+            else if (Directory.Exists(sourcePath)) CopyLegacyDirectory(sourcePath, destPath);
+        }
+
+        static void CopyLegacyDirectory(string sourceDir, string destDir)
+        {
+            Directory.CreateDirectory(destDir);
+            foreach (var dir in Directory.EnumerateDirectories(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(destDir, dir.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                Directory.CreateDirectory(target);
+            }
+            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(destDir, file.Substring(sourceDir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (File.Exists(target)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(file, target, false);
+            }
+        }
+
+        static void TryMigrateLegacyData()
+        {
+            if (!Directory.Exists(LegacyDataDir)) return;
+            if (DataDirHasJsonFiles()) return;
+
+            var copiedJson = new List<string>();
+            foreach (var src in Directory.EnumerateFiles(LegacyDataDir, "*.json", SearchOption.TopDirectoryOnly))
+            {
+                string dest = Path.Combine(DataDir, Path.GetFileName(src));
+                if (File.Exists(dest)) continue;
+                File.Copy(src, dest, false);
+                copiedJson.Add(Path.GetFileName(src));
+            }
+
+            string legacyLog = Path.Combine(LegacyDataDir, "operation.log");
+            if (File.Exists(legacyLog) && !File.Exists(LogFile)) File.Copy(legacyLog, LogFile, false);
+
+            string legacyBackupDir = Path.Combine(LegacyDataDir, "backups");
+            if (Directory.Exists(legacyBackupDir))
+            {
+                foreach (var item in new DirectoryInfo(legacyBackupDir).EnumerateFileSystemInfos())
+                    CopyLegacyItemIfMissing(item.FullName, Path.Combine(BackupDir, item.Name));
+            }
+
+            if (copiedJson.Count == 0) return;
+
+            string detail = string.Join(", ", copiedJson);
+            string message = "已从旧数据目录迁移 JSON 数据：" + LegacyDataDir + " -> " + DataDir + "；文件：" + detail;
+            Console.WriteLine(message);
+            try { File.AppendAllText(LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\t系统迁移\t" + message.Replace("\r", " ").Replace("\n", " ") + Environment.NewLine, Encoding.UTF8); } catch { }
         }
 
         static void SetupTray()
