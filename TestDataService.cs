@@ -409,42 +409,45 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("suppliers");
             var errors = new List<string>();
-            var list = previewOnly ? LoadSuppliers() : LoadSuppliers();
             bool changed = false;
             int rowNo = 1;
-            foreach (var row in rows)
+            Action<List<Supplier>> importLoop = list =>
             {
-                rowNo++;
-                string code = Cell(row, "供应商编号"), company = Cell(row, "供应商名称", "供应商公司名");
-                if (Placeholder(company)) { res.Skipped++; continue; }
-                if (Money(Cell(row, "当前应付款")) < 0) { AddErr(res, errors, rowNo, "当前应付款不能为负数"); continue; }
-                var existing = list.FirstOrDefault(x => (!Placeholder(code) && string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase)) || string.Equals(x.Company, company, StringComparison.OrdinalIgnoreCase));
-                if (existing != null)
+                foreach (var row in rows)
                 {
-                    if (previewOnly) { res.Updated++; continue; }
-                    existing.Contact = Cell(row, "联系人"); existing.Phone = Cell(row, "联系电话"); existing.Goods = Cell(row, "供应商品");
-                    existing.Address = Cell(row, "单位地址"); existing.Bank = Cell(row, "开户行"); existing.Account = Cell(row, "银行账号");
-                    existing.BankNo = Cell(row, "开户行行号"); existing.Payable = Money(Cell(row, "当前应付款"));
-                    if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
-                    existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
-                    res.Updated++; changed = true;
-                }
-                else
-                {
-                    if (previewOnly) { res.Added++; continue; }
-                    var item = new Supplier
+                    rowNo++;
+                    string code = Cell(row, "供应商编号"), company = Cell(row, "供应商名称", "供应商公司名");
+                    if (Placeholder(company)) { res.Skipped++; continue; }
+                    if (Money(Cell(row, "当前应付款")) < 0) { AddErr(res, errors, rowNo, "当前应付款不能为负数"); continue; }
+                    var existing = list.FirstOrDefault(x => (!Placeholder(code) && string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase)) || string.Equals(x.Company, company, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null)
                     {
-                        Id = Guid.NewGuid().ToString("N"),
-                        Code = Placeholder(code) ? NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY") : code.Trim(),
-                        Company = company, Contact = Cell(row, "联系人"), Phone = Cell(row, "联系电话"), Goods = Cell(row, "供应商品"),
-                        Address = Cell(row, "单位地址"), Bank = Cell(row, "开户行"), Account = Cell(row, "银行账号"), BankNo = Cell(row, "开户行行号"),
-                        Payable = Money(Cell(row, "当前应付款")), Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
-                        UpdatedAt = NowTimeString(), UpdatedBy = user.DisplayName
-                    };
-                    list.Insert(0, item); res.Added++; changed = true;
+                        if (previewOnly) { res.Updated++; continue; }
+                        existing.Contact = Cell(row, "联系人"); existing.Phone = Cell(row, "联系电话"); existing.Goods = Cell(row, "供应商品");
+                        existing.Address = Cell(row, "单位地址"); existing.Bank = Cell(row, "开户行"); existing.Account = Cell(row, "银行账号");
+                        existing.BankNo = Cell(row, "开户行行号"); existing.Payable = Money(Cell(row, "当前应付款"));
+                        if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
+                        existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                        res.Updated++; changed = true;
+                    }
+                    else
+                    {
+                        if (previewOnly) { res.Added++; continue; }
+                        var item = new Supplier
+                        {
+                            Id = Guid.NewGuid().ToString("N"),
+                            Code = Placeholder(code) ? NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY") : code.Trim(),
+                            Company = company, Contact = Cell(row, "联系人"), Phone = Cell(row, "联系电话"), Goods = Cell(row, "供应商品"),
+                            Address = Cell(row, "单位地址"), Bank = Cell(row, "开户行"), Account = Cell(row, "银行账号"), BankNo = Cell(row, "开户行行号"),
+                            Payable = Money(Cell(row, "当前应付款")), Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
+                            UpdatedAt = NowTimeString(), UpdatedBy = user.DisplayName
+                        };
+                        list.Insert(0, item); res.Added++; changed = true;
+                    }
                 }
-            }
-            if (!previewOnly && changed) SaveSuppliers(list);
+            };
+            if (previewOnly) importLoop(LoadSuppliers());
+            else MutateJsonList<Supplier, object>(DataFile, "auto", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -452,9 +455,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("customers");
             var errors = new List<string>();
-            var list = LoadCustomers();
             bool changed = false;
             int rowNo = 1;
+            Action<List<Customer>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -487,7 +491,9 @@ namespace SupplierErpApp
                     list.Insert(0, item); res.Added++; changed = true;
                 }
             }
-            if (!previewOnly && changed) SaveCustomers(list);
+            };
+            if (previewOnly) importLoop(LoadCustomers());
+            else MutateJsonList<Customer, object>(CustomerFile, "customers", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -495,10 +501,11 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("materials");
             var errors = new List<string>();
-            var list = LoadMaterials();
             var suppliers = LoadSuppliers();
             bool changed = false;
             int rowNo = 1;
+            Action<List<Material>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -534,7 +541,9 @@ namespace SupplierErpApp
                     list.Insert(0, item); res.Added++; changed = true;
                 }
             }
-            if (!previewOnly && changed) SaveMaterials(list);
+            };
+            if (previewOnly) importLoop(LoadMaterials());
+            else MutateJsonList<Material, object>(MaterialFile, "materials", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -543,12 +552,13 @@ namespace SupplierErpApp
             var res = NewModuleResult("boms");
             var errors = new List<string>();
             var warnings = new List<string>();
-            var list = LoadBom();
             var materials = LoadMaterials();
             decimal taxRate = LoadSystemSettings().TaxRate;
             var groups = rows.GroupBy(r => BomConflictKey(Cell(r, "BOM编号"), Cell(r, "BOM版本"))).Where(g => !string.IsNullOrWhiteSpace(g.Key)).ToList();
             bool changed = false;
             int firstRowNo = 1;
+            Action<List<BomItem>> importLoop = list =>
+            {
             foreach (var g in groups)
             {
                 firstRowNo++;
@@ -563,7 +573,9 @@ namespace SupplierErpApp
                 RecalcBomLines(bom, taxRate);
                 list.Insert(0, bom); res.Added++; changed = true;
             }
-            if (!previewOnly && changed) SaveBom(list);
+            };
+            if (previewOnly) importLoop(LoadBom());
+            else MutateJsonList<BomItem, object>(BomFile, "bom", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.Concat(warnings).Take(30).ToArray(); return res;
         }
 
@@ -571,10 +583,11 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("modelCosts");
             var errors = new List<string>();
-            var list = LoadModelCosts();
             var boms = LoadBom();
             bool changed = false;
             int rowNo = 1;
+            Action<List<ModelCost>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -596,7 +609,9 @@ namespace SupplierErpApp
                 };
                 list.Insert(0, item); res.Added++; changed = true;
             }
-            if (!previewOnly && changed) SaveModelCosts(list);
+            };
+            if (previewOnly) importLoop(LoadModelCosts());
+            else MutateJsonList<ModelCost, object>(ModelCostFile, "model_costs", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -604,9 +619,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("salesOrders");
             var errors = new List<string>();
-            var list = LoadSalesOrders();
             bool changed = false;
             int rowNo = 1;
+            Action<List<SalesOrder>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -633,7 +649,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SaveSalesOrders(list);
+            };
+            if (previewOnly) importLoop(LoadSalesOrders());
+            else MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -641,9 +659,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("salesOutbounds");
             var errors = new List<string>();
-            var list = LoadSalesOutbounds();
             bool changed = false;
             int rowNo = 1;
+            Action<List<SalesOutbound>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -672,7 +691,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SaveSalesOutbounds(list);
+            };
+            if (previewOnly) importLoop(LoadSalesOutbounds());
+            else MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -680,10 +701,11 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("purchaseOrders");
             var errors = new List<string>();
-            var list = LoadPurchaseOrders();
             var suppliers = LoadSuppliers();
             bool changed = false;
             int rowNo = 1;
+            Action<List<PurchaseOrder>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -710,7 +732,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SavePurchaseOrders(list);
+            };
+            if (previewOnly) importLoop(LoadPurchaseOrders());
+            else MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -718,9 +742,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("purchaseInbounds");
             var errors = new List<string>();
-            var list = LoadPurchaseInbounds();
             bool changed = false;
             int rowNo = 1;
+            Action<List<PurchaseInbound>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -749,7 +774,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SavePurchaseInbounds(list);
+            };
+            if (previewOnly) importLoop(LoadPurchaseInbounds());
+            else MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -757,9 +784,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("productionPicks");
             var errors = new List<string>();
-            var list = LoadProductionPicks();
             bool changed = false;
             int rowNo = 1;
+            Action<List<ProductionPick>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -787,7 +815,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SaveProductionPicks(list);
+            };
+            if (previewOnly) importLoop(LoadProductionPicks());
+            else MutateJsonList<ProductionPick, object>(ProductionPicksFile, "production_picks", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -795,9 +825,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("finishedInbounds");
             var errors = new List<string>();
-            var list = LoadFinishedInbounds();
             bool changed = false;
             int rowNo = 1;
+            Action<List<FinishedInbound>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -824,7 +855,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SaveFinishedInbounds(list);
+            };
+            if (previewOnly) importLoop(LoadFinishedInbounds());
+            else MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -832,9 +865,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("receivables");
             var errors = new List<string>();
-            var list = LoadReceivables();
             bool changed = false;
             int rowNo = 1;
+            Action<List<Receivable>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -862,7 +896,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SaveReceivables(list);
+            };
+            if (previewOnly) importLoop(LoadReceivables());
+            else MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -870,9 +906,10 @@ namespace SupplierErpApp
         {
             var res = NewModuleResult("payables");
             var errors = new List<string>();
-            var list = LoadPayables();
             bool changed = false;
             int rowNo = 1;
+            Action<List<Payable>> importLoop = list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -900,7 +937,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
             }
-            if (!previewOnly && changed) SavePayables(list);
+            };
+            if (previewOnly) importLoop(LoadPayables());
+            else MutateJsonList<Payable, object>(PayablesFile, "payables", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
         }
     }

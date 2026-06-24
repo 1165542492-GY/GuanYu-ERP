@@ -1302,21 +1302,21 @@ namespace SupplierErpApp
             var req = Json.Deserialize<TaxRateRequest>(ReadBody(ctx.Request));
             if (req == null) { WriteJson(ctx, new { error = "请求无效" }, 400); return; }
             if (req.TaxRate < 0) { WriteJson(ctx, new { error = "税率不能小于 0" }, 400); return; }
-            var settings = LoadSystemSettings();
-            settings.TaxRate = req.TaxRate;
-            SaveSystemSettingsFile(settings);
-            Audit(user, "修改税率", settings.TaxRate.ToString("0.##") + "%");
-            WriteJson(ctx, settings);
+            SystemSettings saved = null;
+            RunUnderDataLock(() =>
+            {
+                var settings = LoadSystemSettings();
+                settings.TaxRate = req.TaxRate;
+                SaveSystemSettingsFile(settings);
+                saved = settings;
+            });
+            Audit(user, "修改税率", saved.TaxRate.ToString("0.##") + "%");
+            WriteJson(ctx, saved);
         }
 
         static List<BomItem> LoadBom()
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(BomFile)) return new List<BomItem>();
-                string text = File.ReadAllText(BomFile, Encoding.UTF8);
-                return Json.Deserialize<List<BomItem>>(text) ?? new List<BomItem>();
-            }
+            lock (DataLock) return ReadJsonListCore<BomItem>(BomFile);
         }
 
         static void ApplyCurrentMaterialPrices(BomItem item)
@@ -1376,18 +1376,7 @@ namespace SupplierErpApp
 
         static void SaveBom(List<BomItem> items)
         {
-            lock (DataLock)
-            {
-                string temp = BomFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(BomFile))
-                {
-                    string backup = Path.Combine(BackupDir, "bom_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, BomFile, backup);
-                }
-                else File.Move(temp, BomFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(BomFile, "bom", items);
         }
 
         static void EnsureModelCode(BomItem item)
@@ -1404,56 +1393,59 @@ namespace SupplierErpApp
             EnsureModelCode(item);
             ValidateBom(item);
             ApplyCurrentMaterialPrices(item);
-            var list = LoadBom();
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(BomSequenceFile, "BOM", list.Select(x => x.Code));
-            item.CreatedAt = now;
-            item.UpdatedAt = now;
-            list.Insert(0, item);
-            SaveBom(list);
-            Audit(user, "新增BOM", item.Code + " " + item.ModelName);
-            WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<BomItem, BomItem>(BomFile, "bom", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(BomSequenceFile, "BOM", list.Select(x => x.Code));
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                list.Insert(0, item);
+                return new JsonMutationResult<BomItem>(item, true);
+            });
+            Audit(user, "新增BOM", saved.Code + " " + saved.ModelName);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateBom(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
             ValidateBom(input);
-            var list = LoadBom();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
             ApplyCurrentMaterialPrices(input);
-            input.Id = item.Id;
-            input.Code = item.Code;
-            input.CreatedAt = item.CreatedAt;
-            input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            list[list.IndexOf(item)] = input;
-            SaveBom(list);
-            Audit(user, "修改BOM", input.Code + " " + input.ModelName);
-            WriteJson(ctx, input);
+            var saved = MutateJsonList<BomItem, BomItem>(BomFile, "bom", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("BOM 不存在", 404);
+                input.Id = item.Id;
+                input.Code = item.Code;
+                input.CreatedAt = item.CreatedAt;
+                input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                list[list.IndexOf(item)] = input;
+                return new JsonMutationResult<BomItem>(input, true);
+            });
+            Audit(user, "修改BOM", saved.Code + " " + saved.ModelName);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteBom(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadBom();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "BOM 不存在" }, 404); return; }
-            if (IsBomUsedByModelCost(id)) { WriteJson(ctx, new { error = FormatBomDeleteBlockedMessage(GetModelCostsUsingBom(id)) }, 409); return; }
-            list.Remove(item);
-            SaveBom(list);
-            Audit(user, "删除BOM", item.Code + " " + item.ModelName);
+            string auditDetail = null;
+            MutateJsonList<BomItem, object>(BomFile, "bom", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("BOM 不存在", 404);
+                if (IsBomUsedByModelCost(id)) throw new BusinessException(FormatBomDeleteBlockedMessage(GetModelCostsUsingBom(id)), 409);
+                auditDetail = item.Code + " " + item.ModelName;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除BOM", auditDetail);
             WriteJson(ctx, new { ok = true });
         }
 
         static List<ModelCost> LoadModelCosts()
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(ModelCostFile)) return new List<ModelCost>();
-                string text = File.ReadAllText(ModelCostFile, Encoding.UTF8);
-                return Json.Deserialize<List<ModelCost>>(text) ?? new List<ModelCost>();
-            }
+            lock (DataLock) return ReadJsonListCore<ModelCost>(ModelCostFile);
         }
 
         static List<ModelCost> LoadModelCostsWithCurrentPrices()
@@ -1472,18 +1464,7 @@ namespace SupplierErpApp
 
         static void SaveModelCosts(List<ModelCost> items)
         {
-            lock (DataLock)
-            {
-                string temp = ModelCostFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(ModelCostFile))
-                {
-                    string backup = Path.Combine(BackupDir, "model_costs_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, ModelCostFile, backup);
-                }
-                else File.Move(temp, ModelCostFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(ModelCostFile, "model_costs", items);
         }
 
         static void FillModelCostFromBom(ModelCost item, bool allowDisabledBom = false)
@@ -1510,52 +1491,63 @@ namespace SupplierErpApp
             FillModelCostFromBom(item, false);
             ValidateModelCostFilled(item);
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            item.Id = Guid.NewGuid().ToString("N");
-            item.CreatedAt = now;
-            item.UpdatedAt = now;
             if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "启用";
-            var list = LoadModelCosts();
-            list.Insert(0, item);
-            SaveModelCosts(list);
-            Audit(user, "新增机型成本", item.ModelCode + " " + item.ModelName);
-            WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<ModelCost, ModelCost>(ModelCostFile, "model_costs", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                list.Insert(0, item);
+                return new JsonMutationResult<ModelCost>(item, true);
+            });
+            Audit(user, "新增机型成本", saved.ModelCode + " " + saved.ModelName);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateModelCost(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ModelCost>(ReadBody(ctx.Request));
             ValidateModelCost(input);
-            var list = LoadModelCosts();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
-            bool sameBom = string.Equals(item.BomId, input.BomId, StringComparison.OrdinalIgnoreCase);
+            var listSnapshot = LoadModelCosts();
+            var existing = listSnapshot.FirstOrDefault(x => x.Id == id);
+            if (existing == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
+            bool sameBom = string.Equals(existing.BomId, input.BomId, StringComparison.OrdinalIgnoreCase);
             FillModelCostFromBom(input, sameBom);
             ValidateModelCostFilled(input);
-            input.Id = item.Id;
-            input.CreatedAt = item.CreatedAt;
-            input.Status = string.IsNullOrWhiteSpace(input.Status) ? (item.Status ?? "启用") : input.Status.Trim();
+            input.Status = string.IsNullOrWhiteSpace(input.Status) ? (existing.Status ?? "启用") : input.Status.Trim();
             if (input.Status != "启用" && input.Status != "停用") { WriteJson(ctx, new { error = "状态只能是启用或停用" }, 400); return; }
             if (input.Status == "启用")
             {
                 var bomCheck = LoadBom().FirstOrDefault(x => x.Id == input.BomId);
                 if (bomCheck != null && (bomCheck.Status ?? "启用") != "启用") { WriteJson(ctx, new { error = "该机型成本关联的 BOM 已停用，不能启用。" }, 409); return; }
             }
-            input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            list[list.IndexOf(item)] = input;
-            SaveModelCosts(list);
-            Audit(user, "修改机型成本", input.ModelCode + " " + input.ModelName);
-            WriteJson(ctx, input);
+            var saved = MutateJsonList<ModelCost, ModelCost>(ModelCostFile, "model_costs", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("机型成本记录不存在", 404);
+                input.Id = item.Id;
+                input.CreatedAt = item.CreatedAt;
+                input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                list[list.IndexOf(item)] = input;
+                return new JsonMutationResult<ModelCost>(input, true);
+            });
+            Audit(user, "修改机型成本", saved.ModelCode + " " + saved.ModelName);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteModelCost(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadModelCosts();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
-            if ((item.Status ?? "启用") == "启用") { WriteJson(ctx, new { error = "该机型成本当前为启用状态，不能删除。请先停用后再删除。" }, 409); return; }
-            list.Remove(item);
-            SaveModelCosts(list);
-            Audit(user, "删除机型成本", item.ModelCode + " " + item.ModelName);
+            string auditDetail = null;
+            MutateJsonList<ModelCost, object>(ModelCostFile, "model_costs", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("机型成本记录不存在", 404);
+                if ((item.Status ?? "启用") == "启用") throw new BusinessException("该机型成本当前为启用状态，不能删除。请先停用后再删除。", 409);
+                auditDetail = item.ModelCode + " " + item.ModelName;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除机型成本", auditDetail);
             WriteJson(ctx, new { ok = true });
         }
 
@@ -1707,28 +1699,12 @@ namespace SupplierErpApp
 
         static List<DictionaryOption> LoadDictionaryOptions()
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(DictionaryOptionsFile)) return new List<DictionaryOption>();
-                string text = File.ReadAllText(DictionaryOptionsFile, Encoding.UTF8);
-                return Json.Deserialize<List<DictionaryOption>>(text) ?? new List<DictionaryOption>();
-            }
+            lock (DataLock) return ReadJsonListCore<DictionaryOption>(DictionaryOptionsFile);
         }
 
         static void SaveDictionaryOptions(List<DictionaryOption> items)
         {
-            lock (DataLock)
-            {
-                string temp = DictionaryOptionsFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(DictionaryOptionsFile))
-                {
-                    string backup = Path.Combine(BackupDir, "dictionary_options_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, DictionaryOptionsFile, backup);
-                }
-                else File.Move(temp, DictionaryOptionsFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(DictionaryOptionsFile, "dictionary_options", items);
         }
 
         static void EnsureDefaultDictionaryOptions()
@@ -1831,50 +1807,58 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<DictionaryOption>(ReadBody(ctx.Request));
             ValidateDictionaryOption(item);
-            var list = LoadDictionaryOptions();
-            if (list.Any(x => string.Equals(x.Category, item.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, item.Name, StringComparison.OrdinalIgnoreCase)))
-            { WriteJson(ctx, new { error = "该分类下已存在相同名称的字典项" }, 409); return; }
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            item.Id = Guid.NewGuid().ToString("N");
-            if (item.SortOrder <= 0) item.SortOrder = list.Where(x => x.Category == item.Category).Select(x => x.SortOrder).DefaultIfEmpty(0).Max() + 1;
-            item.CreatedAt = now;
-            item.UpdatedAt = now;
-            list.Add(item);
-            SaveDictionaryOptions(list);
-            Audit(user, "新增字典项", item.Category + " " + item.Name);
-            WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<DictionaryOption, DictionaryOption>(DictionaryOptionsFile, "dictionary_options", list =>
+            {
+                if (list.Any(x => string.Equals(x.Category, item.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, item.Name, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该分类下已存在相同名称的字典项", 409);
+                item.Id = Guid.NewGuid().ToString("N");
+                if (item.SortOrder <= 0) item.SortOrder = list.Where(x => x.Category == item.Category).Select(x => x.SortOrder).DefaultIfEmpty(0).Max() + 1;
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                list.Add(item);
+                return new JsonMutationResult<DictionaryOption>(item, true);
+            });
+            Audit(user, "新增字典项", saved.Category + " " + saved.Name);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateDictionaryOption(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<DictionaryOption>(ReadBody(ctx.Request));
-            var list = LoadDictionaryOptions();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "字典项不存在" }, 404); return; }
             ValidateDictionaryOption(input);
-            if (list.Any(x => x.Id != id && string.Equals(x.Category, input.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, input.Name, StringComparison.OrdinalIgnoreCase)))
-            { WriteJson(ctx, new { error = "该分类下已存在相同名称的字典项" }, 409); return; }
-            item.Category = input.Category;
-            item.Name = input.Name;
-            item.Value = string.IsNullOrWhiteSpace(input.Value) ? input.Name : input.Value.Trim();
-            item.Note = (input.Note ?? "").Trim();
-            item.Status = input.Status;
-            if (input.SortOrder > 0) item.SortOrder = input.SortOrder;
-            item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            SaveDictionaryOptions(list);
-            Audit(user, "修改字典项", item.Category + " " + item.Name);
-            WriteJson(ctx, item);
+            var saved = MutateJsonList<DictionaryOption, DictionaryOption>(DictionaryOptionsFile, "dictionary_options", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("字典项不存在", 404);
+                if (list.Any(x => x.Id != id && string.Equals(x.Category, input.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, input.Name, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该分类下已存在相同名称的字典项", 409);
+                item.Category = input.Category;
+                item.Name = input.Name;
+                item.Value = string.IsNullOrWhiteSpace(input.Value) ? input.Name : input.Value.Trim();
+                item.Note = (input.Note ?? "").Trim();
+                item.Status = input.Status;
+                if (input.SortOrder > 0) item.SortOrder = input.SortOrder;
+                item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                return new JsonMutationResult<DictionaryOption>(item, true);
+            });
+            Audit(user, "修改字典项", saved.Category + " " + saved.Name);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteDictionaryOption(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadDictionaryOptions();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "字典项不存在" }, 404); return; }
-            if (IsDictionaryOptionInUse(item)) { WriteJson(ctx, new { error = "该字典项已被业务数据使用，不能删除。请改为停用。" }, 409); return; }
-            list.Remove(item);
-            SaveDictionaryOptions(list);
-            Audit(user, "删除字典项", item.Category + " " + item.Name);
+            string auditDetail = null;
+            MutateJsonList<DictionaryOption, object>(DictionaryOptionsFile, "dictionary_options", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("字典项不存在", 404);
+                if (IsDictionaryOptionInUse(item)) throw new BusinessException("该字典项已被业务数据使用，不能删除。请改为停用。", 409);
+                auditDetail = item.Category + " " + item.Name;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除字典项", auditDetail);
             WriteJson(ctx, new { ok = true });
         }
 
@@ -1924,48 +1908,65 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(req.Password)) { WriteJson(ctx, new { error = "密码不能为空" }, 400); return; }
             string username = req.Username.Trim();
             if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能创建同名主账号" }, 409); return; }
-            if (FindUser(username) != null) { WriteJson(ctx, new { error = "账户名已存在" }, 409); return; }
-            var user = new UserDef
+            UserPublic saved = null;
+            RunUnderDataLock(() =>
             {
-                Username = username,
-                DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? username : req.DisplayName.Trim(),
-                Role = "普通用户",
-                PasswordHash = Sha256(req.Password),
-                Enabled = req.Enabled,
-                Permissions = NormalizePermissions(req.Permissions)
-            };
-            Users.Add(user);
-            SaveUsers();
-            Audit(actor, "新增子账号", user.Username);
-            WriteJson(ctx, ToPublic(user), 201);
+                if (FindUser(username) != null) throw new BusinessException("账户名已存在", 409);
+                var user = new UserDef
+                {
+                    Username = username,
+                    DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? username : req.DisplayName.Trim(),
+                    Role = "普通用户",
+                    PasswordHash = Sha256(req.Password),
+                    Enabled = req.Enabled,
+                    Permissions = NormalizePermissions(req.Permissions)
+                };
+                Users.Add(user);
+                SaveUsers();
+                saved = ToPublic(user);
+            });
+            Audit(actor, "新增子账号", saved.Username);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateUser(HttpListenerContext ctx, UserSession actor, string username)
         {
             if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能修改主账号权限或状态" }, 403); return; }
-            var user = FindUser(username);
-            if (user == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
             var req = Json.Deserialize<UpdateUserRequest>(ReadBody(ctx.Request));
             if (req == null) { WriteJson(ctx, new { error = "请求无效" }, 400); return; }
-            if (!string.IsNullOrWhiteSpace(req.DisplayName)) user.DisplayName = req.DisplayName.Trim();
-            user.Enabled = req.Enabled;
-            user.Permissions = NormalizePermissions(req.Permissions);
-            if (!string.IsNullOrWhiteSpace(req.Password)) user.PasswordHash = Sha256(req.Password);
-            SaveUsers();
-            InvalidateUserSessions(user.Username);
-            Audit(actor, "编辑子账号", user.Username);
-            WriteJson(ctx, ToPublic(user));
+            UserPublic saved = null;
+            string sessionUser = null;
+            RunUnderDataLock(() =>
+            {
+                var user = FindUser(username);
+                if (user == null) throw new BusinessException("账号不存在", 404);
+                if (!string.IsNullOrWhiteSpace(req.DisplayName)) user.DisplayName = req.DisplayName.Trim();
+                user.Enabled = req.Enabled;
+                user.Permissions = NormalizePermissions(req.Permissions);
+                if (!string.IsNullOrWhiteSpace(req.Password)) user.PasswordHash = Sha256(req.Password);
+                SaveUsers();
+                sessionUser = user.Username;
+                saved = ToPublic(user);
+            });
+            InvalidateUserSessions(sessionUser);
+            Audit(actor, "编辑子账号", saved.Username);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteUser(HttpListenerContext ctx, UserSession actor, string username)
         {
             if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能删除主账号" }, 403); return; }
-            var user = FindUser(username);
-            if (user == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
-            Users.Remove(user);
-            SaveUsers();
-            InvalidateUserSessions(user.Username);
-            Audit(actor, "删除子账号", user.Username);
+            string deletedUser = null;
+            RunUnderDataLock(() =>
+            {
+                var user = FindUser(username);
+                if (user == null) throw new BusinessException("账号不存在", 404);
+                deletedUser = user.Username;
+                Users.Remove(user);
+                SaveUsers();
+            });
+            InvalidateUserSessions(deletedUser);
+            Audit(actor, "删除子账号", deletedUser);
             WriteJson(ctx, new { ok = true });
         }
 
@@ -1975,67 +1976,73 @@ namespace SupplierErpApp
             var req = Json.Deserialize<ChangePasswordRequest>(ReadBody(ctx.Request));
             if (req == null || string.IsNullOrWhiteSpace(req.OldPassword)) { WriteJson(ctx, new { error = "请输入旧密码" }, 400); return; }
             if (string.IsNullOrWhiteSpace(req.NewPassword)) { WriteJson(ctx, new { error = "请输入新密码" }, 400); return; }
-            var def = FindUser(user.Username);
-            if (def == null) { WriteJson(ctx, new { error = "账号不存在" }, 404); return; }
-            if (!FixedEquals(def.PasswordHash, Sha256(req.OldPassword))) { WriteJson(ctx, new { error = "旧密码不正确" }, 401); return; }
-            def.PasswordHash = Sha256(req.NewPassword);
-            SaveUsers();
-            InvalidateUserSessions(def.Username);
-            Audit(user, "修改密码", def.Username);
+            string username = null;
+            RunUnderDataLock(() =>
+            {
+                var def = FindUser(user.Username);
+                if (def == null) throw new BusinessException("账号不存在", 404);
+                if (!FixedEquals(def.PasswordHash, Sha256(req.OldPassword))) throw new BusinessException("旧密码不正确", 401);
+                def.PasswordHash = Sha256(req.NewPassword);
+                SaveUsers();
+                username = def.Username;
+            });
+            InvalidateUserSessions(username);
+            Audit(user, "修改密码", username);
             WriteJson(ctx, new { ok = true });
         }
 
         static List<Supplier> LoadSuppliers()
         {
-            lock (DataLock)
-            {
-                string text = File.ReadAllText(DataFile, Encoding.UTF8);
-                return Json.Deserialize<List<Supplier>>(text) ?? new List<Supplier>();
-            }
+            lock (DataLock) return ReadJsonListCore<Supplier>(DataFile);
         }
 
         static void SaveSuppliers(List<Supplier> items)
         {
-            lock (DataLock)
-            {
-                string temp = DataFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(DataFile))
-                {
-                    string backup = Path.Combine(BackupDir, "auto_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, DataFile, backup);
-                }
-                else File.Move(temp, DataFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(DataFile, "auto", items);
         }
 
         static void AddSupplier(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Supplier>(ReadBody(ctx.Request));
             Validate(item);
-            var list = LoadSuppliers();
-            if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商公司已经存在" }, 409); return; }
-            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveSuppliers(list); Audit(user, "新增供应商", item.Company); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<Supplier, Supplier>(DataFile, "auto", list =>
+            {
+                if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该供应商公司已经存在", 409);
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<Supplier>(item, true);
+            });
+            Audit(user, "新增供应商", saved.Company); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSupplier(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<Supplier>(ReadBody(ctx.Request)); Validate(input);
-            var list = LoadSuppliers(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "供应商不存在" }, 404); return; }
-            if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商公司已经存在" }, 409); return; }
-            item.Company=input.Company; item.Contact=input.Contact; item.Phone=input.Phone; item.Goods=input.Goods; item.Address=input.Address; item.Bank=input.Bank; item.Account=input.Account; item.BankNo=input.BankNo; item.Payable=input.Payable; item.Status=string.IsNullOrEmpty(input.Status)?"启用":input.Status; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
-            SaveSuppliers(list); Audit(user, "修改供应商", item.Company); WriteJson(ctx, item);
+            var saved = MutateJsonList<Supplier, Supplier>(DataFile, "auto", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("供应商不存在", 404);
+                if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该供应商公司已经存在", 409);
+                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Goods = input.Goods; item.Address = input.Address; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Payable = input.Payable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<Supplier>(item, true);
+            });
+            Audit(user, "修改供应商", saved.Company); WriteJson(ctx, saved);
         }
 
         static void DeleteSupplier(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadSuppliers(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "供应商不存在" }, 404); return; }
-            if (IsSupplierUsedByMaterial(item.Company)) { WriteJson(ctx, new { error = "该供应商已被物料使用，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。" }, 409); return; }
-            list.Remove(item); SaveSuppliers(list); Audit(user, "删除供应商", item.Company); WriteJson(ctx, new { ok = true });
+            MutateJsonList<Supplier, object>(DataFile, "auto", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("供应商不存在", 404);
+                if (IsSupplierUsedByMaterial(item.Company)) throw new BusinessException("该供应商已被物料使用，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。", 409);
+                list.Remove(item);
+                Audit(user, "删除供应商", item.Company);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            WriteJson(ctx, new { ok = true });
         }
 
         static void BatchDeleteSuppliers(HttpListenerContext ctx, UserSession user)
@@ -2044,14 +2051,17 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
-            var list = LoadSuppliers();
-            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
-            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的供应商" }, 404); return; }
-            if (removed.Any(item => IsSupplierUsedByMaterial(item.Company))) { WriteJson(ctx, new { error = "所选供应商中存在已被物料使用的记录，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。" }, 409); return; }
-            foreach (var item in removed) list.Remove(item);
-            SaveSuppliers(list);
-            Audit(user, "批量删除供应商", "共" + removed.Count + "条");
-            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+            var deleted = MutateJsonList<Supplier, int>(DataFile, "auto", list =>
+            {
+                var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+                if (removed.Count == 0) throw new BusinessException("未找到可删除的供应商", 404);
+                if (removed.Any(item => IsSupplierUsedByMaterial(item.Company)))
+                    throw new BusinessException("所选供应商中存在已被物料使用的记录，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。", 409);
+                foreach (var item in removed) list.Remove(item);
+                return new JsonMutationResult<int>(removed.Count, true);
+            });
+            Audit(user, "批量删除供应商", "共" + deleted + "条");
+            WriteJson(ctx, new { ok = true, deleted = deleted });
         }
 
         static void BatchAddSuppliers(HttpListenerContext ctx, UserSession user)
@@ -2059,66 +2069,56 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchSupplierRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条供应商资料" }, 400); return; }
-            var list = LoadSuppliers();
-            int imported = 0, skipped = 0, rowNo = 0;
-            var errors = new List<string>();
-            var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var pending = new List<Supplier>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<Supplier, object>(DataFile, "auto", list =>
             {
-                rowNo++;
-                try
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var pending = new List<Supplier>();
+                foreach (var input in items)
                 {
-                    Validate(input);
-                    if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                    rowNo++;
+                    try
                     {
-                        skipped++; errors.Add("第" + rowNo + "行：供应商已存在"); continue;
+                        Validate(input);
+                        if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                        {
+                            skipped++; errors.Add("第" + rowNo + "行：供应商已存在"); continue;
+                        }
+                        var item = new Supplier
+                        {
+                            Id = Guid.NewGuid().ToString("N"),
+                            Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "GY"),
+                            Company = input.Company, Contact = input.Contact, Phone = input.Phone, Goods = input.Goods,
+                            Address = input.Address, Bank = input.Bank, Account = input.Account, BankNo = input.BankNo,
+                            Payable = input.Payable, Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                        };
+                        batchCompanies.Add(item.Company);
+                        pending.Insert(0, item);
+                        imported++;
                     }
-                    var item = new Supplier
-                    {
-                        Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "GY"),
-                        Company = input.Company, Contact = input.Contact, Phone = input.Phone, Goods = input.Goods,
-                        Address = input.Address, Bank = input.Bank, Account = input.Account, BankNo = input.BankNo,
-                        Payable = input.Payable, Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
-                    };
-                    batchCompanies.Add(item.Company);
-                    pending.Insert(0, item);
-                    imported++;
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item);
-            SaveSuppliers(list);
-            Audit(user, "批量添加供应商", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加供应商", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static List<Customer> LoadCustomers()
         {
-            lock (DataLock)
-            {
-                string text = File.ReadAllText(CustomerFile, Encoding.UTF8);
-                return Json.Deserialize<List<Customer>>(text) ?? new List<Customer>();
-            }
+            lock (DataLock) return ReadJsonListCore<Customer>(CustomerFile);
         }
 
         static void SaveCustomers(List<Customer> items)
         {
-            lock (DataLock)
-            {
-                string temp = CustomerFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(CustomerFile))
-                {
-                    string backup = Path.Combine(BackupDir, "customers_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, CustomerFile, backup);
-                }
-                else File.Move(temp, CustomerFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(CustomerFile, "customers", items);
         }
 
         static int ParseCodeSequence(string code, params string[] prefixes)
@@ -2246,41 +2246,79 @@ namespace SupplierErpApp
 
         static void EnsureLegacyCodes()
         {
-            var suppliers = LoadSuppliers(); bool suppliersChanged = false;
-            foreach (var item in suppliers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(SupplierSequenceFile, "SRM", suppliers.Select(x=>x.Code), "GY"); suppliersChanged = true; }
-            if (suppliersChanged) SaveSuppliers(suppliers);
-            var customers = LoadCustomers(); bool customersChanged = false;
-            foreach (var item in customers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(CustomerSequenceFile, "CRM", customers.Select(x=>x.Code), "KH"); customersChanged = true; }
-            if (customersChanged) SaveCustomers(customers);
-            var materials = LoadMaterials(); bool materialsChanged = false;
-            foreach (var item in materials.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(MaterialSequenceFile, "MAT", materials.Select(x=>x.Code), "WL"); materialsChanged = true; }
-            if (materialsChanged) SaveMaterials(materials);
+            MutateJsonList<Supplier, object>(DataFile, "auto", list =>
+            {
+                bool changed = false;
+                foreach (var item in list.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse())
+                {
+                    item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY");
+                    changed = true;
+                }
+                return new JsonMutationResult<object>(null, changed);
+            });
+            MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
+            {
+                bool changed = false;
+                foreach (var item in list.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse())
+                {
+                    item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code), "KH");
+                    changed = true;
+                }
+                return new JsonMutationResult<object>(null, changed);
+            });
+            MutateJsonList<Material, object>(MaterialFile, "materials", list =>
+            {
+                bool changed = false;
+                foreach (var item in list.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse())
+                {
+                    item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL");
+                    changed = true;
+                }
+                return new JsonMutationResult<object>(null, changed);
+            });
         }
 
         static void AddCustomer(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Customer>(ReadBody(ctx.Request)); ValidateCustomer(item);
-            var list = LoadCustomers();
-            if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该客户公司已经存在" }, 409); return; }
-            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveCustomers(list); Audit(user, "新增客户", item.Code + " " + item.Company); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<Customer, Customer>(CustomerFile, "customers", list =>
+            {
+                if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该客户公司已经存在", 409);
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code), "KH"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<Customer>(item, true);
+            });
+            Audit(user, "新增客户", saved.Code + " " + saved.Company); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateCustomer(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<Customer>(ReadBody(ctx.Request)); ValidateCustomer(input);
-            var list = LoadCustomers(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "客户不存在" }, 404); return; }
-            if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该客户公司已经存在" }, 409); return; }
-            item.Company=input.Company; item.Contact=input.Contact; item.Phone=input.Phone; item.Bank=input.Bank; item.Account=input.Account; item.BankNo=input.BankNo; item.Address=input.Address; item.Receivable=input.Receivable; item.Status=string.IsNullOrEmpty(input.Status)?"启用":input.Status; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
-            SaveCustomers(list); Audit(user, "修改客户", item.Code + " " + item.Company); WriteJson(ctx, item);
+            var saved = MutateJsonList<Customer, Customer>(CustomerFile, "customers", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("客户不存在", 404);
+                if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该客户公司已经存在", 409);
+                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Address = input.Address; item.Receivable = input.Receivable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<Customer>(item, true);
+            });
+            Audit(user, "修改客户", saved.Code + " " + saved.Company); WriteJson(ctx, saved);
         }
 
         static void DeleteCustomer(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadCustomers(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "客户不存在" }, 404); return; }
-            list.Remove(item); SaveCustomers(list); Audit(user, "删除客户", item.Code + " " + item.Company); WriteJson(ctx, new { ok = true });
+            string auditDetail = null;
+            MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("客户不存在", 404);
+                auditDetail = item.Code + " " + item.Company;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除客户", auditDetail); WriteJson(ctx, new { ok = true });
         }
 
         static void BatchDeleteCustomers(HttpListenerContext ctx, UserSession user)
@@ -2289,13 +2327,15 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
-            var list = LoadCustomers();
-            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
-            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的客户" }, 404); return; }
-            foreach (var item in removed) list.Remove(item);
-            SaveCustomers(list);
-            Audit(user, "批量删除客户", "共" + removed.Count + "条");
-            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+            var deleted = MutateJsonList<Customer, int>(CustomerFile, "customers", list =>
+            {
+                var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+                if (removed.Count == 0) throw new BusinessException("未找到可删除的客户", 404);
+                foreach (var item in removed) list.Remove(item);
+                return new JsonMutationResult<int>(removed.Count, true);
+            });
+            Audit(user, "批量删除客户", "共" + deleted + "条");
+            WriteJson(ctx, new { ok = true, deleted = deleted });
         }
 
         static void BatchAddCustomers(HttpListenerContext ctx, UserSession user)
@@ -2303,88 +2343,100 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchCustomerRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条客户资料" }, 400); return; }
-            var list = LoadCustomers();
-            int imported = 0, skipped = 0, rowNo = 0;
-            var errors = new List<string>();
-            var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var pending = new List<Customer>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
             {
-                rowNo++;
-                try
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var batchCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var pending = new List<Customer>();
+                foreach (var input in items)
                 {
-                    ValidateCustomer(input);
-                    if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                    rowNo++;
+                    try
                     {
-                        skipped++; errors.Add("第" + rowNo + "行：客户已存在"); continue;
+                        ValidateCustomer(input);
+                        if (list.Any(x => string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)) || batchCompanies.Contains(input.Company))
+                        {
+                            skipped++; errors.Add("第" + rowNo + "行：客户已存在"); continue;
+                        }
+                        var item = new Customer
+                        {
+                            Id = Guid.NewGuid().ToString("N"),
+                            Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "KH"),
+                            Company = input.Company, Contact = input.Contact, Phone = input.Phone, Bank = input.Bank,
+                            Account = input.Account, BankNo = input.BankNo, Address = input.Address, Receivable = input.Receivable,
+                            Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                        };
+                        batchCompanies.Add(item.Company);
+                        pending.Insert(0, item);
+                        imported++;
                     }
-                    var item = new Customer
-                    {
-                        Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "KH"),
-                        Company = input.Company, Contact = input.Contact, Phone = input.Phone, Bank = input.Bank,
-                        Account = input.Account, BankNo = input.BankNo, Address = input.Address, Receivable = input.Receivable,
-                        Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
-                    };
-                    batchCompanies.Add(item.Company);
-                    pending.Insert(0, item);
-                    imported++;
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item);
-            SaveCustomers(list);
-            Audit(user, "批量添加客户", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加客户", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static List<Material> LoadMaterials()
         {
-            lock (DataLock)
-            {
-                string text = File.ReadAllText(MaterialFile, Encoding.UTF8);
-                return Json.Deserialize<List<Material>>(text) ?? new List<Material>();
-            }
+            lock (DataLock) return ReadJsonListCore<Material>(MaterialFile);
         }
 
         static void SaveMaterials(List<Material> items)
         {
-            lock (DataLock)
-            {
-                string temp = MaterialFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(MaterialFile)) File.Replace(temp, MaterialFile, Path.Combine(BackupDir, "materials_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"));
-                else File.Move(temp, MaterialFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(MaterialFile, "materials", items);
         }
 
         static void AddMaterial(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(item);
-            var list = LoadMaterials();
-            if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商的相同物料已经存在" }, 409); return; }
-            item.Id=Guid.NewGuid().ToString("N"); item.Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"); item.PriceType=NormalizePriceType(item.PriceType); item.Status="启用"; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
-            list.Insert(0,item); SaveMaterials(list); Audit(user,"新增物料",item.Code+" "+item.NameSpec); WriteJson(ctx,item,201);
+            var saved = MutateJsonList<Material, Material>(MaterialFile, "materials", list =>
+            {
+                if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该供应商的相同物料已经存在", 409);
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL"); item.PriceType = NormalizePriceType(item.PriceType); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<Material>(item, true);
+            });
+            Audit(user, "新增物料", saved.Code + " " + saved.NameSpec); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
-            var input=Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(input);
-            var list=LoadMaterials(); var item=list.FirstOrDefault(x=>x.Id==id);
-            if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}
-            if(list.Any(x=>x.Id!=id&&string.Equals(x.Supplier,input.Supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,input.NameSpec,StringComparison.OrdinalIgnoreCase))){WriteJson(ctx,new{error="该供应商的相同物料已经存在"},409);return;}
-            item.Supplier=input.Supplier;item.NameSpec=input.NameSpec;item.QuantityUnit=input.QuantityUnit;item.TaxPrice=input.TaxPrice;item.NoTaxPrice=input.NoTaxPrice;item.PriceType=NormalizePriceType(input.PriceType);item.Note=input.Note;item.Status=string.IsNullOrEmpty(input.Status)?"启用":input.Status;item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");item.UpdatedBy=user.DisplayName;
-            SaveMaterials(list);Audit(user,"修改物料",item.Code+" "+item.NameSpec);WriteJson(ctx,item);
+            var input = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(input);
+            var saved = MutateJsonList<Material, Material>(MaterialFile, "materials", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("物料不存在", 404);
+                if (list.Any(x => x.Id != id && string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)))
+                    throw new BusinessException("该供应商的相同物料已经存在", 409);
+                item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<Material>(item, true);
+            });
+            Audit(user, "修改物料", saved.Code + " " + saved.NameSpec); WriteJson(ctx, saved);
         }
 
         static void DeleteMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list=LoadMaterials();var item=list.FirstOrDefault(x=>x.Id==id);if(item==null){WriteJson(ctx,new{error="物料不存在"},404);return;}
-            if(IsMaterialUsedByBom(item.Id,item.Code)){WriteJson(ctx,new{error=FormatMaterialDeleteBlockedMessage(GetBomsUsingMaterial(item.Id,item.Code))},409);return;}
-            list.Remove(item);SaveMaterials(list);Audit(user,"删除物料",item.Code+" "+item.NameSpec);WriteJson(ctx,new{ok=true});
+            string auditDetail = null;
+            MutateJsonList<Material, object>(MaterialFile, "materials", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("物料不存在", 404);
+                if (IsMaterialUsedByBom(item.Id, item.Code)) throw new BusinessException(FormatMaterialDeleteBlockedMessage(GetBomsUsingMaterial(item.Id, item.Code)), 409);
+                auditDetail = item.Code + " " + item.NameSpec;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除物料", auditDetail); WriteJson(ctx, new { ok = true });
         }
 
         static void BatchDeleteMaterials(HttpListenerContext ctx, UserSession user)
@@ -2393,27 +2445,29 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
-            var list = LoadMaterials();
-            var removed = list.Where(x => ids.Contains(x.Id)).ToList();
-            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的物料" }, 404); return; }
-            var blocked = removed.Where(item => IsMaterialUsedByBom(item.Id, item.Code)).ToList();
-            if (blocked.Count > 0)
+            var deleted = MutateJsonList<Material, int>(MaterialFile, "materials", list =>
             {
-                var parts = new List<string>();
-                foreach (var item in blocked.Take(10))
+                var removed = list.Where(x => ids.Contains(x.Id)).ToList();
+                if (removed.Count == 0) throw new BusinessException("未找到可删除的物料", 404);
+                var blocked = removed.Where(item => IsMaterialUsedByBom(item.Id, item.Code)).ToList();
+                if (blocked.Count > 0)
                 {
-                    var boms = GetBomsUsingMaterial(item.Id, item.Code);
-                    var bomRefs = string.Join("、", boms.Take(3).Select(b => (b.Code ?? "") + " " + b.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0));
-                    parts.Add((item.Code ?? "") + " " + item.NameSpec + (bomRefs.Length > 0 ? "（BOM：" + bomRefs + "）" : ""));
+                    var parts = new List<string>();
+                    foreach (var item in blocked.Take(10))
+                    {
+                        var boms = GetBomsUsingMaterial(item.Id, item.Code);
+                        var bomRefs = string.Join("、", boms.Take(3).Select(b => (b.Code ?? "") + " " + b.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0));
+                        parts.Add((item.Code ?? "") + " " + item.NameSpec + (bomRefs.Length > 0 ? "（BOM：" + bomRefs + "）" : ""));
+                    }
+                    string msg = "以下物料已被 BOM 使用，不能删除。请先删除相关 BOM 后再删除物料。 " + string.Join("；", parts);
+                    if (blocked.Count > 10) msg += " 等共" + blocked.Count + "条";
+                    throw new BusinessException(msg, 409);
                 }
-                string msg = "以下物料已被 BOM 使用，不能删除。请先删除相关 BOM 后再删除物料。 " + string.Join("；", parts);
-                if (blocked.Count > 10) msg += " 等共" + blocked.Count + "条";
-                WriteJson(ctx, new { error = msg }, 409); return;
-            }
-            foreach (var item in removed) list.Remove(item);
-            SaveMaterials(list);
-            Audit(user, "批量删除物料", "共" + removed.Count + "条");
-            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+                foreach (var item in removed) list.Remove(item);
+                return new JsonMutationResult<int>(removed.Count, true);
+            });
+            Audit(user, "批量删除物料", "共" + deleted + "条");
+            WriteJson(ctx, new { ok = true, deleted = deleted });
         }
 
         static void BatchAddMaterials(HttpListenerContext ctx, UserSession user)
@@ -2421,75 +2475,65 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchMaterialRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条物料资料" }, 400); return; }
-            var list = LoadMaterials();
             var suppliers = LoadSuppliers();
-            int imported = 0, skipped = 0, rowNo = 0;
-            var errors = new List<string>();
-            var batchKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var pending = new List<Material>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<Material, object>(MaterialFile, "materials", list =>
             {
-                rowNo++;
-                try
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var batchKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var pending = new List<Material>();
+                foreach (var input in items)
                 {
-                    if (string.IsNullOrWhiteSpace(input.NameSpec)) { skipped++; errors.Add("第" + rowNo + "行：物料名称/规格不能为空"); continue; }
-                    if (string.IsNullOrWhiteSpace(input.Supplier)) { skipped++; errors.Add("第" + rowNo + "行：请选择供应商"); continue; }
-                    input.Supplier = input.Supplier.Trim(); input.NameSpec = input.NameSpec.Trim();
-                    input.QuantityUnit = (input.QuantityUnit ?? "").Trim(); input.Note = (input.Note ?? "").Trim();
-                    if (!suppliers.Any(x => string.Equals(x.Company, input.Supplier, StringComparison.OrdinalIgnoreCase)))
+                    rowNo++;
+                    try
                     {
-                        skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
+                        if (string.IsNullOrWhiteSpace(input.NameSpec)) { skipped++; errors.Add("第" + rowNo + "行：物料名称/规格不能为空"); continue; }
+                        if (string.IsNullOrWhiteSpace(input.Supplier)) { skipped++; errors.Add("第" + rowNo + "行：请选择供应商"); continue; }
+                        input.Supplier = input.Supplier.Trim(); input.NameSpec = input.NameSpec.Trim();
+                        input.QuantityUnit = (input.QuantityUnit ?? "").Trim(); input.Note = (input.Note ?? "").Trim();
+                        if (!suppliers.Any(x => string.Equals(x.Company, input.Supplier, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
+                        }
+                        string key = input.Supplier + "\t" + input.NameSpec;
+                        if (list.Any(x => string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)) || batchKeys.Contains(key))
+                        {
+                            skipped++; errors.Add("第" + rowNo + "行：物料已存在"); continue;
+                        }
+                        var item = new Material
+                        {
+                            Id = Guid.NewGuid().ToString("N"),
+                            Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "WL"),
+                            Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
+                            TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
+                            Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                        };
+                        batchKeys.Add(key);
+                        pending.Insert(0, item);
+                        imported++;
                     }
-                    string key = input.Supplier + "\t" + input.NameSpec;
-                    if (list.Any(x => string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)) || batchKeys.Contains(key))
-                    {
-                        skipped++; errors.Add("第" + rowNo + "行：物料已存在"); continue;
-                    }
-                    var item = new Material
-                    {
-                        Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "WL"),
-                        Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
-                        TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
-                        Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                        UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
-                    };
-                    batchKeys.Add(key);
-                    pending.Insert(0, item);
-                    imported++;
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item);
-            SaveMaterials(list);
-            Audit(user, "批量添加物料", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加物料", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static List<FinanceTransaction> LoadFinance()
         {
-            lock (DataLock)
-            {
-                string text = File.ReadAllText(FinanceFile, Encoding.UTF8);
-                return Json.Deserialize<List<FinanceTransaction>>(text) ?? new List<FinanceTransaction>();
-            }
+            lock (DataLock) return ReadJsonListCore<FinanceTransaction>(FinanceFile);
         }
 
         static void SaveFinance(List<FinanceTransaction> items)
         {
-            lock (DataLock)
-            {
-                string temp = FinanceFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(FinanceFile))
-                {
-                    string backup = Path.Combine(BackupDir, "finance_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, FinanceFile, backup);
-                }
-                else File.Move(temp, FinanceFile);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(FinanceFile, "finance", items);
         }
 
         static OpeningBalances LoadOpeningBalances()
@@ -2504,12 +2548,12 @@ namespace SupplierErpApp
         static void SaveOpeningBalances(HttpListenerContext ctx, UserSession user)
         {
             var value = Json.Deserialize<OpeningBalances>(ReadBody(ctx.Request)) ?? new OpeningBalances();
-            lock (DataLock)
+            RunUnderDataLock(() =>
             {
                 if (File.Exists(OpeningFile)) File.Copy(OpeningFile, Path.Combine(BackupDir, "opening_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"), true);
                 File.WriteAllText(OpeningFile, Json.Serialize(value), new UTF8Encoding(false));
                 CleanBackups();
-            }
+            });
             Audit(user, "修改期初余额", "公户=" + value.PublicAccount + ",公司私户=" + value.CompanyPrivate + ",个人私户=" + value.PersonalPrivate);
             WriteJson(ctx, value);
         }
@@ -2518,23 +2562,39 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<FinanceTransaction>(ReadBody(ctx.Request)); ValidateFinance(item);
             item.Id = Guid.NewGuid().ToString("N"); item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
-            var list = LoadFinance(); list.Add(item); SaveFinance(list); Audit(user, "新增收支", item.Date + " " + item.AccountType + " " + item.Purpose); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<FinanceTransaction, FinanceTransaction>(FinanceFile, "finance", list =>
+            {
+                list.Add(item);
+                return new JsonMutationResult<FinanceTransaction>(item, true);
+            });
+            Audit(user, "新增收支", saved.Date + " " + saved.AccountType + " " + saved.Purpose); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateFinance(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<FinanceTransaction>(ReadBody(ctx.Request)); ValidateFinance(input);
-            var list = LoadFinance(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "收支记录不存在" }, 404); return; }
-            item.Date=input.Date; item.AccountType=input.AccountType; item.Receipt=input.Receipt; item.Payment=input.Payment; item.PaymentMethod=input.PaymentMethod; item.Purpose=input.Purpose; item.Counterparty=input.Counterparty; item.Note=input.Note; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
-            SaveFinance(list); Audit(user, "修改收支", item.Date + " " + item.AccountType + " " + item.Purpose); WriteJson(ctx, item);
+            var saved = MutateJsonList<FinanceTransaction, FinanceTransaction>(FinanceFile, "finance", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("收支记录不存在", 404);
+                item.Date = input.Date; item.AccountType = input.AccountType; item.Receipt = input.Receipt; item.Payment = input.Payment; item.PaymentMethod = input.PaymentMethod; item.Purpose = input.Purpose; item.Counterparty = input.Counterparty; item.Note = input.Note; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<FinanceTransaction>(item, true);
+            });
+            Audit(user, "修改收支", saved.Date + " " + saved.AccountType + " " + saved.Purpose); WriteJson(ctx, saved);
         }
 
         static void DeleteFinance(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadFinance(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "收支记录不存在" }, 404); return; }
-            list.Remove(item); SaveFinance(list); Audit(user, "删除收支", item.Date + " " + item.AccountType + " " + item.Purpose); WriteJson(ctx, new { ok = true });
+            string auditDetail = null;
+            MutateJsonList<FinanceTransaction, object>(FinanceFile, "finance", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("收支记录不存在", 404);
+                auditDetail = item.Date + " " + item.AccountType + " " + item.Purpose;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除收支", auditDetail); WriteJson(ctx, new { ok = true });
         }
 
         static void ExportFinanceTemplateCsv(HttpListenerContext ctx)
@@ -2569,9 +2629,10 @@ namespace SupplierErpApp
                 rows = ReadCsvImportRowsFromRequest(new CsvImportRequest { FileName = req.FileName, Data = req.Data });
             else { WriteJson(ctx, new { error = "仅支持 .csv 或 .xlsx 格式文件" }, 400); return; }
 
-            var list = LoadFinance();
             var errors = new List<string>();
             int imported = 0, rowNo = 1;
+            MutateJsonList<FinanceTransaction, object>(FinanceFile, "finance", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -2605,7 +2666,8 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            if (imported > 0) SaveFinance(list);
+            return new JsonMutationResult<object>(null, imported > 0);
+            });
             Audit(user, "导入财务收支", "成功" + imported + "条，失败" + errors.Count + "条");
             WriteJson(ctx, new { imported = imported, failed = errors.Count, errors = errors.ToArray() });
         }
@@ -2694,23 +2756,35 @@ namespace SupplierErpApp
 
         static void ImportSuppliers(HttpListenerContext ctx,UserSession user)
         {
-            var rows=ReadImportRows(ctx);var list=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
-            if(imported>0)SaveSuppliers(list);Audit(user,"导入供应商","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
+            var rows=ReadImportRows(ctx);int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
+            MutateJsonList<Supplier, object>(DataFile, "auto", list =>
+            {
+                foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user,"导入供应商","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
         static void ImportCustomers(HttpListenerContext ctx,UserSession user)
         {
-            var rows=ReadImportRows(ctx);var list=LoadCustomers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
-            if(imported>0)SaveCustomers(list);Audit(user,"导入客户","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
+            var rows=ReadImportRows(ctx);int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
+            MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
+            {
+                foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user,"导入客户","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
         static void ImportMaterials(HttpListenerContext ctx,UserSession user)
         {
-            var rows=ReadImportRows(ctx);var list=LoadMaterials();var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
-            if(imported>0)SaveMaterials(list);Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
+            var rows=ReadImportRows(ctx);var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
+            MutateJsonList<Material, object>(MaterialFile, "materials", list =>
+            {
+                foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
         static string ExportPriceTypeLabel(string priceType) { return NormalizePriceType(priceType) == "含税" ? "含税价" : "不含税价"; }
@@ -3063,7 +3137,7 @@ namespace SupplierErpApp
             var req = Json.Deserialize<CsvImportRequest>(ReadBody(ctx.Request));
             if (req == null || string.IsNullOrWhiteSpace(req.Data)) { WriteJson(ctx, new { error = "请选择要导入的 CSV 文件" }, 400); return; }
             var rows = ReadCsvImportRowsFromRequest(req);
-            var list = LoadBom();
+            var previewList = LoadBom();
             var materials = LoadMaterials();
             var taxRate = LoadSystemSettings().TaxRate;
             var groups = new Dictionary<string, List<Dictionary<string, string>>>();
@@ -3092,7 +3166,7 @@ namespace SupplierErpApp
                 if (!groups.ContainsKey(key)) { groups[key] = new List<Dictionary<string, string>>(); groupFirstRow[key] = rowNo; }
                 groups[key].Add(row);
             }
-            var conflicts = groups.Keys.Where(k => list.Any(x => string.Equals(x.Code, k.Split('|')[0], StringComparison.OrdinalIgnoreCase) && string.Equals(x.Version ?? "", k.Split('|')[1], StringComparison.OrdinalIgnoreCase))).ToList();
+            var conflicts = groups.Keys.Where(k => previewList.Any(x => string.Equals(x.Code, k.Split('|')[0], StringComparison.OrdinalIgnoreCase) && string.Equals(x.Version ?? "", k.Split('|')[1], StringComparison.OrdinalIgnoreCase))).ToList();
             var actions = req.ConflictActions ?? new Dictionary<string, string>();
             if (conflicts.Count > 0)
             {
@@ -3105,6 +3179,8 @@ namespace SupplierErpApp
             }
             int added = 0, updated = 0, skipped = 0;
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            MutateJsonList<BomItem, object>(BomFile, "bom", list =>
+            {
             foreach (var kv in groups)
             {
                 string key = kv.Key;
@@ -3137,7 +3213,8 @@ namespace SupplierErpApp
                     added++;
                 }
             }
-            if (added > 0 || updated > 0) SaveBom(list);
+            return new JsonMutationResult<object>(null, added > 0 || updated > 0);
+            });
             Audit(user, "导入BOM", "新增" + added + "，更新" + updated + "，跳过" + skipped + "，失败" + failedRows + "行");
             WriteJson(ctx, new TableImportResult { Added = added, Updated = updated, Skipped = skipped, FailedRows = failedRows, Errors = errors.ToArray(), Warnings = warnings.ToArray() });
         }
@@ -3178,7 +3255,7 @@ namespace SupplierErpApp
             var req = Json.Deserialize<CsvImportRequest>(ReadBody(ctx.Request));
             if (req == null || string.IsNullOrWhiteSpace(req.Data)) { WriteJson(ctx, new { error = "请选择要导入的 CSV 文件" }, 400); return; }
             var rows = ReadCsvImportRowsFromRequest(req);
-            var list = LoadModelCosts();
+            var previewList = LoadModelCosts();
             var bomList = LoadBom();
             var errors = new List<string>();
             var warnings = new List<string>();
@@ -3198,7 +3275,7 @@ namespace SupplierErpApp
                 string modelCode = Cell(row, "机型编号"), bomCode = Cell(row, "BOM编号"), bomVersion = Cell(row, "BOM版本");
                 if (string.IsNullOrWhiteSpace(modelCode) || string.IsNullOrWhiteSpace(bomCode) || string.IsNullOrWhiteSpace(bomVersion)) continue;
                 string key = ModelCostConflictKey(modelCode, bomCode, bomVersion);
-                if (list.Any(x => string.Equals(x.ModelCode, modelCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomCode, bomCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomVersion ?? "", bomVersion.Trim(), StringComparison.OrdinalIgnoreCase)))
+                if (previewList.Any(x => string.Equals(x.ModelCode, modelCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomCode, bomCode.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(x.BomVersion ?? "", bomVersion.Trim(), StringComparison.OrdinalIgnoreCase)))
                     conflictKeys.Add(key);
             }
             var actions = req.ConflictActions ?? new Dictionary<string, string>();
@@ -3213,6 +3290,8 @@ namespace SupplierErpApp
             }
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             int rowNo = 1;
+            MutateJsonList<ModelCost, object>(ModelCostFile, "model_costs", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -3321,7 +3400,8 @@ namespace SupplierErpApp
                     added++;
                 }
             }
-            if (added > 0 || updated > 0) SaveModelCosts(list);
+            return new JsonMutationResult<object>(null, added > 0 || updated > 0);
+            });
             Audit(user, "导入机型成本", "新增" + added + "，更新" + updated + "，跳过" + skipped + "，失败" + failedRows + "行");
             WriteJson(ctx, new TableImportResult { Added = added, Updated = updated, Skipped = skipped, FailedRows = failedRows, Errors = errors.ToArray(), Warnings = warnings.ToArray() });
         }
@@ -3349,36 +3429,22 @@ namespace SupplierErpApp
 
         static List<ContractSetting> LoadContractSettings()
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(ContractSettingsFile)) return new List<ContractSetting>();
-                return Json.Deserialize<List<ContractSetting>>(File.ReadAllText(ContractSettingsFile, Encoding.UTF8)) ?? new List<ContractSetting>();
-            }
+            lock (DataLock) return ReadJsonListCore<ContractSetting>(ContractSettingsFile);
         }
 
         static void SaveContractSettings(List<ContractSetting> items)
         {
-            lock (DataLock)
-            {
-                File.WriteAllText(ContractSettingsFile, Json.Serialize(items), new UTF8Encoding(false));
-            }
+            lock (DataLock) WriteJsonListCore(ContractSettingsFile, "contract_settings", items);
         }
 
         static List<ContractItem> LoadContracts()
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(ContractsFile)) return new List<ContractItem>();
-                return Json.Deserialize<List<ContractItem>>(File.ReadAllText(ContractsFile, Encoding.UTF8)) ?? new List<ContractItem>();
-            }
+            lock (DataLock) return ReadJsonListCore<ContractItem>(ContractsFile);
         }
 
         static void SaveContracts(List<ContractItem> items)
         {
-            lock (DataLock)
-            {
-                File.WriteAllText(ContractsFile, Json.Serialize(items), new UTF8Encoding(false));
-            }
+            lock (DataLock) WriteJsonListCore(ContractsFile, "contracts", items);
         }
 
         static string NowTimeString() { return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); }
@@ -3525,47 +3591,55 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<ContractSetting>(ReadBody(ctx.Request));
             ValidateContractSetting(item);
-            var list = LoadContractSettings();
             string now = NowTimeString();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ContractSettingSequenceFile, "CS", list.Select(x => x.Code));
-            item.CreatedAt = now;
-            item.UpdatedAt = now;
-            if (item.IsDefault)
-                foreach (var x in list.Where(x => x.Type == item.Type)) x.IsDefault = false;
-            list.Insert(0, item);
-            SaveContractSettings(list);
-            Audit(user, "新增合同资料", item.Code + " " + item.Name);
-            WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<ContractSetting, ContractSetting>(ContractSettingsFile, "contract_settings", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(ContractSettingSequenceFile, "CS", list.Select(x => x.Code));
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                if (item.IsDefault)
+                    foreach (var x in list.Where(x => x.Type == item.Type)) x.IsDefault = false;
+                list.Insert(0, item);
+                return new JsonMutationResult<ContractSetting>(item, true);
+            });
+            Audit(user, "新增合同资料", saved.Code + " " + saved.Name);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateContractSetting(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ContractSetting>(ReadBody(ctx.Request));
             ValidateContractSetting(input);
-            var list = LoadContractSettings();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "合同资料不存在" }, 404); return; }
-            input.Id = item.Id;
-            input.Code = item.Code;
-            input.CreatedAt = item.CreatedAt;
-            input.UpdatedAt = NowTimeString();
-            if (input.IsDefault)
-                foreach (var x in list.Where(x => x.Type == input.Type && x.Id != id)) x.IsDefault = false;
-            list[list.IndexOf(item)] = input;
-            SaveContractSettings(list);
-            Audit(user, "修改合同资料", input.Code + " " + input.Name);
-            WriteJson(ctx, input);
+            var saved = MutateJsonList<ContractSetting, ContractSetting>(ContractSettingsFile, "contract_settings", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同资料不存在", 404);
+                input.Id = item.Id;
+                input.Code = item.Code;
+                input.CreatedAt = item.CreatedAt;
+                input.UpdatedAt = NowTimeString();
+                if (input.IsDefault)
+                    foreach (var x in list.Where(x => x.Type == input.Type && x.Id != id)) x.IsDefault = false;
+                list[list.IndexOf(item)] = input;
+                return new JsonMutationResult<ContractSetting>(input, true);
+            });
+            Audit(user, "修改合同资料", saved.Code + " " + saved.Name);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteContractSetting(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadContractSettings();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "合同资料不存在" }, 404); return; }
-            list.Remove(item);
-            SaveContractSettings(list);
-            Audit(user, "删除合同资料", item.Code + " " + item.Name);
+            string auditDetail = null;
+            MutateJsonList<ContractSetting, object>(ContractSettingsFile, "contract_settings", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同资料不存在", 404);
+                auditDetail = item.Code + " " + item.Name;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除合同资料", auditDetail);
             WriteJson(ctx, new { ok = true });
         }
 
@@ -3576,16 +3650,18 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(item.PartyAName)) throw new Exception("甲方名称不能为空");
             if (item.Items == null || item.Items.Count == 0) throw new Exception("请至少添加一条设备明细");
             NormalizeContract(item);
-            var list = LoadContracts();
             string now = NowTimeString();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ContractSequenceFile, "CON", list.Select(x => x.Code), "HT");
-            item.CreatedAt = now;
-            item.UpdatedAt = now;
-            list.Insert(0, item);
-            SaveContracts(list);
-            Audit(user, "新增合同", item.Code + " " + item.Name);
-            WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<ContractItem, ContractItem>(ContractsFile, "contracts", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(ContractSequenceFile, "CON", list.Select(x => x.Code), "HT");
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                list.Insert(0, item);
+                return new JsonMutationResult<ContractItem>(item, true);
+            });
+            Audit(user, "新增合同", saved.Code + " " + saved.Name);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateContract(HttpListenerContext ctx, UserSession user, string id)
@@ -3594,42 +3670,53 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(input.Name)) throw new Exception("合同名称不能为空");
             if (string.IsNullOrWhiteSpace(input.PartyAName)) throw new Exception("甲方名称不能为空");
             if (input.Items == null || input.Items.Count == 0) throw new Exception("请至少添加一条设备明细");
-            var list = LoadContracts();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
-            input.Id = item.Id;
-            input.Code = item.Code;
-            input.CreatedAt = item.CreatedAt;
-            input.UpdatedAt = NowTimeString();
-            if (string.IsNullOrWhiteSpace(input.TemplateContent)) input.TemplateContent = item.TemplateContent;
+            var listSnapshot = LoadContracts();
+            var existing = listSnapshot.FirstOrDefault(x => x.Id == id);
+            if (existing == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
+            if (string.IsNullOrWhiteSpace(input.TemplateContent)) input.TemplateContent = existing.TemplateContent;
             NormalizeContract(input);
-            list[list.IndexOf(item)] = input;
-            SaveContracts(list);
-            Audit(user, "修改合同", input.Code + " " + input.Name);
-            WriteJson(ctx, input);
+            var saved = MutateJsonList<ContractItem, ContractItem>(ContractsFile, "contracts", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同不存在", 404);
+                input.Id = item.Id;
+                input.Code = item.Code;
+                input.CreatedAt = item.CreatedAt;
+                input.UpdatedAt = NowTimeString();
+                list[list.IndexOf(item)] = input;
+                return new JsonMutationResult<ContractItem>(input, true);
+            });
+            Audit(user, "修改合同", saved.Code + " " + saved.Name);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteContract(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadContracts();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
-            list.Remove(item);
-            SaveContracts(list);
-            Audit(user, "删除合同", item.Code + " " + item.Name);
+            string auditDetail = null;
+            MutateJsonList<ContractItem, object>(ContractsFile, "contracts", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同不存在", 404);
+                auditDetail = item.Code + " " + item.Name;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除合同", auditDetail);
             WriteJson(ctx, new { ok = true });
         }
 
         static void VoidContract(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadContracts();
-            var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "合同不存在" }, 404); return; }
-            item.Status = "已作废";
-            item.UpdatedAt = NowTimeString();
-            SaveContracts(list);
-            Audit(user, "作废合同", item.Code + " " + item.Name);
-            WriteJson(ctx, item);
+            var saved = MutateJsonList<ContractItem, ContractItem>(ContractsFile, "contracts", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同不存在", 404);
+                item.Status = "已作废";
+                item.UpdatedAt = NowTimeString();
+                return new JsonMutationResult<ContractItem>(item, true);
+            });
+            Audit(user, "作废合同", saved.Code + " " + saved.Name);
+            WriteJson(ctx, saved);
         }
 
         static void PreviewContract(HttpListenerContext ctx, string id)
@@ -4037,27 +4124,12 @@ namespace SupplierErpApp
 
         static List<T> LoadJsonList<T>(string file)
         {
-            lock (DataLock)
-            {
-                if (!File.Exists(file)) return new List<T>();
-                return Json.Deserialize<List<T>>(File.ReadAllText(file, Encoding.UTF8)) ?? new List<T>();
-            }
+            lock (DataLock) return ReadJsonListCore<T>(file);
         }
 
         static void SaveJsonList<T>(string file, string backupPrefix, List<T> items)
         {
-            lock (DataLock)
-            {
-                string temp = file + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-                if (File.Exists(file))
-                {
-                    string backup = Path.Combine(BackupDir, backupPrefix + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, file, backup);
-                }
-                else File.Move(temp, file);
-                CleanBackups();
-            }
+            lock (DataLock) WriteJsonListCore(file, backupPrefix, items);
         }
 
         static readonly string[] SalesOrderStringFields = { "CustomerId", "CustomerCode", "CustomerName", "CustomerContact", "CustomerPhone", "CustomerAddress", "MaterialId", "MaterialCode", "MaterialName", "OrderDate", "Status", "Note", "Code", "Id" };
@@ -4144,35 +4216,49 @@ namespace SupplierErpApp
         static void AddSalesOrder(HttpListenerContext ctx, UserSession user)
         {
             var item = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(item);
-            var list = LoadSalesOrders();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveSalesOrders(list);
-            Audit(user, "新增销售订单", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<SalesOrder, SalesOrder>(SalesOrdersFile, "sales_orders", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<SalesOrder>(item, true);
+            });
+            Audit(user, "新增销售订单", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(input);
-            var list = LoadSalesOrders(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "销售订单不存在" }, 404); return; }
-            item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
-            item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
-            item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-            item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
-            item.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; item.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
-            item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
-            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SaveSalesOrders(list); Audit(user, "修改销售订单", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<SalesOrder, SalesOrder>(SalesOrdersFile, "sales_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("销售订单不存在", 404);
+                item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
+                item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
+                item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+                item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
+                item.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; item.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
+                item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<SalesOrder>(item, true);
+            });
+            Audit(user, "修改销售订单", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadSalesOrders(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "销售订单不存在" }, 404); return; }
-            list.Remove(item); SaveSalesOrders(list); Audit(user, "删除销售订单", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("销售订单不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除销售订单", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<SalesOutbound> LoadSalesOutbounds() { return LoadJsonList<SalesOutbound>(SalesOutboundsFile); }
@@ -4198,32 +4284,46 @@ namespace SupplierErpApp
         static void AddSalesOutbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(item);
-            var list = LoadSalesOutbounds();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveSalesOutbounds(list);
-            Audit(user, "新增销售出库", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<SalesOutbound>(item, true);
+            });
+            Audit(user, "新增销售出库", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
-            var list = LoadSalesOutbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "销售出库不存在" }, 404); return; }
-            item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
-            item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-            item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
-            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SaveSalesOutbounds(list); Audit(user, "修改销售出库", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("销售出库不存在", 404);
+                item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
+                item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+                item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<SalesOutbound>(item, true);
+            });
+            Audit(user, "修改销售出库", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadSalesOutbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "销售出库不存在" }, 404); return; }
-            list.Remove(item); SaveSalesOutbounds(list); Audit(user, "删除销售出库", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("销售出库不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除销售出库", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<PurchaseOrder> LoadPurchaseOrders() { return LoadJsonList<PurchaseOrder>(PurchaseOrdersFile); }
@@ -4249,31 +4349,45 @@ namespace SupplierErpApp
         static void AddPurchaseOrder(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(item);
-            var list = LoadPurchaseOrders();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SavePurchaseOrders(list);
-            Audit(user, "新增采购单", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<PurchaseOrder, PurchaseOrder>(PurchaseOrdersFile, "purchase_orders", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<PurchaseOrder>(item, true);
+            });
+            Audit(user, "新增采购单", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(input);
-            var list = LoadPurchaseOrders(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "采购单不存在" }, 404); return; }
-            item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-            item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
-            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SavePurchaseOrders(list); Audit(user, "修改采购单", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<PurchaseOrder, PurchaseOrder>(PurchaseOrdersFile, "purchase_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("采购单不存在", 404);
+                item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+                item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<PurchaseOrder>(item, true);
+            });
+            Audit(user, "修改采购单", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeletePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadPurchaseOrders(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "采购单不存在" }, 404); return; }
-            list.Remove(item); SavePurchaseOrders(list); Audit(user, "删除采购单", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("采购单不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除采购单", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<PurchaseInbound> LoadPurchaseInbounds() { return LoadJsonList<PurchaseInbound>(PurchaseInboundsFile); }
@@ -4301,51 +4415,68 @@ namespace SupplierErpApp
         static void AddPurchaseInbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(item);
-            var list = LoadPurchaseInbounds();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SavePurchaseInbounds(list);
-            Audit(user, "新增采购入库", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<PurchaseInbound, PurchaseInbound>(PurchaseInboundsFile, "purchase_inbounds", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<PurchaseInbound>(item, true);
+            });
+            Audit(user, "新增采购入库", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input);
-            var list = LoadPurchaseInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "采购入库不存在" }, 404); return; }
-            item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
-            item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-            item.InboundPrice = input.InboundPrice; item.Amount = input.Amount; item.InboundDate = input.InboundDate;
-            item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SavePurchaseInbounds(list); Audit(user, "修改采购入库", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<PurchaseInbound, PurchaseInbound>(PurchaseInboundsFile, "purchase_inbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("采购入库不存在", 404);
+                item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
+                item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+                item.InboundPrice = input.InboundPrice; item.Amount = input.Amount; item.InboundDate = input.InboundDate;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<PurchaseInbound>(item, true);
+            });
+            Audit(user, "修改采购入库", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeletePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadPurchaseInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "采购入库不存在" }, 404); return; }
-            list.Remove(item); SavePurchaseInbounds(list); Audit(user, "删除采购入库", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("采购入库不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除采购入库", auditCode); WriteJson(ctx, new { ok = true });
         }
 
-        static void BatchDeleteSalesOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadSalesOrders(), SaveSalesOrders, "销售订单", "sales_order"); }
-        static void BatchDeleteSalesOutbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadSalesOutbounds(), SaveSalesOutbounds, "销售出库", "sales_outbound"); }
-        static void BatchDeletePurchaseOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadPurchaseOrders(), SavePurchaseOrders, "采购单", "purchase_order"); }
-        static void BatchDeletePurchaseInbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadPurchaseInbounds(), SavePurchaseInbounds, "采购入库", "purchase_inbound"); }
+        static void BatchDeleteSalesOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs<SalesOrder>(ctx, user, SalesOrdersFile, "sales_orders", "销售订单", "sales_order"); }
+        static void BatchDeleteSalesOutbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs<SalesOutbound>(ctx, user, SalesOutboundsFile, "sales_outbounds", "销售出库", "sales_outbound"); }
+        static void BatchDeletePurchaseOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs<PurchaseOrder>(ctx, user, PurchaseOrdersFile, "purchase_orders", "采购单", "purchase_order"); }
+        static void BatchDeletePurchaseInbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs<PurchaseInbound>(ctx, user, PurchaseInboundsFile, "purchase_inbounds", "采购入库", "purchase_inbound"); }
 
-        static void BatchDeleteDocs<T>(HttpListenerContext ctx, UserSession user, List<T> list, Action<List<T>> save, string label, string auditKey) where T : class
+        static void BatchDeleteDocs<T>(HttpListenerContext ctx, UserSession user, string file, string backupPrefix, string label, string auditKey) where T : class
         {
             var req = Json.Deserialize<BatchDeleteRequest>(ReadBody(ctx.Request));
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
-            var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
-            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的" + label }, 404); return; }
-            foreach (var item in removed) list.Remove(item);
-            save(list);
-            Audit(user, "批量删除" + label, "共" + removed.Count + "条");
-            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+            var deleted = MutateJsonList<T, int>(file, backupPrefix, list =>
+            {
+                var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
+                if (removed.Count == 0) throw new BusinessException("未找到可删除的" + label, 404);
+                foreach (var item in removed) list.Remove(item);
+                return new JsonMutationResult<int>(removed.Count, true);
+            });
+            Audit(user, "批量删除" + label, "共" + deleted + "条");
+            WriteJson(ctx, new { ok = true, deleted = deleted });
         }
 
         static void BatchAddSalesOrders(HttpListenerContext ctx, UserSession user)
@@ -4353,17 +4484,26 @@ namespace SupplierErpApp
             var req = DeserializeBatchSalesOrderRequest(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条销售订单" }, 400); return; }
-            var list = LoadSalesOrders(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<SalesOrder>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list =>
             {
-                rowNo++;
-                try { ApplySalesOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item); SaveSalesOrders(list);
-            Audit(user, "批量添加销售订单", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var pending = new List<SalesOrder>();
+                foreach (var input in items)
+                {
+                    rowNo++;
+                    try { ApplySalesOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+                }
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加销售订单", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static void BatchAddSalesOutbounds(HttpListenerContext ctx, UserSession user)
@@ -4371,17 +4511,26 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchSalesOutboundRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条销售出库" }, 400); return; }
-            var list = LoadSalesOutbounds(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<SalesOutbound>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
             {
-                rowNo++;
-                try { ApplySalesOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item); SaveSalesOutbounds(list);
-            Audit(user, "批量添加销售出库", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var pending = new List<SalesOutbound>();
+                foreach (var input in items)
+                {
+                    rowNo++;
+                    try { ApplySalesOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+                }
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加销售出库", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static void BatchAddPurchaseOrders(HttpListenerContext ctx, UserSession user)
@@ -4389,17 +4538,26 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchPurchaseOrderRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条采购单" }, 400); return; }
-            var list = LoadPurchaseOrders(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<PurchaseOrder>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list =>
             {
-                rowNo++;
-                try { ApplyPurchaseOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item); SavePurchaseOrders(list);
-            Audit(user, "批量添加采购单", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var pending = new List<PurchaseOrder>();
+                foreach (var input in items)
+                {
+                    rowNo++;
+                    try { ApplyPurchaseOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+                }
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加采购单", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static void BatchAddPurchaseInbounds(HttpListenerContext ctx, UserSession user)
@@ -4407,22 +4565,33 @@ namespace SupplierErpApp
             var req = Json.Deserialize<BatchPurchaseInboundRequest>(ReadBody(ctx.Request));
             var items = req == null ? null : req.Items;
             if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条采购入库" }, 400); return; }
-            var list = LoadPurchaseInbounds(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<PurchaseInbound>();
-            foreach (var input in items)
+            int batchImported = 0, batchSkipped = 0;
+            string[] batchErrors = new string[0];
+            MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
-                rowNo++;
-                try { ApplyPurchaseInbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
-                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
-            }
-            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
-            foreach (var item in pending) list.Insert(0, item); SavePurchaseInbounds(list);
-            Audit(user, "批量添加采购入库", "成功" + imported + "条，跳过" + skipped + "条");
-            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+                int imported = 0, skipped = 0, rowNo = 0;
+                var errors = new List<string>();
+                var pending = new List<PurchaseInbound>();
+                foreach (var input in items)
+                {
+                    rowNo++;
+                    try { ApplyPurchaseInbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+                }
+                if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
+                foreach (var item in pending) list.Insert(0, item);
+                batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
+                return new JsonMutationResult<object>(null, true);
+            });
+            Audit(user, "批量添加采购入库", "成功" + batchImported + "条，跳过" + batchSkipped + "条");
+            WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
         static void ImportSalesOrders(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); var list = LoadSalesOrders(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -4435,12 +4604,16 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            if (imported > 0) SaveSalesOrders(list); Audit(user, "导入销售订单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user, "导入销售订单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ImportSalesOutbounds(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); var list = LoadSalesOutbounds(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -4452,12 +4625,16 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            if (imported > 0) SaveSalesOutbounds(list); Audit(user, "导入销售出库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user, "导入销售出库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ImportPurchaseOrders(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); var list = LoadPurchaseOrders(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -4469,12 +4646,16 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            if (imported > 0) SavePurchaseOrders(list); Audit(user, "导入采购单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user, "导入采购单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ImportPurchaseInbounds(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); var list = LoadPurchaseInbounds(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list =>
+            {
             foreach (var row in rows)
             {
                 rowNo++;
@@ -4486,7 +4667,9 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            if (imported > 0) SavePurchaseInbounds(list); Audit(user, "导入采购入库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            return new JsonMutationResult<object>(null, imported > 0);
+            });
+            Audit(user, "导入采购入库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ExportSalesOrdersCsv(HttpListenerContext ctx)
@@ -4547,32 +4730,46 @@ namespace SupplierErpApp
         static void AddProductionPick(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(item);
-            var list = LoadProductionPicks();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveProductionPicks(list);
-            Audit(user, "新增生产领用", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<ProductionPick>(item, true);
+            });
+            Audit(user, "新增生产领用", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
-            var list = LoadProductionPicks(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "生产领用不存在" }, 404); return; }
-            item.BomId = input.BomId; item.BomName = input.BomName;
-            item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
-            item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
-            item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
-            item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SaveProductionPicks(list); Audit(user, "修改生产领用", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产领用不存在", 404);
+                item.BomId = input.BomId; item.BomName = input.BomName;
+                item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
+                item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
+                item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
+                item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<ProductionPick>(item, true);
+            });
+            Audit(user, "修改生产领用", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadProductionPicks(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "生产领用不存在" }, 404); return; }
-            list.Remove(item); SaveProductionPicks(list); Audit(user, "删除生产领用", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<ProductionPick, object>(ProductionPicksFile, "production_picks", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产领用不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除生产领用", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<FinishedInbound> LoadFinishedInbounds() { return LoadJsonList<FinishedInbound>(FinishedInboundsFile); }
@@ -4598,31 +4795,45 @@ namespace SupplierErpApp
         static void AddFinishedInbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(item);
-            var list = LoadFinishedInbounds();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveFinishedInbounds(list);
-            Audit(user, "新增成品入库", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<FinishedInbound, FinishedInbound>(FinishedInboundsFile, "finished_inbounds", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<FinishedInbound>(item, true);
+            });
+            Audit(user, "新增成品入库", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(input);
-            var list = LoadFinishedInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "成品入库不存在" }, 404); return; }
-            item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
-            item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
-            item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
-            item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SaveFinishedInbounds(list); Audit(user, "修改成品入库", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<FinishedInbound, FinishedInbound>(FinishedInboundsFile, "finished_inbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("成品入库不存在", 404);
+                item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
+                item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
+                item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
+                item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<FinishedInbound>(item, true);
+            });
+            Audit(user, "修改成品入库", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadFinishedInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "成品入库不存在" }, 404); return; }
-            list.Remove(item); SaveFinishedInbounds(list); Audit(user, "删除成品入库", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("成品入库不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除成品入库", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<Receivable> LoadReceivables() { return LoadJsonList<Receivable>(ReceivablesFile); }
@@ -4648,31 +4859,45 @@ namespace SupplierErpApp
         static void AddReceivable(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(item);
-            var list = LoadReceivables();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ReceivableSequenceFile, "AR", list.Select(x => x.Code), "YS");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SaveReceivables(list);
-            Audit(user, "新增应收款", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<Receivable, Receivable>(ReceivablesFile, "receivables", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(ReceivableSequenceFile, "AR", list.Select(x => x.Code), "YS");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<Receivable>(item, true);
+            });
+            Audit(user, "新增应收款", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateReceivable(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(input);
-            var list = LoadReceivables(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "应收款不存在" }, 404); return; }
-            item.CustomerName = input.CustomerName; item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
-            item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
-            item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SaveReceivables(list); Audit(user, "修改应收款", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<Receivable, Receivable>(ReceivablesFile, "receivables", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应收款不存在", 404);
+                item.CustomerName = input.CustomerName; item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
+                item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
+                item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<Receivable>(item, true);
+            });
+            Audit(user, "修改应收款", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteReceivable(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadReceivables(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "应收款不存在" }, 404); return; }
-            list.Remove(item); SaveReceivables(list); Audit(user, "删除应收款", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应收款不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除应收款", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         static List<Payable> LoadPayables() { return LoadJsonList<Payable>(PayablesFile); }
@@ -4698,31 +4923,45 @@ namespace SupplierErpApp
         static void AddPayable(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(item);
-            var list = LoadPayables();
-            item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PayableSequenceFile, "AP", list.Select(x => x.Code), "YF");
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            list.Insert(0, item); SavePayables(list);
-            Audit(user, "新增应付款", item.Code); WriteJson(ctx, item, 201);
+            var saved = MutateJsonList<Payable, Payable>(PayablesFile, "payables", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.Code = NextCode(PayableSequenceFile, "AP", list.Select(x => x.Code), "YF");
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<Payable>(item, true);
+            });
+            Audit(user, "新增应付款", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePayable(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(input);
-            var list = LoadPayables(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "应付款不存在" }, 404); return; }
-            item.SupplierName = input.SupplierName; item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
-            item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
-            item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
-            item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-            SavePayables(list); Audit(user, "修改应付款", item.Code); WriteJson(ctx, item);
+            var saved = MutateJsonList<Payable, Payable>(PayablesFile, "payables", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应付款不存在", 404);
+                item.SupplierName = input.SupplierName; item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
+                item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
+                item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<Payable>(item, true);
+            });
+            Audit(user, "修改应付款", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeletePayable(HttpListenerContext ctx, UserSession user, string id)
         {
-            var list = LoadPayables(); var item = list.FirstOrDefault(x => x.Id == id);
-            if (item == null) { WriteJson(ctx, new { error = "应付款不存在" }, 404); return; }
-            list.Remove(item); SavePayables(list); Audit(user, "删除应付款", item.Code); WriteJson(ctx, new { ok = true });
+            string auditCode = null;
+            MutateJsonList<Payable, object>(PayablesFile, "payables", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应付款不存在", 404);
+                auditCode = item.Code;
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除应付款", auditCode); WriteJson(ctx, new { ok = true });
         }
 
         class StockAgg
