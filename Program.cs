@@ -24,6 +24,11 @@ namespace SupplierErpApp
         public BusinessException(string message, int statusCode = 400) : base(message) { StatusCode = statusCode; }
     }
 
+    public sealed class EditConflictException : Exception
+    {
+        public EditConflictException() : base("这条数据已被其他人修改，请刷新后再编辑。") { }
+    }
+
     public sealed class JsonCodec
     {
         static readonly JsonSerializerOptions Options = new JsonSerializerOptions
@@ -1005,6 +1010,10 @@ namespace SupplierErpApp
             catch (BusinessException ex)
             {
                 try { WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
+            }
+            catch (EditConflictException ex)
+            {
+                try { WriteJson(ctx, new { error = "conflict", message = ex.Message }, 409); } catch { }
             }
             catch (Exception ex)
             {
@@ -2102,11 +2111,24 @@ namespace SupplierErpApp
             {
                 if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该供应商公司已经存在", 409);
-                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code), "GY"); item.Status = "启用"; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Supplier>(item, true);
             });
             Audit(user, "新增供应商", saved.Company); WriteJson(ctx, saved, 201);
+        }
+
+        static void EnsureEditVersionMatch(string currentUpdatedAt, string clientUpdatedAt)
+        {
+            string current = (currentUpdatedAt ?? "").Trim();
+            string client = (clientUpdatedAt ?? "").Trim();
+            if (!string.Equals(current, client, StringComparison.Ordinal))
+                throw new EditConflictException();
+        }
+
+        static string ProfileUpdatedAtNow()
+        {
+            return DateTimeOffset.UtcNow.ToString("O");
         }
 
         static void UpdateSupplier(HttpListenerContext ctx, UserSession user, string id)
@@ -2116,9 +2138,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("供应商不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该供应商公司已经存在", 409);
-                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Goods = input.Goods; item.Address = input.Address; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Payable = input.Payable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Goods = input.Goods; item.Address = input.Address; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Payable = input.Payable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Supplier>(item, true);
             });
             Audit(user, "修改供应商", saved.Company); WriteJson(ctx, saved);
@@ -2187,7 +2210,7 @@ namespace SupplierErpApp
                             Company = input.Company, Contact = input.Contact, Phone = input.Phone, Goods = input.Goods,
                             Address = input.Address, Bank = input.Bank, Account = input.Account, BankNo = input.BankNo,
                             Payable = input.Payable, Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                            UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         batchCompanies.Add(item.Company);
                         pending.Insert(0, item);
@@ -2378,7 +2401,7 @@ namespace SupplierErpApp
             {
                 if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该客户公司已经存在", 409);
-                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code), "KH"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code), "KH"); item.Status = "启用"; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Customer>(item, true);
             });
@@ -2392,9 +2415,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("客户不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该客户公司已经存在", 409);
-                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Address = input.Address; item.Receivable = input.Receivable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Address = input.Address; item.Receivable = input.Receivable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Customer>(item, true);
             });
             Audit(user, "修改客户", saved.Code + " " + saved.Company); WriteJson(ctx, saved);
@@ -2461,7 +2485,7 @@ namespace SupplierErpApp
                             Company = input.Company, Contact = input.Contact, Phone = input.Phone, Bank = input.Bank,
                             Account = input.Account, BankNo = input.BankNo, Address = input.Address, Receivable = input.Receivable,
                             Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                            UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         batchCompanies.Add(item.Company);
                         pending.Insert(0, item);
@@ -2495,7 +2519,7 @@ namespace SupplierErpApp
             {
                 if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该供应商的相同物料已经存在", 409);
-                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL"); item.PriceType = NormalizePriceType(item.PriceType); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL"); item.PriceType = NormalizePriceType(item.PriceType); item.Status = "启用"; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Material>(item, true);
             });
@@ -2509,9 +2533,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("物料不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (list.Any(x => x.Id != id && string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该供应商的相同物料已经存在", 409);
-                item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Material>(item, true);
             });
             Audit(user, "修改物料", saved.Code + " " + saved.NameSpec); WriteJson(ctx, saved);
@@ -2602,7 +2627,7 @@ namespace SupplierErpApp
                             Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
                             TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
                             Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
-                            UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), UpdatedBy = user.DisplayName
+                            UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         batchKeys.Add(key);
                         pending.Insert(0, item);
@@ -2852,7 +2877,7 @@ namespace SupplierErpApp
             var rows=ReadImportRows(ctx);int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             MutateJsonList<Supplier, object>(DataFile, "auto", list =>
             {
-                foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=ProfileUpdatedAtNow(),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
                 return new JsonMutationResult<object>(null, imported > 0);
             });
             Audit(user,"导入供应商","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
@@ -2863,7 +2888,7 @@ namespace SupplierErpApp
             var rows=ReadImportRows(ctx);int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
             {
-                foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=ProfileUpdatedAtNow(),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
                 return new JsonMutationResult<object>(null, imported > 0);
             });
             Audit(user,"导入客户","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
@@ -2874,7 +2899,7 @@ namespace SupplierErpApp
             var rows=ReadImportRows(ctx);var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             MutateJsonList<Material, object>(MaterialFile, "materials", list =>
             {
-                foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=ProfileUpdatedAtNow(),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
                 return new JsonMutationResult<object>(null, imported > 0);
             });
             Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});

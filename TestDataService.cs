@@ -427,7 +427,7 @@ namespace SupplierErpApp
                         existing.Address = Cell(row, "单位地址"); existing.Bank = Cell(row, "开户行"); existing.Account = Cell(row, "银行账号");
                         existing.BankNo = Cell(row, "开户行行号"); existing.Payable = Money(Cell(row, "当前应付款"));
                         if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
-                        existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                        existing.UpdatedAt = ProfileUpdatedAtNow(); existing.UpdatedBy = user.DisplayName;
                         res.Updated++; changed = true;
                     }
                     else
@@ -440,7 +440,7 @@ namespace SupplierErpApp
                             Company = company, Contact = Cell(row, "联系人"), Phone = Cell(row, "联系电话"), Goods = Cell(row, "供应商品"),
                             Address = Cell(row, "单位地址"), Bank = Cell(row, "开户行"), Account = Cell(row, "银行账号"), BankNo = Cell(row, "开户行行号"),
                             Payable = Money(Cell(row, "当前应付款")), Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
-                            UpdatedAt = NowTimeString(), UpdatedBy = user.DisplayName
+                            UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         list.Insert(0, item); res.Added++; changed = true;
                     }
@@ -473,7 +473,7 @@ namespace SupplierErpApp
                     existing.Account = Cell(row, "银行账号"); existing.BankNo = Cell(row, "开户行行号"); existing.Address = Cell(row, "地址");
                     existing.Receivable = Money(Cell(row, "实时当前应收款"));
                     if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
-                    existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                    existing.UpdatedAt = ProfileUpdatedAtNow(); existing.UpdatedBy = user.DisplayName;
                     res.Updated++; changed = true;
                 }
                 else
@@ -486,7 +486,7 @@ namespace SupplierErpApp
                         Company = company, Contact = Cell(row, "联系人"), Phone = Cell(row, "联系电话"), Bank = Cell(row, "开户行"),
                         Account = Cell(row, "银行账号"), BankNo = Cell(row, "开户行行号"), Address = Cell(row, "地址"),
                         Receivable = Money(Cell(row, "实时当前应收款")), Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
-                        UpdatedAt = NowTimeString(), UpdatedBy = user.DisplayName
+                        UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                     };
                     list.Insert(0, item); res.Added++; changed = true;
                 }
@@ -522,7 +522,7 @@ namespace SupplierErpApp
                     existing.TaxPrice = Money(Cell(row, "含税价")); existing.NoTaxPrice = Money(Cell(row, "不含税价"));
                     existing.PriceType = NormalizePriceType(Cell(row, "价格类型")); existing.Note = Cell(row, "备注");
                     if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
-                    existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                    existing.UpdatedAt = ProfileUpdatedAtNow(); existing.UpdatedBy = user.DisplayName;
                     res.Updated++; changed = true;
                 }
                 else
@@ -536,7 +536,7 @@ namespace SupplierErpApp
                         TaxPrice = Money(Cell(row, "含税价")), NoTaxPrice = Money(Cell(row, "不含税价")),
                         PriceType = NormalizePriceType(Cell(row, "价格类型")), Note = Cell(row, "备注"),
                         Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
-                        UpdatedAt = NowTimeString(), UpdatedBy = user.DisplayName
+                        UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                     };
                     list.Insert(0, item); res.Added++; changed = true;
                 }
