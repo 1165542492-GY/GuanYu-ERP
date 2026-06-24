@@ -177,6 +177,7 @@ namespace SupplierErpApp
         public decimal PublicAccount { get; set; }
         public decimal CompanyPrivate { get; set; }
         public decimal PersonalPrivate { get; set; }
+        public string UpdatedAt { get; set; }
     }
 
     public class SystemSettings
@@ -2668,6 +2669,15 @@ namespace SupplierErpApp
             var value = Json.Deserialize<OpeningBalances>(ReadBody(ctx.Request)) ?? new OpeningBalances();
             RunUnderDataLock(() =>
             {
+                OpeningBalances current;
+                if (File.Exists(OpeningFile))
+                {
+                    string text = File.ReadAllText(OpeningFile, Encoding.UTF8);
+                    current = Json.Deserialize<OpeningBalances>(text) ?? new OpeningBalances();
+                }
+                else current = new OpeningBalances();
+                EnsureEditVersionMatch(current.UpdatedAt, value.UpdatedAt);
+                value.UpdatedAt = ProfileUpdatedAtNow();
                 if (File.Exists(OpeningFile)) File.Copy(OpeningFile, Path.Combine(BackupDir, "opening_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"), true);
                 File.WriteAllText(OpeningFile, Json.Serialize(value), new UTF8Encoding(false));
                 CleanBackups();
@@ -2679,7 +2689,7 @@ namespace SupplierErpApp
         static void AddFinance(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<FinanceTransaction>(ReadBody(ctx.Request)); ValidateFinance(item);
-            item.Id = Guid.NewGuid().ToString("N"); item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+            item.Id = Guid.NewGuid().ToString("N"); item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
             var saved = MutateJsonList<FinanceTransaction, FinanceTransaction>(FinanceFile, "finance", list =>
             {
                 list.Add(item);
@@ -2695,7 +2705,8 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("收支记录不存在", 404);
-                item.Date = input.Date; item.AccountType = input.AccountType; item.Receipt = input.Receipt; item.Payment = input.Payment; item.PaymentMethod = input.PaymentMethod; item.Purpose = input.Purpose; item.Counterparty = input.Counterparty; item.Note = input.Note; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                item.Date = input.Date; item.AccountType = input.AccountType; item.Receipt = input.Receipt; item.Payment = input.Payment; item.PaymentMethod = input.PaymentMethod; item.Purpose = input.Purpose; item.Counterparty = input.Counterparty; item.Note = input.Note; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<FinanceTransaction>(item, true);
             });
             Audit(user, "修改收支", saved.Date + " " + saved.AccountType + " " + saved.Purpose); WriteJson(ctx, saved);
