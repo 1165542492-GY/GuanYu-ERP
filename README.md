@@ -102,9 +102,20 @@ Ver2.8 已实现销售、采购、生产领用/成品入库、库存汇总、应
 2. 销售订单：输入数量与单价，保存后确认金额自动计算
 3. 采购入库、销售出库、生产领用、成品入库：分别新增草稿与已确认记录
 4. 打开库存汇总，确认只统计已确认记录，草稿不参与计算
-5. 应收款/应付款：输入应收/应付与已收/已付，确认未收/未付与状态自动计算
+5. 应收款/应付款：输入应收/应付与已收/已付，确认未收/未付与状态（未收款/部分收款/已收清、未付款/部分付款/已付清）自动计算
 6. 删除操作应弹出确认；弹窗点击遮罩不应关闭
 7. 验证 Ver2.7 功能未受影响：删除链路、机型成本启停、BOM 弹窗、字典选项
+
+### Ver2.8 测试报告修复（本版补丁）
+
+1. **合同脚本注入修复**：页面资源注入改为仅替换最后一个真实 `</body>`，避免破坏 `Contract.html` 打印脚本中的字符串，合同「新增合同」可正常弹窗。
+2. **手动备份完整范围**：`POST /api/backup` 备份至 `backups/manual_backup_yyyyMMdd_HHmmss/`，包含用户、权限、系统设置、字典、合同设置、合同、客户、供应商、物料、财务、BOM、机型成本、Ver2.8 全部业务 JSON 及操作日志。
+3. **清空前备份**：与手动备份使用同一份完整文件清单；清空写入先落临时目录，全部成功后再原子替换；失败时自动从备份恢复。
+4. **库存汇总**：按「业务类型 + 稳定 ID」汇总（物料用 MaterialId，成品用 ModelCostId/BomId），同名物料与成品不再合并；返回 ItemType、ItemId、ItemCode、ItemName、Spec、Unit、WarehouseName、CurrentQuantity、CostPrice、StockAmount。
+5. **业务来源关联**：采购入库/销售出库/生产领用/成品入库/应收/应付保存来源单据 ID 及关联字段；前端选择来源后自动带出。
+6. **应收/应付状态文案**：未收款 / 部分收款 / 已收清；未付款 / 部分付款 / 已付清。
+7. **Business 表格显示**：数量字段按普通数字显示，金额/单价/成本字段显示 ¥。
+8. **业务校验**：非法数量、超额收付款返回 400/422 及 `{ message: "中文原因" }`，前端优先显示 `message`。
 
 ### 一键清空测试数据（仅 admin）
 
@@ -112,7 +123,7 @@ Ver2.8 已实现销售、采购、生产领用/成品入库、库存汇总、应
 
 - 用于测试阶段快速清空业务测试数据，避免逐条删除
 - **默认二次密码**：`88888888`（与 ERP 登录密码无关，保存在 `system_settings.json` 的 `ClearDataPassword` 字段）
-- 清空前自动备份到 `backups/backup_before_clear_yyyyMMdd_HHmmss/`
+- 清空前自动备份到 `backups/backup_before_clear_yyyyMMdd_HHmmss/`（**完整数据清单**，与手动备份范围一致）
 - 双重确认：第一层 confirm 提示 → 第二层输入二次密码 + 确认文字「确认清空」
 - **会清空**：客户、供应商、物料、BOM、机型成本、合同、财务收支/期初、Ver2.8 全部业务 JSON
 - **不会清空**：users.json、system_settings.json（含二次密码）、dictionary_options.json、contract_settings.json（合同模板/基础资料）
@@ -332,7 +343,7 @@ C:\ProgramData\智造ERP供应商管理
 
 - `users.json`：登录账号与权限（密码 SHA256 哈希存储）
 - `bom.json`、`model_costs.json`、`system_settings.json`、`dictionary_options.json`：BOM、机型成本、系统税率、字典选项
-- `backups`：自动备份和手动备份
+- `backups`：自动备份、手动备份（`manual_backup_yyyyMMdd_HHmmss/` 完整目录）及清空前备份（`backup_before_clear_yyyyMMdd_HHmmss/`）
 - `operation.log`：操作审计日志
 
 系统最多保留 50 个 JSON 备份文件。升级或迁移前，请完整备份该数据目录。

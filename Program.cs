@@ -11,12 +11,19 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Xml.Linq;
 using System.Windows.Forms;
 
 namespace SupplierErpApp
 {
+    public sealed class BusinessException : Exception
+    {
+        public int StatusCode { get; private set; }
+        public BusinessException(string message, int statusCode = 400) : base(message) { StatusCode = statusCode; }
+    }
+
     public sealed class JsonCodec
     {
         static readonly JsonSerializerOptions Options = new JsonSerializerOptions
@@ -104,6 +111,10 @@ namespace SupplierErpApp
     public class BatchSupplierRequest { public List<Supplier> Items { get; set; } }
     public class BatchCustomerRequest { public List<Customer> Items { get; set; } }
     public class BatchMaterialRequest { public List<Material> Items { get; set; } }
+    public class BatchSalesOrderRequest { public List<SalesOrder> Items { get; set; } }
+    public class BatchSalesOutboundRequest { public List<SalesOutbound> Items { get; set; } }
+    public class BatchPurchaseOrderRequest { public List<PurchaseOrder> Items { get; set; } }
+    public class BatchPurchaseInboundRequest { public List<PurchaseInbound> Items { get; set; } }
 
     public class FinanceTransaction
     {
@@ -341,9 +352,20 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string CustomerId { get; set; }
+        public string CustomerCode { get; set; }
         public string CustomerName { get; set; }
+        public string CustomerContact { get; set; }
+        public string CustomerPhone { get; set; }
+        public string CustomerAddress { get; set; }
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
+        public decimal TaxExcludedSalePrice { get; set; }
+        public decimal TaxIncludedSalePrice { get; set; }
+        public decimal TaxExcludedSaleAmount { get; set; }
+        public decimal TaxIncludedSaleAmount { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
         public string OrderDate { get; set; }
@@ -357,7 +379,11 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string SalesOrderId { get; set; }
+        public string SalesOrderNo { get; set; }
         public string CustomerName { get; set; }
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
         public decimal CostPrice { get; set; }
@@ -374,6 +400,8 @@ namespace SupplierErpApp
         public string Id { get; set; }
         public string Code { get; set; }
         public string SupplierName { get; set; }
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
@@ -389,7 +417,11 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string PurchaseOrderId { get; set; }
+        public string PurchaseNo { get; set; }
         public string SupplierName { get; set; }
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
         public decimal InboundPrice { get; set; }
@@ -405,6 +437,10 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string BomId { get; set; }
+        public string BomName { get; set; }
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
         public decimal CostPrice { get; set; }
@@ -420,6 +456,9 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string BomId { get; set; }
+        public string BomCode { get; set; }
+        public string ModelCostId { get; set; }
         public string ProductName { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitCost { get; set; }
@@ -436,6 +475,8 @@ namespace SupplierErpApp
         public string Id { get; set; }
         public string Code { get; set; }
         public string CustomerName { get; set; }
+        public string SalesOrderId { get; set; }
+        public string SalesOrderNo { get; set; }
         public decimal ReceivableAmount { get; set; }
         public decimal ReceivedAmount { get; set; }
         public decimal UnreceivedAmount { get; set; }
@@ -451,6 +492,8 @@ namespace SupplierErpApp
         public string Id { get; set; }
         public string Code { get; set; }
         public string SupplierName { get; set; }
+        public string PurchaseOrderId { get; set; }
+        public string PurchaseNo { get; set; }
         public decimal PayableAmount { get; set; }
         public decimal PaidAmount { get; set; }
         public decimal UnpaidAmount { get; set; }
@@ -463,8 +506,17 @@ namespace SupplierErpApp
 
     public class StockItem
     {
+        public string ItemType { get; set; }
+        public string ItemId { get; set; }
+        public string ItemCode { get; set; }
         public string ItemName { get; set; }
-        public decimal Quantity { get; set; }
+        public string Spec { get; set; }
+        public string Unit { get; set; }
+        public string WarehouseName { get; set; }
+        public decimal CurrentQuantity { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal StockAmount { get; set; }
+        public decimal Quantity { get { return CurrentQuantity; } set { CurrentQuantity = value; } }
     }
 
     public class StockSummary
@@ -528,6 +580,7 @@ namespace SupplierErpApp
         static readonly string BomFile = Path.Combine(DataDir, "bom.json");
         static readonly string BomSequenceFile = Path.Combine(DataDir, "bom_sequence.json");
         static readonly string ModelCostFile = Path.Combine(DataDir, "model_costs.json");
+        static readonly string ModelCostSequenceFile = Path.Combine(DataDir, "model_cost_sequence.json");
         static readonly string SystemSettingsFile = Path.Combine(DataDir, "system_settings.json");
         static readonly string ContractSettingsFile = Path.Combine(DataDir, "contract_settings.json");
         static readonly string ContractSettingSequenceFile = Path.Combine(DataDir, "contract_setting_sequence.json");
@@ -553,6 +606,7 @@ namespace SupplierErpApp
         static readonly string BackupDir = Path.Combine(DataDir, "backups");
         static readonly string LogFile = Path.Combine(DataDir, "operation.log");
         const int Port = 8787;
+        static readonly string DefaultListenUrl = "http://0.0.0.0:" + Port;
         static HttpListener Listener;
         static NotifyIcon TrayIcon;
 
@@ -592,6 +646,7 @@ namespace SupplierErpApp
                     EnsureDefaultDictionaryOptions();
                     EnsureDefaultContractSettings();
                     EnsureBusinessDataFiles();
+                    RepairAllSequenceFiles();
                     EnsureUsersFile();
                     LoadUsers();
                     StartServer();
@@ -627,7 +682,28 @@ namespace SupplierErpApp
             TrayIcon.Visible = true;
             TrayIcon.ContextMenuStrip = menu;
             TrayIcon.DoubleClick += delegate { OpenBrowser(); };
-            TrayIcon.ShowBalloonTip(2500, "供应商管理系统已启动", "本机访问：http://127.0.0.1:" + Port, ToolTipIcon.Info);
+            TrayIcon.ShowBalloonTip(2500, "供应商管理系统已启动", "本机：http://127.0.0.1:" + Port + "\r\n局域网：http://192.168.1.28:" + Port, ToolTipIcon.Info);
+        }
+
+        static string ResolveListenUrl()
+        {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+            if (!string.IsNullOrWhiteSpace(env))
+            {
+                var url = env.Trim().TrimEnd('/');
+                if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    return url;
+            }
+            return DefaultListenUrl;
+        }
+
+        static string ToHttpListenerPrefix(string listenUrl)
+        {
+            var url = (listenUrl ?? DefaultListenUrl).Trim().TrimEnd('/');
+            if (!url.EndsWith("/", StringComparison.Ordinal)) url += "/";
+            return url
+                .Replace("http://0.0.0.0:", "http://+:", StringComparison.OrdinalIgnoreCase)
+                .Replace("http://*:", "http://+:", StringComparison.OrdinalIgnoreCase);
         }
 
         static void OpenBrowser()
@@ -642,7 +718,7 @@ namespace SupplierErpApp
         static void StartServer()
         {
             Listener = new HttpListener();
-            Listener.Prefixes.Add("http://+:" + Port + "/");
+            Listener.Prefixes.Add(ToHttpListenerPrefix(ResolveListenUrl()));
             Listener.Start();
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -720,7 +796,7 @@ namespace SupplierErpApp
                 if (path == "/api/bom/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.export")) return; ExportBomCsv(ctx); return; }
                 if (path == "/api/bom/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.import")) return; ExportBomTemplateCsv(ctx); return; }
                 if (path == "/api/bom/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.import")) return; ImportBomCsv(ctx, user); return; }
-                if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBomWithCurrentPrices()); return; }
+                if (path == "/api/bom" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "bom.view") && !HasPermission(user, "model_cost.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadBom()); return; }
                 if (path == "/api/bom" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.add")) return; AddBom(ctx, user); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "bom.edit")) return; UpdateBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
                 if (path.StartsWith("/api/bom/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "bom.delete")) return; DeleteBom(ctx, user, path.Substring("/api/bom/".Length)); return; }
@@ -745,18 +821,34 @@ namespace SupplierErpApp
                 if (path == "/api/sales-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; AddSalesOrder(ctx, user); return; }
                 if (path.StartsWith("/api/sales-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "sales_order.edit")) return; UpdateSalesOrder(ctx, user, path.Substring("/api/sales-orders/".Length)); return; }
                 if (path.StartsWith("/api/sales-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_order.delete")) return; DeleteSalesOrder(ctx, user, path.Substring("/api/sales-orders/".Length)); return; }
+                if (path == "/api/sales-orders/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.delete")) return; BatchDeleteSalesOrders(ctx, user); return; }
+                if (path == "/api/sales-orders/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; BatchAddSalesOrders(ctx, user); return; }
+                if (path == "/api/sales-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; ImportSalesOrders(ctx, user); return; }
+                if (path == "/api/sales-orders/export") { if (!RequirePermission(ctx, user, "sales_order.view")) return; ExportSalesOrdersCsv(ctx); return; }
                 if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "sales_outbound.view")) return; WriteJson(ctx, LoadSalesOutbounds()); return; }
                 if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; AddSalesOutbound(ctx, user); return; }
                 if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "sales_outbound.edit")) return; UpdateSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
                 if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_outbound.delete")) return; DeleteSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
+                if (path == "/api/sales-outbounds/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.delete")) return; BatchDeleteSalesOutbounds(ctx, user); return; }
+                if (path == "/api/sales-outbounds/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; BatchAddSalesOutbounds(ctx, user); return; }
+                if (path == "/api/sales-outbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; ImportSalesOutbounds(ctx, user); return; }
+                if (path == "/api/sales-outbounds/export") { if (!RequirePermission(ctx, user, "sales_outbound.view")) return; ExportSalesOutboundsCsv(ctx); return; }
                 if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_order.view")) return; WriteJson(ctx, LoadPurchaseOrders()); return; }
                 if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; AddPurchaseOrder(ctx, user); return; }
                 if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_order.edit")) return; UpdatePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
                 if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_order.delete")) return; DeletePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
+                if (path == "/api/purchase-orders/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.delete")) return; BatchDeletePurchaseOrders(ctx, user); return; }
+                if (path == "/api/purchase-orders/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; BatchAddPurchaseOrders(ctx, user); return; }
+                if (path == "/api/purchase-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; ImportPurchaseOrders(ctx, user); return; }
+                if (path == "/api/purchase-orders/export") { if (!RequirePermission(ctx, user, "purchase_order.view")) return; ExportPurchaseOrdersCsv(ctx); return; }
                 if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_inbound.view")) return; WriteJson(ctx, LoadPurchaseInbounds()); return; }
                 if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; AddPurchaseInbound(ctx, user); return; }
                 if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_inbound.edit")) return; UpdatePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
                 if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_inbound.delete")) return; DeletePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
+                if (path == "/api/purchase-inbounds/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.delete")) return; BatchDeletePurchaseInbounds(ctx, user); return; }
+                if (path == "/api/purchase-inbounds/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; BatchAddPurchaseInbounds(ctx, user); return; }
+                if (path == "/api/purchase-inbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; ImportPurchaseInbounds(ctx, user); return; }
+                if (path == "/api/purchase-inbounds/export") { if (!RequirePermission(ctx, user, "purchase_inbound.view")) return; ExportPurchaseInboundsCsv(ctx); return; }
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; WriteJson(ctx, LoadProductionPicks()); return; }
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionPick(ctx, user); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
@@ -778,10 +870,22 @@ namespace SupplierErpApp
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
+            catch (BusinessException ex)
+            {
+                try { WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
+            }
             catch (Exception ex)
             {
-                try { WriteJson(ctx, new { error = ex.Message }, 500); } catch { }
+                try { string msg = ToUserMessage(ex); WriteJson(ctx, new { error = msg, message = msg }, 500); } catch { }
             }
+        }
+
+        static string AppendHtmlBeforeLastBodyClose(string html, string fragment)
+        {
+            if (string.IsNullOrEmpty(html) || string.IsNullOrEmpty(fragment)) return html;
+            int idx = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return html + fragment;
+            return html.Substring(0, idx) + fragment + html.Substring(idx);
         }
 
         static void ServeApp(HttpListenerContext ctx)
@@ -795,27 +899,27 @@ namespace SupplierErpApp
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Finance.html"))
             {
                 if (s == null) throw new Exception("财务界面资源缺失");
-                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Customer.html"))
             {
                 if (s == null) throw new Exception("客户界面资源缺失");
-                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Material.html"))
             {
                 if (s == null) throw new Exception("物料界面资源缺失");
-                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Contract.html"))
             {
                 if (s == null) throw new Exception("合同界面资源缺失");
-                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Business.html"))
             {
                 if (s == null) throw new Exception("业务界面资源缺失");
-                using (var reader = new StreamReader(s, Encoding.UTF8)) html = html.Replace("</body>", reader.ReadToEnd() + "</body>");
+                using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             byte[] bytes = Encoding.UTF8.GetBytes(html);
             ctx.Response.ContentType = "text/html; charset=utf-8";
@@ -963,25 +1067,37 @@ namespace SupplierErpApp
             return string.Equals(priceType, "含税", StringComparison.OrdinalIgnoreCase) ? "含税" : "不含税";
         }
 
-        static decimal GetMaterialOriginalPrice(Material material)
+        static decimal GetMaterialTaxPrice(Material material)
         {
             if (material == null) return 0;
-            return NormalizePriceType(material.PriceType) == "含税" ? material.TaxPrice : material.NoTaxPrice;
+            return material.TaxPrice;
         }
 
-        static decimal CalcNoTaxUnitPrice(decimal originalPrice, string priceType, decimal taxRate)
+        static decimal GetMaterialNoTaxPrice(Material material)
         {
-            if (NormalizePriceType(priceType) == "含税")
-            {
-                if (taxRate < 0) taxRate = 0;
-                return Math.Round(originalPrice / (1 + taxRate / 100m), 4);
-            }
-            return originalPrice;
+            if (material == null) return 0;
+            return material.NoTaxPrice;
         }
 
-        static decimal CalcLineAmount(decimal quantity, decimal noTaxPrice)
+        /// <summary>BOM 成本单价：优先含税价，无含税价时回退不含税价。</summary>
+        static (decimal UnitPrice, string PriceType, bool UsedNoTaxFallback) GetMaterialBomUnitPrice(Material material)
         {
-            return Math.Round(quantity * noTaxPrice, 2);
+            if (material == null) return (0, "不含税", false);
+            if (material.TaxPrice > 0) return (material.TaxPrice, "含税", false);
+            if (material.NoTaxPrice > 0) return (material.NoTaxPrice, "不含税", true);
+            return (0, "不含税", false);
+        }
+
+        static decimal CalcNoTaxUnitPrice(decimal taxUnitPrice, decimal taxRate)
+        {
+            if (taxUnitPrice <= 0) return 0;
+            if (taxRate < 0) taxRate = 0;
+            return Math.Round(taxUnitPrice / (1 + taxRate / 100m), 4);
+        }
+
+        static decimal CalcLineAmount(decimal quantity, decimal unitPrice)
+        {
+            return Math.Round(quantity * unitPrice, 2);
         }
 
         static void RecalcBomLines(BomItem item, decimal defaultTaxRate)
@@ -992,8 +1108,9 @@ namespace SupplierErpApp
             {
                 line.PriceType = NormalizePriceType(line.PriceType);
                 if (line.TaxRate <= 0) line.TaxRate = defaultTaxRate;
-                line.NoTaxPrice = CalcNoTaxUnitPrice(line.OriginalPrice, line.PriceType, line.TaxRate);
-                line.Amount = CalcLineAmount(line.Quantity, line.NoTaxPrice);
+                if (line.OriginalPrice <= 0 && line.NoTaxPrice > 0 && line.PriceType == "不含税")
+                    line.OriginalPrice = line.NoTaxPrice;
+                line.Amount = CalcLineAmount(line.Quantity, line.OriginalPrice);
                 total += line.Amount;
             }
             item.TotalMaterialCost = Math.Round(total, 2);
@@ -1167,18 +1284,40 @@ namespace SupplierErpApp
             var missing = new List<string>();
             foreach (var line in item.Items ?? new List<BomDetail>())
             {
-                var material = materials.FirstOrDefault(x => (!string.IsNullOrWhiteSpace(line.MaterialId) && x.Id == line.MaterialId) || (!string.IsNullOrWhiteSpace(line.MaterialCode) && x.Code == line.MaterialCode));
+                Material material = null;
+                if (!string.IsNullOrWhiteSpace(line.MaterialId))
+                    material = materials.FirstOrDefault(x => x.Id == line.MaterialId);
+                if (material == null && !string.IsNullOrWhiteSpace(line.MaterialCode))
+                    material = materials.FirstOrDefault(x => x.Code == line.MaterialCode);
+                if (material == null && !string.IsNullOrWhiteSpace(line.MaterialName))
+                    material = materials.FirstOrDefault(x => string.Equals(x.NameSpec, line.MaterialName, StringComparison.OrdinalIgnoreCase));
                 if (material != null)
                 {
-                    line.MaterialId = material.Id; line.MaterialCode = material.Code; line.MaterialName = material.NameSpec;
+                    var price = GetMaterialBomUnitPrice(material);
+                    line.MaterialId = material.Id;
+                    line.MaterialCode = material.Code;
+                    line.MaterialName = material.NameSpec;
                     line.Unit = string.IsNullOrWhiteSpace(material.QuantityUnit) ? line.Unit : material.QuantityUnit;
-                    line.PriceType = NormalizePriceType(material.PriceType); line.OriginalPrice = GetMaterialOriginalPrice(material);
-                    line.TaxRate = taxRate; line.PriceSourceTime = material.UpdatedAt;
+                    line.PriceType = price.PriceType;
+                    line.OriginalPrice = price.UnitPrice;
+                    line.NoTaxPrice = material.NoTaxPrice;
+                    line.TaxRate = taxRate;
+                    line.PriceSourceTime = material.UpdatedAt;
+                    line.PriceMissing = price.UnitPrice <= 0;
                 }
-                line.PriceMissing = material == null || line.OriginalPrice <= 0;
-                if (line.PriceMissing) missing.Add(string.IsNullOrWhiteSpace(line.MaterialName) ? (line.MaterialCode ?? "未命名物料") : line.MaterialName);
-                line.NoTaxPrice = CalcNoTaxUnitPrice(line.OriginalPrice, line.PriceType, line.TaxRate);
-                line.Amount = CalcLineAmount(line.Quantity, line.NoTaxPrice); total += line.Amount;
+                else
+                {
+                    line.PriceMissing = true;
+                }
+                if (line.PriceMissing)
+                    missing.Add(string.IsNullOrWhiteSpace(line.MaterialName) ? (line.MaterialCode ?? "未命名物料") : line.MaterialName);
+                if (line.OriginalPrice <= 0 && line.NoTaxPrice > 0)
+                {
+                    line.OriginalPrice = line.NoTaxPrice;
+                    line.PriceType = "不含税";
+                }
+                line.Amount = CalcLineAmount(line.Quantity, line.OriginalPrice);
+                total += line.Amount;
             }
             item.TotalMaterialCost = Math.Round(total, 2);
             item.PriceMissing = missing.Count > 0;
@@ -1208,9 +1347,18 @@ namespace SupplierErpApp
             }
         }
 
+        static void EnsureModelCode(BomItem item)
+        {
+            if (item == null) return;
+            if (!string.IsNullOrWhiteSpace(item.ModelCode) && item.ModelCode.Trim() != "-") return;
+            var codes = LoadBom().Select(x => x.ModelCode).Concat(LoadModelCosts().Select(x => x.ModelCode));
+            item.ModelCode = NextCode(ModelCostSequenceFile, "MC", codes);
+        }
+
         static void AddBom(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
+            EnsureModelCode(item);
             ValidateBom(item);
             ApplyCurrentMaterialPrices(item);
             var list = LoadBom();
@@ -1825,7 +1973,7 @@ namespace SupplierErpApp
             Validate(item);
             var list = LoadSuppliers();
             if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商公司已经存在" }, 409); return; }
-            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "GY", list.Select(x=>x.Code)); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveSuppliers(list); Audit(user, "新增供应商", item.Company); WriteJson(ctx, item, 201);
         }
 
@@ -1886,7 +2034,7 @@ namespace SupplierErpApp
                     var item = new Supplier
                     {
                         Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(SupplierSequenceFile, "GY", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Code = NextCode(SupplierSequenceFile, "SRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "GY"),
                         Company = input.Company, Contact = input.Contact, Phone = input.Phone, Goods = input.Goods,
                         Address = input.Address, Bank = input.Bank, Account = input.Account, BankNo = input.BankNo,
                         Payable = input.Payable, Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
@@ -1930,34 +2078,139 @@ namespace SupplierErpApp
             }
         }
 
-        static string NextCode(string sequenceFile, string prefix, IEnumerable<string> codes)
+        static int ParseCodeSequence(string code, params string[] prefixes)
         {
+            if (string.IsNullOrWhiteSpace(code) || prefixes == null || prefixes.Length == 0) return 0;
+            int best = 0;
+            foreach (var prefix in prefixes)
+            {
+                if (string.IsNullOrEmpty(prefix)) continue;
+                if (code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    int value;
+                    if (int.TryParse(code.Substring(prefix.Length), out value)) best = Math.Max(best, value);
+                }
+            }
+            return best;
+        }
+
+        static string NextCode(string sequenceFile, string prefix, IEnumerable<string> codes, params string[] legacyPrefixes)
+        {
+            var allPrefixes = new List<string> { prefix };
+            if (legacyPrefixes != null)
+            {
+                foreach (var lp in legacyPrefixes)
+                {
+                    if (string.IsNullOrEmpty(lp)) continue;
+                    if (!allPrefixes.Any(x => string.Equals(x, lp, StringComparison.OrdinalIgnoreCase)))
+                        allPrefixes.Add(lp);
+                }
+            }
             int max = 0;
             foreach (var code in codes.Select(x => x ?? ""))
-            {
-                int value;
-                if (code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(prefix.Length), out value)) max = Math.Max(max, value);
-            }
+                max = Math.Max(max, ParseCodeSequence(code, allPrefixes.ToArray()));
             lock (DataLock)
             {
-                int sequence;
-                if (!int.TryParse(File.ReadAllText(sequenceFile, Encoding.UTF8), out sequence)) sequence = 0;
-                sequence = Math.Max(sequence, max) + 1;
-                File.WriteAllText(sequenceFile, sequence.ToString(), new UTF8Encoding(false));
-                return prefix + sequence.ToString("D2");
+                int sequence = Math.Max(ReadSequenceValue(sequenceFile), max) + 1;
+                WriteAllTextAtomic(sequenceFile, sequence.ToString());
+                return prefix + sequence.ToString("D5");
             }
+        }
+
+        static int ReadSequenceValue(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return 0;
+                string text = File.ReadAllText(path, Encoding.UTF8).Trim();
+                int v;
+                if (int.TryParse(text, out v) && v >= 0) return v;
+                return 0;
+            }
+            catch { return 0; }
+        }
+
+        static void WriteAllTextAtomic(string path, string content)
+        {
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            string temp = path + ".tmp_" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(temp, content, new UTF8Encoding(false));
+                if (File.Exists(path))
+                {
+                    string backup = path + ".bak";
+                    File.Replace(temp, path, backup, ignoreMetadataErrors: true);
+                    try { if (File.Exists(backup)) File.Delete(backup); } catch { }
+                }
+                else File.Move(temp, path);
+            }
+            finally
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            }
+        }
+
+        static void RepairAllSequenceFiles()
+        {
+            foreach (var path in new[]
+            {
+                SupplierSequenceFile, CustomerSequenceFile, MaterialSequenceFile, BomSequenceFile, ModelCostSequenceFile,
+                ContractSequenceFile, ContractSettingSequenceFile, SalesOrderSequenceFile, SalesOutboundSequenceFile,
+                PurchaseOrderSequenceFile, PurchaseInboundSequenceFile, ProductionPickSequenceFile,
+                FinishedInboundSequenceFile, ReceivableSequenceFile, PayableSequenceFile
+            })
+            {
+                int v = ReadSequenceValue(path);
+                WriteAllTextAtomic(path, v.ToString());
+            }
+        }
+
+        static void EnsureClearedDataIntegrity()
+        {
+            EnsureJsonFile(DataFile);
+            EnsureJsonFile(SupplierSequenceFile, "0");
+            EnsureJsonFile(CustomerFile);
+            EnsureJsonFile(CustomerSequenceFile, "0");
+            EnsureJsonFile(MaterialFile);
+            EnsureJsonFile(MaterialSequenceFile, "0");
+            EnsureJsonFile(FinanceFile);
+            EnsureJsonFile(OpeningFile, Json.Serialize(new OpeningBalances()));
+            EnsureJsonFile(BomFile);
+            EnsureJsonFile(BomSequenceFile, "0");
+            EnsureJsonFile(ModelCostFile);
+            EnsureJsonFile(ModelCostSequenceFile, "0");
+            EnsureJsonFile(ContractsFile);
+            EnsureJsonFile(ContractSequenceFile, "0");
+            EnsureBusinessDataFiles();
+            RepairAllSequenceFiles();
+        }
+
+        static string ToUserMessage(Exception ex)
+        {
+            if (ex == null) return "操作失败";
+            if (ex is UnauthorizedAccessException) return "数据文件写入失败，请确认只有一个 ERP 程序在运行，并以管理员身份启动";
+            var io = ex as IOException ?? ex.InnerException as IOException;
+            if (io != null)
+            {
+                string msg = io.Message ?? "";
+                if (msg.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 || msg.IndexOf("being used", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "数据文件被占用或权限不足，请关闭其他 ERP 实例后重试";
+            }
+            return string.IsNullOrWhiteSpace(ex.Message) ? "操作失败" : ex.Message;
         }
 
         static void EnsureLegacyCodes()
         {
             var suppliers = LoadSuppliers(); bool suppliersChanged = false;
-            foreach (var item in suppliers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(SupplierSequenceFile, "GY", suppliers.Select(x=>x.Code)); suppliersChanged = true; }
+            foreach (var item in suppliers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(SupplierSequenceFile, "SRM", suppliers.Select(x=>x.Code), "GY"); suppliersChanged = true; }
             if (suppliersChanged) SaveSuppliers(suppliers);
             var customers = LoadCustomers(); bool customersChanged = false;
-            foreach (var item in customers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(CustomerSequenceFile, "KH", customers.Select(x=>x.Code)); customersChanged = true; }
+            foreach (var item in customers.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(CustomerSequenceFile, "CRM", customers.Select(x=>x.Code), "KH"); customersChanged = true; }
             if (customersChanged) SaveCustomers(customers);
             var materials = LoadMaterials(); bool materialsChanged = false;
-            foreach (var item in materials.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(MaterialSequenceFile, "WL", materials.Select(x=>x.Code)); materialsChanged = true; }
+            foreach (var item in materials.Where(x => string.IsNullOrWhiteSpace(x.Code)).Reverse()) { item.Code = NextCode(MaterialSequenceFile, "MAT", materials.Select(x=>x.Code), "WL"); materialsChanged = true; }
             if (materialsChanged) SaveMaterials(materials);
         }
 
@@ -1966,7 +2219,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Customer>(ReadBody(ctx.Request)); ValidateCustomer(item);
             var list = LoadCustomers();
             if (list.Any(x => string.Equals(x.Company, item.Company, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该客户公司已经存在" }, 409); return; }
-            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "KH", list.Select(x=>x.Code)); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
+            item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"); item.Status = "启用"; item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveCustomers(list); Audit(user, "新增客户", item.Code + " " + item.Company); WriteJson(ctx, item, 201);
         }
 
@@ -2025,7 +2278,7 @@ namespace SupplierErpApp
                     var item = new Customer
                     {
                         Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(CustomerSequenceFile, "KH", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Code = NextCode(CustomerSequenceFile, "CRM", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "KH"),
                         Company = input.Company, Contact = input.Contact, Phone = input.Phone, Bank = input.Bank,
                         Account = input.Account, BankNo = input.BankNo, Address = input.Address, Receivable = input.Receivable,
                         Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
@@ -2070,7 +2323,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(item);
             var list = LoadMaterials();
             if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase))) { WriteJson(ctx, new { error = "该供应商的相同物料已经存在" }, 409); return; }
-            item.Id=Guid.NewGuid().ToString("N"); item.Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)); item.PriceType=NormalizePriceType(item.PriceType); item.Status="启用"; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
+            item.Id=Guid.NewGuid().ToString("N"); item.Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"); item.PriceType=NormalizePriceType(item.PriceType); item.Status="启用"; item.UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"); item.UpdatedBy=user.DisplayName;
             list.Insert(0,item); SaveMaterials(list); Audit(user,"新增物料",item.Code+" "+item.NameSpec); WriteJson(ctx,item,201);
         }
 
@@ -2152,7 +2405,7 @@ namespace SupplierErpApp
                     var item = new Material
                     {
                         Id = Guid.NewGuid().ToString("N"),
-                        Code = NextCode(MaterialSequenceFile, "WL", list.Select(x => x.Code).Concat(pending.Select(x => x.Code))),
+                        Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "WL"),
                         Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
                         TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
                         Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
@@ -2399,21 +2652,21 @@ namespace SupplierErpApp
         static void ImportSuppliers(HttpListenerContext ctx,UserSession user)
         {
             var rows=ReadImportRows(ctx);var list=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile,"GY",list.Select(x=>x.Code)),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+            foreach(var row in rows){rowNo++;string company=Cell(row,"供应商名称","供应商公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商已存在");continue;}var item=new Supplier{Id=Guid.NewGuid().ToString("N"),Code=NextCode(SupplierSequenceFile, "SRM", list.Select(x=>x.Code), "GY"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Goods=Cell(row,"供应商品"),Address=Cell(row,"单位地址"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Payable=Money(Cell(row,"当前应付款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
             if(imported>0)SaveSuppliers(list);Audit(user,"导入供应商","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
         static void ImportCustomers(HttpListenerContext ctx,UserSession user)
         {
             var rows=ReadImportRows(ctx);var list=LoadCustomers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile,"KH",list.Select(x=>x.Code)),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+            foreach(var row in rows){rowNo++;string company=Cell(row,"客户名称","公司名");if(Placeholder(company)){skipped++;continue;}if(list.Any(x=>string.Equals(x.Company,company,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：客户已存在");continue;}var item=new Customer{Id=Guid.NewGuid().ToString("N"),Code=NextCode(CustomerSequenceFile, "CRM", list.Select(x=>x.Code), "KH"),Company=company,Contact=Cell(row,"联系人"),Phone=Cell(row,"联系电话"),Bank=Cell(row,"开户行"),Account=Cell(row,"银行账号"),BankNo=Cell(row,"开户行行号"),Address=Cell(row,"地址"),Receivable=Money(Cell(row,"实时当前应收款")),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
             if(imported>0)SaveCustomers(list);Audit(user,"导入客户","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
         static void ImportMaterials(HttpListenerContext ctx,UserSession user)
         {
             var rows=ReadImportRows(ctx);var list=LoadMaterials();var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
-            foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"WL",list.Select(x=>x.Code)),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+            foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
             if(imported>0)SaveMaterials(list);Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
@@ -2441,11 +2694,13 @@ namespace SupplierErpApp
             return (modelCode ?? "").Trim() + "|" + (bomCode ?? "").Trim() + "|" + (bomVersion ?? "").Trim();
         }
 
-        static void BumpSequenceIfNeeded(string sequenceFile, string prefix, string code)
+        static void BumpSequenceIfNeeded(string sequenceFile, string prefix, string code, params string[] legacyPrefixes)
         {
-            if (string.IsNullOrWhiteSpace(code) || !code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
-            int value;
-            if (!int.TryParse(code.Substring(prefix.Length), out value)) return;
+            if (string.IsNullOrWhiteSpace(code)) return;
+            var prefixes = new List<string> { prefix };
+            if (legacyPrefixes != null) prefixes.AddRange(legacyPrefixes.Where(x => !string.IsNullOrEmpty(x)));
+            int value = ParseCodeSequence(code, prefixes.ToArray());
+            if (value <= 0) return;
             lock (DataLock)
             {
                 int sequence;
@@ -2546,10 +2801,24 @@ namespace SupplierErpApp
         {
             byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csvContent)).ToArray();
             ctx.Response.ContentType = "text/csv; charset=utf-8";
-            ctx.Response.AddHeader("Content-Disposition", "attachment; filename=" + filename);
+            ctx.Response.AddHeader("Content-Disposition", BuildExportContentDisposition(filename));
             ctx.Response.ContentLength64 = bytes.Length;
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             ctx.Response.Close();
+        }
+
+        static string BuildExportFileName(string moduleName, string ext = ".csv")
+        {
+            if (string.IsNullOrEmpty(ext)) ext = ".csv";
+            if (!ext.StartsWith(".")) ext = "." + ext;
+            return moduleName + DateTime.Now.ToString("yyyyMMdd") + ext;
+        }
+
+        static string BuildExportContentDisposition(string fileName)
+        {
+            var ext = Path.GetExtension(fileName ?? ".csv");
+            if (string.IsNullOrEmpty(ext)) ext = ".csv";
+            return "attachment; filename=export" + DateTime.Now.ToString("yyyyMMdd") + ext;
         }
 
         static readonly string[] BomCsvHeaders = new[] {
@@ -2598,7 +2867,7 @@ namespace SupplierErpApp
                 if (items.Count == 0) sb.AppendLine(BuildBomCsvRow(bom, null, 0));
                 else for (int i = 0; i < items.Count; i++) sb.AppendLine(BuildBomCsvRow(bom, items[i], i + 1));
             }
-            WriteCsvDownload(ctx, "BOM表_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv", sb.ToString());
+            WriteCsvDownload(ctx, BuildExportFileName("BOM表"), sb.ToString());
         }
 
         static void ExportBomTemplateCsv(HttpListenerContext ctx)
@@ -2706,11 +2975,11 @@ namespace SupplierErpApp
                 if (taxRate < 0) taxRate = 0;
                 originalPrice = string.IsNullOrWhiteSpace(origText) ? 0 : Money(origText);
                 noTaxPrice = string.IsNullOrWhiteSpace(noTaxText) ? 0 : Money(noTaxText);
-                if (string.IsNullOrWhiteSpace(noTaxText) && !string.IsNullOrWhiteSpace(origText))
-                    noTaxPrice = CalcNoTaxUnitPrice(originalPrice, priceType, taxRate);
+                if (string.IsNullOrWhiteSpace(noTaxText) && !string.IsNullOrWhiteSpace(origText) && priceType == "含税")
+                    noTaxPrice = CalcNoTaxUnitPrice(originalPrice, taxRate);
                 else if (string.IsNullOrWhiteSpace(origText) && !string.IsNullOrWhiteSpace(noTaxText))
                     originalPrice = noTaxPrice;
-                amount = string.IsNullOrWhiteSpace(amountText) ? CalcLineAmount(quantity, noTaxPrice) : Money(amountText);
+                amount = string.IsNullOrWhiteSpace(amountText) ? CalcLineAmount(quantity, originalPrice) : Money(amountText);
                 var line = new BomDetail
                 {
                     MaterialCode = materialCode.Trim(),
@@ -2848,7 +3117,7 @@ namespace SupplierErpApp
                     x.Note, string.IsNullOrWhiteSpace(x.Status) ? "启用" : x.Status, x.CreatedAt, x.UpdatedAt
                 }.Select(Csv)));
             }
-            WriteCsvDownload(ctx, "机型成本_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv", sb.ToString());
+            WriteCsvDownload(ctx, BuildExportFileName("机型成本"), sb.ToString());
         }
 
         static void ExportModelCostTemplateCsv(HttpListenerContext ctx)
@@ -3018,23 +3287,21 @@ namespace SupplierErpApp
         {
             var sb = new StringBuilder(); sb.AppendLine("供应商编号,供应商名称,联系人,联系电话,供应商品,单位地址,开户行,银行账号,开户行行号,当前应付款,状态,最后更新,操作人");
             foreach (var x in LoadSuppliers()) sb.AppendLine(string.Join(",", new[] { x.Code,x.Company,x.Contact,x.Phone,x.Goods,x.Address,x.Bank,x.Account,x.BankNo,x.Payable.ToString("0.00"),x.Status,x.UpdatedAt,x.UpdatedBy }.Select(Csv)));
-            byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
-            ctx.Response.ContentType = "text/csv; charset=utf-8"; ctx.Response.AddHeader("Content-Disposition", "attachment; filename=suppliers_" + DateTime.Now.ToString("yyyyMMdd") + ".csv"); ctx.Response.ContentLength64 = bytes.Length; ctx.Response.OutputStream.Write(bytes,0,bytes.Length); ctx.Response.Close();
+            WriteCsvDownload(ctx, BuildExportFileName("供应商管理"), sb.ToString());
         }
 
         static void ExportCustomersCsv(HttpListenerContext ctx)
         {
             var sb = new StringBuilder(); sb.AppendLine("客户编号,客户名称,联系人,联系电话,开户行,银行账号,开户行行号,地址,实时当前应收款,状态,最后更新,操作人");
             foreach (var x in LoadCustomers()) sb.AppendLine(string.Join(",", new[] { x.Code,x.Company,x.Contact,x.Phone,x.Bank,x.Account,x.BankNo,x.Address,x.Receivable.ToString("0.00"),x.Status,x.UpdatedAt,x.UpdatedBy }.Select(Csv)));
-            byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
-            ctx.Response.ContentType = "text/csv; charset=utf-8"; ctx.Response.AddHeader("Content-Disposition", "attachment; filename=customers_" + DateTime.Now.ToString("yyyyMMdd") + ".csv"); ctx.Response.ContentLength64 = bytes.Length; ctx.Response.OutputStream.Write(bytes,0,bytes.Length); ctx.Response.Close();
+            WriteCsvDownload(ctx, BuildExportFileName("客户管理"), sb.ToString());
         }
 
         static void ExportMaterialsCsv(HttpListenerContext ctx)
         {
             var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,数量/单位,含税价,不含税价,价格类型,备注,状态,最后更新,操作人");
             foreach(var x in LoadMaterials())sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,x.QuantityUnit,x.TaxPrice.ToString("0.00"),x.NoTaxPrice.ToString("0.00"),NormalizePriceType(x.PriceType),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
-            byte[] bytes=Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();ctx.Response.ContentType="text/csv; charset=utf-8";ctx.Response.AddHeader("Content-Disposition","attachment; filename=materials_"+DateTime.Now.ToString("yyyyMMdd")+".csv");ctx.Response.ContentLength64=bytes.Length;ctx.Response.OutputStream.Write(bytes,0,bytes.Length);ctx.Response.Close();
+            WriteCsvDownload(ctx, BuildExportFileName("物料管理"), sb.ToString());
         }
 
         static List<ContractSetting> LoadContractSettings()
@@ -3269,7 +3536,7 @@ namespace SupplierErpApp
             var list = LoadContracts();
             string now = NowTimeString();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ContractSequenceFile, "HT", list.Select(x => x.Code));
+            item.Code = NextCode(ContractSequenceFile, "CON", list.Select(x => x.Code), "HT");
             item.CreatedAt = now;
             item.UpdatedAt = now;
             list.Insert(0, item);
@@ -3590,16 +3857,139 @@ namespace SupplierErpApp
 
         static string NormalizeReceivableStatus(decimal receivable, decimal received)
         {
-            if (received <= 0) return "未收";
-            if (received >= receivable) return "已收";
-            return "部分收";
+            if (received <= 0) return "未收款";
+            if (received >= receivable) return "已收清";
+            return "部分收款";
         }
 
         static string NormalizePayableStatus(decimal payable, decimal paid)
         {
-            if (paid <= 0) return "未付";
-            if (paid >= payable) return "已付";
-            return "部分付";
+            if (paid <= 0) return "未付款";
+            if (paid >= payable) return "已付清";
+            return "部分付款";
+        }
+
+        static void BizFail(string message, int statusCode = 400) { throw new BusinessException(message, statusCode); }
+
+        static Material FindMaterialByIdOrName(string materialId, string materialName)
+        {
+            var materials = LoadMaterials();
+            if (!string.IsNullOrWhiteSpace(materialId))
+            {
+                var byId = materials.FirstOrDefault(x => x.Id == materialId);
+                if (byId != null) return byId;
+            }
+            if (!string.IsNullOrWhiteSpace(materialName))
+            {
+                return materials.FirstOrDefault(x =>
+                    string.Equals(x.NameSpec, materialName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(x.Code, materialName, StringComparison.OrdinalIgnoreCase));
+            }
+            return null;
+        }
+
+        static void ResolveMaterialFields(string materialId, string materialName, out string id, out string code, out string name, out string spec, out string unit)
+        {
+            var material = FindMaterialByIdOrName(materialId, materialName);
+            if (material != null)
+            {
+                id = material.Id;
+                code = material.Code ?? "";
+                name = material.NameSpec ?? "";
+                spec = material.NameSpec ?? "";
+                unit = material.QuantityUnit ?? "";
+                return;
+            }
+            id = (materialId ?? "").Trim();
+            code = "";
+            name = (materialName ?? "").Trim();
+            spec = name;
+            unit = "";
+        }
+
+        static void ResolveSalesOrderLink(SalesOutbound item)
+        {
+            item.SalesOrderId = (item.SalesOrderId ?? "").Trim();
+            item.SalesOrderNo = (item.SalesOrderNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.SalesOrderId) && string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                BizFail("请选择来源销售订单");
+            var orders = LoadSalesOrders();
+            SalesOrder order = null;
+            if (!string.IsNullOrWhiteSpace(item.SalesOrderId))
+                order = orders.FirstOrDefault(x => x.Id == item.SalesOrderId);
+            if (order == null && !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                order = orders.FirstOrDefault(x => string.Equals(x.Code, item.SalesOrderNo, StringComparison.OrdinalIgnoreCase));
+            if (order == null) BizFail("来源销售订单不存在，请先在销售订单中创建");
+            item.SalesOrderId = order.Id;
+            item.SalesOrderNo = order.Code ?? "";
+            item.CustomerName = order.CustomerName ?? "";
+            item.MaterialId = order.MaterialId ?? "";
+            item.MaterialCode = order.MaterialCode ?? "";
+            item.MaterialName = order.MaterialName ?? "";
+            if (item.Quantity <= 0) item.Quantity = order.Quantity;
+        }
+
+        static void ResolvePurchaseOrderLink(PurchaseInbound item)
+        {
+            if (string.IsNullOrWhiteSpace(item.PurchaseOrderId)) return;
+            var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
+            if (order == null) return;
+            item.PurchaseNo = order.Code;
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) item.SupplierName = order.SupplierName;
+            if (string.IsNullOrWhiteSpace(item.MaterialId)) item.MaterialId = order.MaterialId;
+            if (string.IsNullOrWhiteSpace(item.MaterialCode)) item.MaterialCode = order.MaterialCode;
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) item.MaterialName = order.MaterialName;
+        }
+
+        static void ResolveBomLinkForPick(ProductionPick item)
+        {
+            if (string.IsNullOrWhiteSpace(item.BomId)) return;
+            var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
+            if (bom == null) return;
+            item.BomName = string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ProductName : bom.ModelName;
+        }
+
+        static void ResolveBomAndModelCostLink(FinishedInbound item)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ModelCostId))
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
+                if (mc != null)
+                {
+                    if (string.IsNullOrWhiteSpace(item.BomId)) item.BomId = mc.BomId;
+                    if (string.IsNullOrWhiteSpace(item.BomCode)) item.BomCode = mc.BomCode;
+                    if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = mc.ProductName ?? mc.ModelName;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(item.BomId))
+            {
+                var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
+                if (bom != null)
+                {
+                    item.BomCode = bom.Code;
+                    if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = bom.ProductName ?? bom.ModelName;
+                }
+            }
+        }
+
+        static void ResolveReceivableSalesOrderLink(Receivable item)
+        {
+            if (string.IsNullOrWhiteSpace(item.SalesOrderId)) return;
+            var order = LoadSalesOrders().FirstOrDefault(x => x.Id == item.SalesOrderId);
+            if (order == null) return;
+            item.SalesOrderNo = order.Code;
+            if (string.IsNullOrWhiteSpace(item.CustomerName)) item.CustomerName = order.CustomerName;
+            if (item.ReceivableAmount <= 0 && order.Amount > 0) item.ReceivableAmount = order.Amount;
+        }
+
+        static void ResolvePayablePurchaseOrderLink(Payable item)
+        {
+            if (string.IsNullOrWhiteSpace(item.PurchaseOrderId)) return;
+            var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
+            if (order == null) return;
+            item.PurchaseNo = order.Code;
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) item.SupplierName = order.SupplierName;
+            if (item.PayableAmount <= 0 && order.Amount > 0) item.PayableAmount = order.Amount;
         }
 
         static List<T> LoadJsonList<T>(string file)
@@ -3627,19 +4017,82 @@ namespace SupplierErpApp
             }
         }
 
+        static readonly string[] SalesOrderStringFields = { "CustomerId", "CustomerCode", "CustomerName", "CustomerContact", "CustomerPhone", "CustomerAddress", "MaterialId", "MaterialCode", "MaterialName", "OrderDate", "Status", "Note", "Code", "Id" };
+
+        static void CoerceJsonStringFields(JsonObject obj, params string[] keys)
+        {
+            if (obj == null) return;
+            foreach (var key in keys)
+            {
+                if (!obj.TryGetPropertyValue(key, out var node) || node == null) continue;
+                if (node is JsonObject || node is JsonArray) { obj[key] = node.ToJsonString(); continue; }
+                if (node is JsonValue val)
+                {
+                    var el = val.GetValue<JsonElement>();
+                    if (el.ValueKind == JsonValueKind.Number) obj[key] = el.GetRawText();
+                    else if (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False) obj[key] = el.GetBoolean().ToString();
+                    else if (el.ValueKind == JsonValueKind.Null) obj[key] = "";
+                }
+            }
+        }
+
+        static SalesOrder DeserializeSalesOrder(string json)
+        {
+            var node = JsonNode.Parse(json);
+            if (node is JsonObject obj) CoerceJsonStringFields(obj, SalesOrderStringFields);
+            return Json.Deserialize<SalesOrder>(node.ToJsonString());
+        }
+
+        static BatchSalesOrderRequest DeserializeBatchSalesOrderRequest(string json)
+        {
+            var node = JsonNode.Parse(json);
+            if (node is JsonObject root && root.TryGetPropertyValue("Items", out var itemsNode) && itemsNode is JsonArray arr)
+                foreach (var item in arr) if (item is JsonObject itemObj) CoerceJsonStringFields(itemObj, SalesOrderStringFields);
+            return Json.Deserialize<BatchSalesOrderRequest>(node.ToJsonString());
+        }
+
         static List<SalesOrder> LoadSalesOrders() { return LoadJsonList<SalesOrder>(SalesOrdersFile); }
         static void SaveSalesOrders(List<SalesOrder> items) { SaveJsonList(SalesOrdersFile, "sales_orders", items); }
 
+        static void ResolveCustomerFields(SalesOrder item)
+        {
+            var customers = LoadCustomers();
+            Customer matched = null;
+            item.CustomerId = (item.CustomerId ?? "").Trim();
+            item.CustomerCode = (item.CustomerCode ?? "").Trim();
+            item.CustomerName = (item.CustomerName ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(item.CustomerId))
+                matched = customers.FirstOrDefault(x => x.Id == item.CustomerId);
+            if (matched == null && !string.IsNullOrWhiteSpace(item.CustomerCode))
+                matched = customers.FirstOrDefault(x => string.Equals(x.Code, item.CustomerCode, StringComparison.OrdinalIgnoreCase));
+            if (matched == null && !string.IsNullOrWhiteSpace(item.CustomerName))
+                matched = customers.FirstOrDefault(x => string.Equals(x.Company, item.CustomerName, StringComparison.OrdinalIgnoreCase));
+            if (matched == null) BizFail("客户不存在，请先在客户管理中添加客户");
+            item.CustomerId = matched.Id;
+            item.CustomerCode = matched.Code ?? "";
+            item.CustomerName = matched.Company ?? "";
+            item.CustomerContact = matched.Contact ?? "";
+            item.CustomerPhone = matched.Phone ?? "";
+            item.CustomerAddress = matched.Address ?? "";
+        }
+
         static void ApplySalesOrder(SalesOrder item)
         {
-            if (item == null) throw new Exception("数据不能为空");
-            item.CustomerName = (item.CustomerName ?? "").Trim();
-            item.MaterialName = (item.MaterialName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.CustomerName)) throw new Exception("请填写客户名称");
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
-            if (item.Quantity <= 0) throw new Exception("数量必须大于 0");
-            if (item.UnitPrice < 0) throw new Exception("销售单价不能为负数");
-            item.Amount = CalcLineAmount(item.Quantity, item.UnitPrice);
+            if (item == null) BizFail("数据不能为空");
+            ResolveCustomerFields(item);
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (item.Quantity <= 0) BizFail("数量必须大于 0");
+            if (item.TaxExcludedSalePrice <= 0 && item.TaxIncludedSalePrice <= 0 && item.UnitPrice > 0)
+                item.TaxExcludedSalePrice = item.UnitPrice;
+            if (item.TaxExcludedSalePrice < 0) BizFail("不含税销售单价不能为负数");
+            if (item.TaxIncludedSalePrice < 0) BizFail("含税销售单价不能为负数");
+            item.TaxExcludedSaleAmount = CalcLineAmount(item.Quantity, item.TaxExcludedSalePrice);
+            item.TaxIncludedSaleAmount = CalcLineAmount(item.Quantity, item.TaxIncludedSalePrice);
+            item.UnitPrice = item.TaxExcludedSalePrice;
+            item.Amount = item.TaxExcludedSaleAmount > 0 ? item.TaxExcludedSaleAmount : item.TaxIncludedSaleAmount;
             item.OrderDate = string.IsNullOrWhiteSpace(item.OrderDate) ? TodayText() : item.OrderDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
             item.Note = (item.Note ?? "").Trim();
@@ -3647,10 +4100,10 @@ namespace SupplierErpApp
 
         static void AddSalesOrder(HttpListenerContext ctx, UserSession user)
         {
-            var item = Json.Deserialize<SalesOrder>(ReadBody(ctx.Request)); ApplySalesOrder(item);
+            var item = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(item);
             var list = LoadSalesOrders();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(SalesOrderSequenceFile, "XSDD", list.Select(x => x.Code));
+            item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveSalesOrders(list);
             Audit(user, "新增销售订单", item.Code); WriteJson(ctx, item, 201);
@@ -3658,10 +4111,15 @@ namespace SupplierErpApp
 
         static void UpdateSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
-            var input = Json.Deserialize<SalesOrder>(ReadBody(ctx.Request)); ApplySalesOrder(input);
+            var input = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(input);
             var list = LoadSalesOrders(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "销售订单不存在" }, 404); return; }
-            item.CustomerName = input.CustomerName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
+            item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
+            item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
+            item.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; item.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
             item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
             item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SaveSalesOrders(list); Audit(user, "修改销售订单", item.Code); WriteJson(ctx, item);
@@ -3679,12 +4137,15 @@ namespace SupplierErpApp
 
         static void ApplySalesOutbound(SalesOutbound item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
+            ResolveSalesOrderLink(item);
             item.CustomerName = (item.CustomerName ?? "").Trim();
-            item.MaterialName = (item.MaterialName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
-            if (item.Quantity <= 0) throw new Exception("出库数量必须大于 0");
-            if (item.CostPrice < 0) throw new Exception("成本单价不能为负数");
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
+            if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
+            if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.OutboundDate = string.IsNullOrWhiteSpace(item.OutboundDate) ? TodayText() : item.OutboundDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
@@ -3696,7 +4157,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(item);
             var list = LoadSalesOutbounds();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(SalesOutboundSequenceFile, "XSCK", list.Select(x => x.Code));
+            item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveSalesOutbounds(list);
             Audit(user, "新增销售出库", item.Code); WriteJson(ctx, item, 201);
@@ -3707,7 +4168,9 @@ namespace SupplierErpApp
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
             var list = LoadSalesOutbounds(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "销售出库不存在" }, 404); return; }
-            item.CustomerName = input.CustomerName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
+            item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
             item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
             item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SaveSalesOutbounds(list); Audit(user, "修改销售出库", item.Code); WriteJson(ctx, item);
@@ -3725,13 +4188,15 @@ namespace SupplierErpApp
 
         static void ApplyPurchaseOrder(PurchaseOrder item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
             item.SupplierName = (item.SupplierName ?? "").Trim();
-            item.MaterialName = (item.MaterialName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.SupplierName)) throw new Exception("请填写供应商名称");
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
-            if (item.Quantity <= 0) throw new Exception("数量必须大于 0");
-            if (item.UnitPrice < 0) throw new Exception("采购单价不能为负数");
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) BizFail("请填写供应商名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (item.Quantity <= 0) BizFail("数量必须大于 0");
+            if (item.UnitPrice < 0) BizFail("采购单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.UnitPrice);
             item.OrderDate = string.IsNullOrWhiteSpace(item.OrderDate) ? TodayText() : item.OrderDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
@@ -3743,7 +4208,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(item);
             var list = LoadPurchaseOrders();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PurchaseOrderSequenceFile, "CGDD", list.Select(x => x.Code));
+            item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SavePurchaseOrders(list);
             Audit(user, "新增采购单", item.Code); WriteJson(ctx, item, 201);
@@ -3754,7 +4219,8 @@ namespace SupplierErpApp
             var input = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(input);
             var list = LoadPurchaseOrders(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "采购单不存在" }, 404); return; }
-            item.SupplierName = input.SupplierName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
             item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
             item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SavePurchaseOrders(list); Audit(user, "修改采购单", item.Code); WriteJson(ctx, item);
@@ -3772,12 +4238,17 @@ namespace SupplierErpApp
 
         static void ApplyPurchaseInbound(PurchaseInbound item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
+            ResolvePurchaseOrderLink(item);
             item.SupplierName = (item.SupplierName ?? "").Trim();
-            item.MaterialName = (item.MaterialName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
-            if (item.Quantity <= 0) throw new Exception("入库数量必须大于 0");
-            if (item.InboundPrice < 0) throw new Exception("入库单价不能为负数");
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
+            item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
+            if (item.InboundPrice < 0) BizFail("入库单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.InboundPrice);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
@@ -3789,7 +4260,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(item);
             var list = LoadPurchaseInbounds();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PurchaseInboundSequenceFile, "CGRK", list.Select(x => x.Code));
+            item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SavePurchaseInbounds(list);
             Audit(user, "新增采购入库", item.Code); WriteJson(ctx, item, 201);
@@ -3800,7 +4271,9 @@ namespace SupplierErpApp
             var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input);
             var list = LoadPurchaseInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "采购入库不存在" }, 404); return; }
-            item.SupplierName = input.SupplierName; item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
+            item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
+            item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
             item.InboundPrice = input.InboundPrice; item.Amount = input.Amount; item.InboundDate = input.InboundDate;
             item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SavePurchaseInbounds(list); Audit(user, "修改采购入库", item.Code); WriteJson(ctx, item);
@@ -3813,16 +4286,215 @@ namespace SupplierErpApp
             list.Remove(item); SavePurchaseInbounds(list); Audit(user, "删除采购入库", item.Code); WriteJson(ctx, new { ok = true });
         }
 
+        static void BatchDeleteSalesOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadSalesOrders(), SaveSalesOrders, "销售订单", "sales_order"); }
+        static void BatchDeleteSalesOutbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadSalesOutbounds(), SaveSalesOutbounds, "销售出库", "sales_outbound"); }
+        static void BatchDeletePurchaseOrders(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadPurchaseOrders(), SavePurchaseOrders, "采购单", "purchase_order"); }
+        static void BatchDeletePurchaseInbounds(HttpListenerContext ctx, UserSession user) { BatchDeleteDocs(ctx, user, LoadPurchaseInbounds(), SavePurchaseInbounds, "采购入库", "purchase_inbound"); }
+
+        static void BatchDeleteDocs<T>(HttpListenerContext ctx, UserSession user, List<T> list, Action<List<T>> save, string label, string auditKey) where T : class
+        {
+            var req = Json.Deserialize<BatchDeleteRequest>(ReadBody(ctx.Request));
+            var ids = (req == null ? null : req.Ids) ?? new string[0];
+            ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+            if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
+            if (removed.Count == 0) { WriteJson(ctx, new { error = "未找到可删除的" + label }, 404); return; }
+            foreach (var item in removed) list.Remove(item);
+            save(list);
+            Audit(user, "批量删除" + label, "共" + removed.Count + "条");
+            WriteJson(ctx, new { ok = true, deleted = removed.Count });
+        }
+
+        static void BatchAddSalesOrders(HttpListenerContext ctx, UserSession user)
+        {
+            var req = DeserializeBatchSalesOrderRequest(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条销售订单" }, 400); return; }
+            var list = LoadSalesOrders(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<SalesOrder>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try { ApplySalesOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item); SaveSalesOrders(list);
+            Audit(user, "批量添加销售订单", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
+        static void BatchAddSalesOutbounds(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchSalesOutboundRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条销售出库" }, 400); return; }
+            var list = LoadSalesOutbounds(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<SalesOutbound>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try { ApplySalesOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item); SaveSalesOutbounds(list);
+            Audit(user, "批量添加销售出库", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
+        static void BatchAddPurchaseOrders(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchPurchaseOrderRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条采购单" }, 400); return; }
+            var list = LoadPurchaseOrders(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<PurchaseOrder>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try { ApplyPurchaseOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item); SavePurchaseOrders(list);
+            Audit(user, "批量添加采购单", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
+        static void BatchAddPurchaseInbounds(HttpListenerContext ctx, UserSession user)
+        {
+            var req = Json.Deserialize<BatchPurchaseInboundRequest>(ReadBody(ctx.Request));
+            var items = req == null ? null : req.Items;
+            if (items == null || items.Count == 0) { WriteJson(ctx, new { error = "请至少填写一条采购入库" }, 400); return; }
+            var list = LoadPurchaseInbounds(); int imported = 0, skipped = 0, rowNo = 0; var errors = new List<string>(); var pending = new List<PurchaseInbound>();
+            foreach (var input in items)
+            {
+                rowNo++;
+                try { ApplyPurchaseInbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported == 0) { WriteJson(ctx, new { error = "没有可保存的数据", imported = 0, skipped = skipped, errors = errors.Take(20).ToArray() }, 409); return; }
+            foreach (var item in pending) list.Insert(0, item); SavePurchaseInbounds(list);
+            Audit(user, "批量添加采购入库", "成功" + imported + "条，跳过" + skipped + "条");
+            WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(20).ToArray() });
+        }
+
+        static void ImportSalesOrders(HttpListenerContext ctx, UserSession user)
+        {
+            var rows = ReadImportRows(ctx); var list = LoadSalesOrders(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    var item = new SalesOrder { CustomerName = Cell(row, "客户名称"), CustomerCode = Cell(row, "客户编号"), MaterialName = Cell(row, "物料名称", "产品名称", "产品/物料名称"), Quantity = Money(Cell(row, "数量")), TaxExcludedSalePrice = Money(Cell(row, "不含税销售单价", "销售单价", "单价")), TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")), OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "订单编号", "销售单号") };
+                    if (Placeholder(item.CustomerName) && Placeholder(item.CustomerCode)) { skipped++; errors.Add("第" + rowNo + "行：请填写客户名称"); continue; }
+                    if (Placeholder(item.CustomerName) && Placeholder(item.MaterialName)) { skipped++; continue; }
+                    ApplySalesOrder(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported > 0) SaveSalesOrders(list); Audit(user, "导入销售订单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+        }
+
+        static void ImportSalesOutbounds(HttpListenerContext ctx, UserSession user)
+        {
+            var rows = ReadImportRows(ctx); var list = LoadSalesOutbounds(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    var item = new SalesOutbound { SalesOrderNo = Cell(row, "销售订单号", "关联销售单号"), CustomerName = Cell(row, "客户名称"), MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "出库数量", "数量")), CostPrice = Money(Cell(row, "成本单价", "单价")), OutboundDate = Cell(row, "出库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "出库编号", "出库单号") };
+                    if (Placeholder(item.MaterialName)) { skipped++; continue; }
+                    ApplySalesOutbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported > 0) SaveSalesOutbounds(list); Audit(user, "导入销售出库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+        }
+
+        static void ImportPurchaseOrders(HttpListenerContext ctx, UserSession user)
+        {
+            var rows = ReadImportRows(ctx); var list = LoadPurchaseOrders(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    var item = new PurchaseOrder { SupplierName = Cell(row, "供应商名称"), MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "数量")), UnitPrice = Money(Cell(row, "采购单价", "单价")), OrderDate = Cell(row, "订单日期", "采购日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "采购编号", "采购单号") };
+                    if (Placeholder(item.SupplierName) && Placeholder(item.MaterialName)) { skipped++; continue; }
+                    ApplyPurchaseOrder(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported > 0) SavePurchaseOrders(list); Audit(user, "导入采购单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+        }
+
+        static void ImportPurchaseInbounds(HttpListenerContext ctx, UserSession user)
+        {
+            var rows = ReadImportRows(ctx); var list = LoadPurchaseInbounds(); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    var item = new PurchaseInbound { PurchaseNo = Cell(row, "采购单号", "关联采购单号"), SupplierName = Cell(row, "供应商名称"), MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "入库数量", "数量")), InboundPrice = Money(Cell(row, "入库单价", "单价")), InboundDate = Cell(row, "入库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "入库编号", "入库单号") };
+                    if (Placeholder(item.MaterialName)) { skipped++; continue; }
+                    ApplyPurchaseInbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                }
+                catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
+            }
+            if (imported > 0) SavePurchaseInbounds(list); Audit(user, "导入采购入库", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+        }
+
+        static void ExportSalesOrdersCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder(); sb.AppendLine("订单编号,订单日期,客户编号,客户名称,物料编号,物料名称,数量,不含税销售单价,含税销售单价,不含税销售金额,含税销售金额,状态,备注,最后更新,操作人");
+            foreach (var x in LoadSalesOrders()) sb.AppendLine(string.Join(",", new[] { x.Code, x.OrderDate, x.CustomerCode, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity.ToString("0.##"), x.TaxExcludedSalePrice.ToString("0.00"), x.TaxIncludedSalePrice.ToString("0.00"), x.TaxExcludedSaleAmount.ToString("0.00"), x.TaxIncludedSaleAmount.ToString("0.00"), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy }.Select(Csv)));
+            WriteCsvAttachment(ctx, sb, BuildExportFileName("销售订单"));
+        }
+
+        static void ExportSalesOutboundsCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder(); sb.AppendLine("出库编号,出库日期,销售订单号,客户名称,物料编号,物料名称,出库数量,成本单价,成本金额,状态,备注,最后更新,操作人");
+            foreach (var x in LoadSalesOutbounds()) sb.AppendLine(string.Join(",", new[] { x.Code, x.OutboundDate, x.SalesOrderNo, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity.ToString("0.##"), x.CostPrice.ToString("0.00"), x.CostAmount.ToString("0.00"), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy }.Select(Csv)));
+            WriteCsvAttachment(ctx, sb, BuildExportFileName("销售出库"));
+        }
+
+        static void ExportPurchaseOrdersCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder(); sb.AppendLine("采购编号,订单日期,供应商名称,物料编号,物料名称,数量,采购单价,采购金额,状态,备注,最后更新,操作人");
+            foreach (var x in LoadPurchaseOrders()) sb.AppendLine(string.Join(",", new[] { x.Code, x.OrderDate, x.SupplierName, x.MaterialCode, x.MaterialName, x.Quantity.ToString("0.##"), x.UnitPrice.ToString("0.00"), x.Amount.ToString("0.00"), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy }.Select(Csv)));
+            WriteCsvAttachment(ctx, sb, BuildExportFileName("采购单"));
+        }
+
+        static void ExportPurchaseInboundsCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder(); sb.AppendLine("入库编号,入库日期,采购单号,供应商名称,物料编号,物料名称,入库数量,入库单价,入库金额,状态,备注,最后更新,操作人");
+            foreach (var x in LoadPurchaseInbounds()) sb.AppendLine(string.Join(",", new[] { x.Code, x.InboundDate, x.PurchaseNo, x.SupplierName, x.MaterialCode, x.MaterialName, x.Quantity.ToString("0.##"), x.InboundPrice.ToString("0.00"), x.Amount.ToString("0.00"), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy }.Select(Csv)));
+            WriteCsvAttachment(ctx, sb, BuildExportFileName("采购入库"));
+        }
+
+        static void WriteCsvAttachment(HttpListenerContext ctx, StringBuilder sb, string fileName)
+        {
+            byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+            ctx.Response.ContentType = "text/csv; charset=utf-8"; ctx.Response.AddHeader("Content-Disposition", BuildExportContentDisposition(fileName)); ctx.Response.ContentLength64 = bytes.Length; ctx.Response.OutputStream.Write(bytes, 0, bytes.Length); ctx.Response.Close();
+        }
+
         static List<ProductionPick> LoadProductionPicks() { return LoadJsonList<ProductionPick>(ProductionPicksFile); }
         static void SaveProductionPicks(List<ProductionPick> items) { SaveJsonList(ProductionPicksFile, "production_picks", items); }
 
         static void ApplyProductionPick(ProductionPick item)
         {
-            if (item == null) throw new Exception("数据不能为空");
-            item.MaterialName = (item.MaterialName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) throw new Exception("请填写物料名称");
-            if (item.Quantity <= 0) throw new Exception("领用数量必须大于 0");
-            if (item.CostPrice < 0) throw new Exception("成本单价不能为负数");
+            if (item == null) BizFail("数据不能为空");
+            ResolveBomLinkForPick(item);
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            item.BomId = (item.BomId ?? "").Trim();
+            item.BomName = (item.BomName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (item.Quantity <= 0) BizFail("领用数量必须大于 0");
+            if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.PickDate = string.IsNullOrWhiteSpace(item.PickDate) ? TodayText() : item.PickDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
@@ -3834,7 +4506,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(item);
             var list = LoadProductionPicks();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ProductionPickSequenceFile, "SCLL", list.Select(x => x.Code));
+            item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveProductionPicks(list);
             Audit(user, "新增生产领用", item.Code); WriteJson(ctx, item, 201);
@@ -3845,7 +4517,9 @@ namespace SupplierErpApp
             var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
             var list = LoadProductionPicks(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "生产领用不存在" }, 404); return; }
-            item.MaterialName = input.MaterialName; item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
+            item.BomId = input.BomId; item.BomName = input.BomName;
+            item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
+            item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
             item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
             item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SaveProductionPicks(list); Audit(user, "修改生产领用", item.Code); WriteJson(ctx, item);
@@ -3863,11 +4537,15 @@ namespace SupplierErpApp
 
         static void ApplyFinishedInbound(FinishedInbound item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
+            ResolveBomAndModelCostLink(item);
             item.ProductName = (item.ProductName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.ProductName)) throw new Exception("请填写产品名称");
-            if (item.Quantity <= 0) throw new Exception("入库数量必须大于 0");
-            if (item.UnitCost < 0) throw new Exception("单台成本不能为负数");
+            item.BomId = (item.BomId ?? "").Trim();
+            item.BomCode = (item.BomCode ?? "").Trim();
+            item.ModelCostId = (item.ModelCostId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.ProductName)) BizFail("请填写产品名称");
+            if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
+            if (item.UnitCost < 0) BizFail("单台成本不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.UnitCost);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
             item.Status = NormalizeDocStatus(item.Status);
@@ -3879,7 +4557,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(item);
             var list = LoadFinishedInbounds();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(FinishedInboundSequenceFile, "CPRK", list.Select(x => x.Code));
+            item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveFinishedInbounds(list);
             Audit(user, "新增成品入库", item.Code); WriteJson(ctx, item, 201);
@@ -3890,6 +4568,7 @@ namespace SupplierErpApp
             var input = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(input);
             var list = LoadFinishedInbounds(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "成品入库不存在" }, 404); return; }
+            item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
             item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
             item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
             item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -3908,12 +4587,15 @@ namespace SupplierErpApp
 
         static void ApplyReceivable(Receivable item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
+            ResolveReceivableSalesOrderLink(item);
             item.CustomerName = (item.CustomerName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.CustomerName)) throw new Exception("请填写客户名称");
-            if (item.ReceivableAmount < 0) throw new Exception("应收金额不能为负数");
-            if (item.ReceivedAmount < 0) throw new Exception("已收金额不能为负数");
-            if (item.ReceivedAmount > item.ReceivableAmount) throw new Exception("已收金额不能大于应收金额");
+            item.SalesOrderId = (item.SalesOrderId ?? "").Trim();
+            item.SalesOrderNo = (item.SalesOrderNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.CustomerName)) BizFail("请填写客户名称");
+            if (item.ReceivableAmount < 0) BizFail("应收金额不能为负数");
+            if (item.ReceivedAmount < 0) BizFail("已收金额不能为负数");
+            if (item.ReceivedAmount > item.ReceivableAmount) BizFail("已收金额不能大于应收金额", 422);
             item.UnreceivedAmount = RoundMoney(item.ReceivableAmount - item.ReceivedAmount);
             item.DueDate = (item.DueDate ?? "").Trim();
             item.Status = NormalizeReceivableStatus(item.ReceivableAmount, item.ReceivedAmount);
@@ -3925,7 +4607,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(item);
             var list = LoadReceivables();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(ReceivableSequenceFile, "YS", list.Select(x => x.Code));
+            item.Code = NextCode(ReceivableSequenceFile, "AR", list.Select(x => x.Code), "YS");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SaveReceivables(list);
             Audit(user, "新增应收款", item.Code); WriteJson(ctx, item, 201);
@@ -3936,7 +4618,8 @@ namespace SupplierErpApp
             var input = Json.Deserialize<Receivable>(ReadBody(ctx.Request)); ApplyReceivable(input);
             var list = LoadReceivables(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "应收款不存在" }, 404); return; }
-            item.CustomerName = input.CustomerName; item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
+            item.CustomerName = input.CustomerName; item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
+            item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
             item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SaveReceivables(list); Audit(user, "修改应收款", item.Code); WriteJson(ctx, item);
@@ -3954,12 +4637,15 @@ namespace SupplierErpApp
 
         static void ApplyPayable(Payable item)
         {
-            if (item == null) throw new Exception("数据不能为空");
+            if (item == null) BizFail("数据不能为空");
+            ResolvePayablePurchaseOrderLink(item);
             item.SupplierName = (item.SupplierName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.SupplierName)) throw new Exception("请填写供应商名称");
-            if (item.PayableAmount < 0) throw new Exception("应付金额不能为负数");
-            if (item.PaidAmount < 0) throw new Exception("已付金额不能为负数");
-            if (item.PaidAmount > item.PayableAmount) throw new Exception("已付金额不能大于应付金额");
+            item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
+            item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) BizFail("请填写供应商名称");
+            if (item.PayableAmount < 0) BizFail("应付金额不能为负数");
+            if (item.PaidAmount < 0) BizFail("已付金额不能为负数");
+            if (item.PaidAmount > item.PayableAmount) BizFail("已付金额不能大于应付金额", 422);
             item.UnpaidAmount = RoundMoney(item.PayableAmount - item.PaidAmount);
             item.DueDate = (item.DueDate ?? "").Trim();
             item.Status = NormalizePayableStatus(item.PayableAmount, item.PaidAmount);
@@ -3971,7 +4657,7 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(item);
             var list = LoadPayables();
             item.Id = Guid.NewGuid().ToString("N");
-            item.Code = NextCode(PayableSequenceFile, "YF", list.Select(x => x.Code));
+            item.Code = NextCode(PayableSequenceFile, "AP", list.Select(x => x.Code), "YF");
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             list.Insert(0, item); SavePayables(list);
             Audit(user, "新增应付款", item.Code); WriteJson(ctx, item, 201);
@@ -3982,7 +4668,8 @@ namespace SupplierErpApp
             var input = Json.Deserialize<Payable>(ReadBody(ctx.Request)); ApplyPayable(input);
             var list = LoadPayables(); var item = list.FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "应付款不存在" }, 404); return; }
-            item.SupplierName = input.SupplierName; item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
+            item.SupplierName = input.SupplierName; item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
+            item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
             item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
             item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
             SavePayables(list); Audit(user, "修改应付款", item.Code); WriteJson(ctx, item);
@@ -3995,31 +4682,99 @@ namespace SupplierErpApp
             list.Remove(item); SavePayables(list); Audit(user, "删除应付款", item.Code); WriteJson(ctx, new { ok = true });
         }
 
-        static Dictionary<string, decimal> BuildStockMap()
+        class StockAgg
         {
-            var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-            Action<string, decimal> add = delegate (string name, decimal qty)
+            public string ItemType;
+            public string ItemId;
+            public string ItemCode;
+            public string ItemName;
+            public string Spec;
+            public string Unit;
+            public decimal Quantity;
+            public decimal CostAmount;
+        }
+
+        static string StockKey(string itemType, string itemId, string fallbackName)
+        {
+            itemType = (itemType ?? "").Trim();
+            itemId = (itemId ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(itemId)) return itemType + "|" + itemId;
+            return itemType + "|name:" + (fallbackName ?? "").Trim();
+        }
+
+        static void StockAdd(Dictionary<string, StockAgg> map, string itemType, string itemId, string itemCode, string itemName, string spec, string unit, decimal qty, decimal unitCost)
+        {
+            if (qty == 0) return;
+            itemName = (itemName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(itemName) && string.IsNullOrWhiteSpace(itemId)) return;
+            string key = StockKey(itemType, itemId, itemName);
+            StockAgg agg;
+            if (!map.TryGetValue(key, out agg))
             {
-                name = (name ?? "").Trim();
-                if (string.IsNullOrWhiteSpace(name) || qty == 0) return;
-                decimal cur; map.TryGetValue(name, out cur);
-                map[name] = cur + qty;
-            };
+                agg = new StockAgg
+                {
+                    ItemType = itemType,
+                    ItemId = itemId ?? "",
+                    ItemCode = itemCode ?? "",
+                    ItemName = itemName,
+                    Spec = spec ?? "",
+                    Unit = unit ?? ""
+                };
+            }
+            if (string.IsNullOrWhiteSpace(agg.ItemCode) && !string.IsNullOrWhiteSpace(itemCode)) agg.ItemCode = itemCode;
+            if (string.IsNullOrWhiteSpace(agg.Spec) && !string.IsNullOrWhiteSpace(spec)) agg.Spec = spec;
+            if (string.IsNullOrWhiteSpace(agg.Unit) && !string.IsNullOrWhiteSpace(unit)) agg.Unit = unit;
+            agg.Quantity += qty;
+            if (qty > 0 && unitCost >= 0) agg.CostAmount += CalcLineAmount(qty, unitCost);
+            map[key] = agg;
+        }
+
+        static void StockAddMaterial(Dictionary<string, StockAgg> map, string materialId, string materialCode, string materialName, decimal qty, decimal unitCost)
+        {
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(materialId, materialName, out mid, out mcode, out mname, out mspec, out munit);
+            if (!string.IsNullOrWhiteSpace(materialCode)) mcode = materialCode;
+            StockAdd(map, "物料", mid, mcode, mname, mspec, munit, qty, unitCost);
+        }
+
+        static Dictionary<string, StockAgg> BuildStockMap()
+        {
+            var map = new Dictionary<string, StockAgg>(StringComparer.OrdinalIgnoreCase);
             foreach (var x in LoadPurchaseInbounds().Where(x => IsConfirmedStatus(x.Status)))
-                add(x.MaterialName, x.Quantity);
+                StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, x.Quantity, x.InboundPrice);
             foreach (var x in LoadFinishedInbounds().Where(x => IsConfirmedStatus(x.Status)))
-                add(x.ProductName, x.Quantity);
+            {
+                string pid = !string.IsNullOrWhiteSpace(x.ModelCostId) ? x.ModelCostId : x.BomId;
+                StockAdd(map, "成品", pid, x.BomCode, x.ProductName, "", "", x.Quantity, x.UnitCost);
+            }
             foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status)))
-                add(x.MaterialName, -x.Quantity);
+                StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
             foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status)))
-                add(x.MaterialName, -x.Quantity);
+                StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
             return map;
         }
 
         static List<StockItem> BuildStockItems()
         {
-            return BuildStockMap().Select(kv => new StockItem { ItemName = kv.Key, Quantity = RoundMoney(kv.Value) })
-                .OrderBy(x => x.ItemName).ToList();
+            return BuildStockMap().Values.Select(agg =>
+            {
+                decimal qty = RoundMoney(agg.Quantity);
+                decimal costPrice = qty == 0 ? 0 : RoundMoney(agg.CostAmount / Math.Abs(qty));
+                if (qty < 0) costPrice = agg.CostAmount > 0 ? RoundMoney(agg.CostAmount / Math.Abs(qty)) : 0;
+                return new StockItem
+                {
+                    ItemType = agg.ItemType,
+                    ItemId = agg.ItemId,
+                    ItemCode = agg.ItemCode,
+                    ItemName = agg.ItemName,
+                    Spec = agg.Spec,
+                    Unit = agg.Unit,
+                    WarehouseName = "默认仓库",
+                    CurrentQuantity = qty,
+                    CostPrice = costPrice,
+                    StockAmount = RoundMoney(Math.Abs(qty) * costPrice)
+                };
+            }).OrderBy(x => x.ItemType).ThenBy(x => x.ItemName).ToList();
         }
 
         static StockSummary BuildStockSummary()
@@ -4028,9 +4783,78 @@ namespace SupplierErpApp
             return new StockSummary
             {
                 ItemCount = items.Count,
-                TotalQuantity = RoundMoney(items.Sum(x => x.Quantity)),
+                TotalQuantity = RoundMoney(items.Sum(x => x.CurrentQuantity)),
                 Items = items.ToArray()
             };
+        }
+
+        struct BackupFileSpec
+        {
+            public string Path;
+            public string FileName;
+        }
+
+        static BackupFileSpec[] GetAllBackupFileSpecs()
+        {
+            return new[]
+            {
+                new BackupFileSpec { Path = UsersFile, FileName = "users.json" },
+                new BackupFileSpec { Path = SystemSettingsFile, FileName = "system_settings.json" },
+                new BackupFileSpec { Path = DictionaryOptionsFile, FileName = "dictionary_options.json" },
+                new BackupFileSpec { Path = ContractSettingsFile, FileName = "contract_settings.json" },
+                new BackupFileSpec { Path = ContractSettingSequenceFile, FileName = "contract_setting_sequence.json" },
+                new BackupFileSpec { Path = DataFile, FileName = "suppliers.json" },
+                new BackupFileSpec { Path = SupplierSequenceFile, FileName = "supplier_sequence.json" },
+                new BackupFileSpec { Path = CustomerFile, FileName = "customers.json" },
+                new BackupFileSpec { Path = CustomerSequenceFile, FileName = "customer_sequence.json" },
+                new BackupFileSpec { Path = MaterialFile, FileName = "materials.json" },
+                new BackupFileSpec { Path = MaterialSequenceFile, FileName = "material_sequence.json" },
+                new BackupFileSpec { Path = FinanceFile, FileName = "finance.json" },
+                new BackupFileSpec { Path = OpeningFile, FileName = "finance_opening.json" },
+                new BackupFileSpec { Path = BomFile, FileName = "bom.json" },
+                new BackupFileSpec { Path = BomSequenceFile, FileName = "bom_sequence.json" },
+                new BackupFileSpec { Path = ModelCostFile, FileName = "model_costs.json" },
+                new BackupFileSpec { Path = ContractsFile, FileName = "contracts.json" },
+                new BackupFileSpec { Path = ContractSequenceFile, FileName = "contract_sequence.json" },
+                new BackupFileSpec { Path = SalesOrdersFile, FileName = "sales_orders.json" },
+                new BackupFileSpec { Path = SalesOrderSequenceFile, FileName = "sales_order_sequence.json" },
+                new BackupFileSpec { Path = SalesOutboundsFile, FileName = "sales_outbounds.json" },
+                new BackupFileSpec { Path = SalesOutboundSequenceFile, FileName = "sales_outbound_sequence.json" },
+                new BackupFileSpec { Path = PurchaseOrdersFile, FileName = "purchase_orders.json" },
+                new BackupFileSpec { Path = PurchaseOrderSequenceFile, FileName = "purchase_order_sequence.json" },
+                new BackupFileSpec { Path = PurchaseInboundsFile, FileName = "purchase_inbounds.json" },
+                new BackupFileSpec { Path = PurchaseInboundSequenceFile, FileName = "purchase_inbound_sequence.json" },
+                new BackupFileSpec { Path = ProductionPicksFile, FileName = "production_picks.json" },
+                new BackupFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json" },
+                new BackupFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json" },
+                new BackupFileSpec { Path = FinishedInboundSequenceFile, FileName = "finished_inbound_sequence.json" },
+                new BackupFileSpec { Path = ReceivablesFile, FileName = "receivables.json" },
+                new BackupFileSpec { Path = ReceivableSequenceFile, FileName = "receivable_sequence.json" },
+                new BackupFileSpec { Path = PayablesFile, FileName = "payables.json" },
+                new BackupFileSpec { Path = PayableSequenceFile, FileName = "payable_sequence.json" },
+                new BackupFileSpec { Path = LogFile, FileName = "operation.log" }
+            };
+        }
+
+        static string BackupFilesToFolder(string folder, BackupFileSpec[] specs)
+        {
+            Directory.CreateDirectory(folder);
+            foreach (var spec in specs)
+            {
+                if (!File.Exists(spec.Path)) continue;
+                File.Copy(spec.Path, Path.Combine(folder, spec.FileName), true);
+            }
+            return folder;
+        }
+
+        static void RestoreFilesFromFolder(string folder, BackupFileSpec[] specs)
+        {
+            foreach (var spec in specs)
+            {
+                string src = Path.Combine(folder, spec.FileName);
+                if (!File.Exists(src)) continue;
+                File.Copy(src, spec.Path, true);
+            }
         }
 
         struct ClearDataFileSpec
@@ -4076,17 +4900,11 @@ namespace SupplierErpApp
             };
         }
 
-        static string BackupBeforeClearTestData(ClearDataFileSpec[] specs)
+        static string BackupBeforeClearTestData(BackupFileSpec[] specs)
         {
             string folderName = "backup_before_clear_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string folder = Path.Combine(BackupDir, folderName);
-            Directory.CreateDirectory(folder);
-            foreach (var spec in specs)
-            {
-                if (!File.Exists(spec.Path)) continue;
-                File.Copy(spec.Path, Path.Combine(folder, spec.FileName), true);
-            }
-            return folder;
+            return BackupFilesToFolder(folder, specs);
         }
 
         static void ClearTestData(HttpListenerContext ctx, UserSession user)
@@ -4095,37 +4913,48 @@ namespace SupplierErpApp
             var req = Json.Deserialize<ClearTestDataRequest>(ReadBody(ctx.Request));
             string password = (req == null ? null : req.Password) ?? "";
             string confirmText = (req == null ? null : req.ConfirmText) ?? "";
-            if (!string.Equals(confirmText.Trim(), "确认清空", StringComparison.Ordinal)) { WriteJson(ctx, new { error = "确认文字不正确，请准确输入“确认清空”" }, 400); return; }
+            if (!string.Equals(confirmText.Trim(), "确认清空", StringComparison.Ordinal)) { WriteJson(ctx, new { message = "确认文字不正确，请准确输入“确认清空”", error = "确认文字不正确，请准确输入“确认清空”" }, 400); return; }
             var settings = LoadSystemSettings();
             if (!string.Equals(password, settings.ClearDataPassword ?? DefaultClearDataPassword, StringComparison.Ordinal))
             {
                 WriteJson(ctx, new { error = "二次密码错误，禁止清空数据" }, 403);
                 return;
             }
-            var specs = GetClearTestDataFileSpecs();
-            string backupFolder;
+            var backupSpecs = GetAllBackupFileSpecs();
+            var clearSpecs = GetClearTestDataFileSpecs();
+            string backupFolder = null;
             try
             {
                 lock (DataLock)
                 {
                     Directory.CreateDirectory(BackupDir);
-                    backupFolder = BackupBeforeClearTestData(specs);
-                    foreach (var spec in specs)
-                        File.WriteAllText(spec.Path, spec.EmptyContent, new UTF8Encoding(false));
+                    backupFolder = BackupBeforeClearTestData(backupSpecs);
+                    foreach (var spec in clearSpecs)
+                        WriteAllTextAtomic(spec.Path, spec.EmptyContent);
                 }
-                EnsureBusinessDataFiles();
+                EnsureClearedDataIntegrity();
                 Audit(user, "清空测试数据", "备份目录：" + Path.GetFileName(backupFolder));
                 WriteJson(ctx, new
                 {
                     message = "测试数据已清空",
                     backupFolder = Path.GetFileName(backupFolder),
                     backupPath = backupFolder,
-                    clearedFiles = specs.Select(x => x.FileName).ToArray()
+                    backupFiles = backupSpecs.Select(x => x.FileName).ToArray(),
+                    clearedFiles = clearSpecs.Select(x => x.FileName).ToArray()
                 });
             }
             catch (Exception ex)
             {
-                WriteJson(ctx, new { error = "备份或清空失败：" + ex.Message }, 500);
+                if (!string.IsNullOrWhiteSpace(backupFolder))
+                {
+                    try
+                    {
+                        lock (DataLock) RestoreFilesFromFolder(backupFolder, clearSpecs.Select(x => new BackupFileSpec { Path = x.Path, FileName = x.FileName }).ToArray());
+                    }
+                    catch { }
+                }
+                string msg = "清空失败，已尝试恢复原始数据：" + ToUserMessage(ex);
+                WriteJson(ctx, new { message = msg, error = msg }, 500);
             }
         }
 
@@ -4133,17 +4962,12 @@ namespace SupplierErpApp
         {
             lock (DataLock)
             {
+                Directory.CreateDirectory(BackupDir);
                 string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string file = Path.Combine(BackupDir, "manual_suppliers_" + stamp + ".json");
-                File.Copy(DataFile, file, true);
-                File.Copy(SupplierSequenceFile, Path.Combine(BackupDir, "manual_supplier_sequence_" + stamp + ".json"), true);
-                File.Copy(CustomerFile, Path.Combine(BackupDir, "manual_customers_" + stamp + ".json"), true);
-                File.Copy(CustomerSequenceFile, Path.Combine(BackupDir, "manual_customer_sequence_" + stamp + ".json"), true);
-                File.Copy(MaterialFile, Path.Combine(BackupDir, "manual_materials_" + stamp + ".json"), true);
-                File.Copy(MaterialSequenceFile, Path.Combine(BackupDir, "manual_material_sequence_" + stamp + ".json"), true);
-                File.Copy(FinanceFile, Path.Combine(BackupDir, "manual_finance_" + stamp + ".json"), true);
-                File.Copy(OpeningFile, Path.Combine(BackupDir, "manual_opening_" + stamp + ".json"), true);
-                CleanBackups(); return file;
+                string folder = Path.Combine(BackupDir, "manual_backup_" + stamp);
+                BackupFilesToFolder(folder, GetAllBackupFileSpecs());
+                CleanBackups();
+                return folder;
             }
         }
 
