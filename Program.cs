@@ -571,10 +571,10 @@ namespace SupplierErpApp
 
     public class LoginRequest { public string Username { get; set; } public string Password { get; set; } }
     public class UserSession { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool IsAdmin { get; set; } public string[] Permissions { get; set; } }
-    public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
-    public class UserPublic { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } public string PermissionSummary { get; set; } }
+    public class UserDef { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public string PasswordHash { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } public string UpdatedAt { get; set; } }
+    public class UserPublic { public string Username { get; set; } public string DisplayName { get; set; } public string Role { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } public string PermissionSummary { get; set; } public string UpdatedAt { get; set; } }
     public class CreateUserRequest { public string Username { get; set; } public string Password { get; set; } public string DisplayName { get; set; } public bool Enabled { get; set; } public string[] Permissions { get; set; } }
-    public class UpdateUserRequest { public string DisplayName { get; set; } public bool Enabled { get; set; } public string Password { get; set; } public string[] Permissions { get; set; } }
+    public class UpdateUserRequest { public string DisplayName { get; set; } public bool Enabled { get; set; } public string Password { get; set; } public string[] Permissions { get; set; } public string UpdatedAt { get; set; } }
     public class ChangePasswordRequest { public string OldPassword { get; set; } public string NewPassword { get; set; } }
     public class PermissionGroup { public string Module { get; set; } public PermissionItem[] Items { get; set; } }
     public class PermissionItem { public string Key { get; set; } public string Label { get; set; } }
@@ -1990,7 +1990,8 @@ namespace SupplierErpApp
                 Role = user.Role,
                 Enabled = user.Enabled,
                 Permissions = IsAdminUsername(user.Username) ? AllPermissionKeys : NormalizePermissions(user.Permissions),
-                PermissionSummary = BuildPermissionSummary(user)
+                PermissionSummary = BuildPermissionSummary(user),
+                UpdatedAt = user.UpdatedAt
             };
         }
 
@@ -2026,7 +2027,8 @@ namespace SupplierErpApp
                     Role = "普通用户",
                     PasswordHash = Sha256(req.Password),
                     Enabled = req.Enabled,
-                    Permissions = NormalizePermissions(req.Permissions)
+                    Permissions = NormalizePermissions(req.Permissions),
+                    UpdatedAt = ProfileUpdatedAtNow()
                 };
                 Users.Add(user);
                 SaveUsers();
@@ -2047,10 +2049,12 @@ namespace SupplierErpApp
             {
                 var user = FindUser(username);
                 if (user == null) throw new BusinessException("账号不存在", 404);
+                EnsureEditVersionMatch(user.UpdatedAt, req.UpdatedAt);
                 if (!string.IsNullOrWhiteSpace(req.DisplayName)) user.DisplayName = req.DisplayName.Trim();
                 user.Enabled = req.Enabled;
                 user.Permissions = NormalizePermissions(req.Permissions);
                 if (!string.IsNullOrWhiteSpace(req.Password)) user.PasswordHash = Sha256(req.Password);
+                user.UpdatedAt = ProfileUpdatedAtNow();
                 SaveUsers();
                 sessionUser = user.Username;
                 saved = ToPublic(user);
