@@ -4861,7 +4861,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
@@ -4875,11 +4875,12 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.BomId = input.BomId; item.BomName = input.BomName;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
                 item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
                 item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
-                item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
             Audit(user, "修改生产领用", saved.Code); WriteJson(ctx, saved);
@@ -4926,7 +4927,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
@@ -4940,10 +4941,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
                 item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
                 item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
-                item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
             Audit(user, "修改成品入库", saved.Code); WriteJson(ctx, saved);
