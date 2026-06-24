@@ -1910,7 +1910,7 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<DictionaryOption>(ReadBody(ctx.Request));
             ValidateDictionaryOption(item);
-            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string now = ProfileUpdatedAtNow();
             var saved = MutateJsonList<DictionaryOption, DictionaryOption>(DictionaryOptionsFile, "dictionary_options", list =>
             {
                 if (list.Any(x => string.Equals(x.Category, item.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, item.Name, StringComparison.OrdinalIgnoreCase)))
@@ -1936,13 +1936,14 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("字典项不存在", 404);
                 if (list.Any(x => x.Id != id && string.Equals(x.Category, input.Category, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Name, input.Name, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该分类下已存在相同名称的字典项", 409);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.Category = input.Category;
                 item.Name = input.Name;
                 item.Value = string.IsNullOrWhiteSpace(input.Value) ? input.Name : input.Value.Trim();
                 item.Note = (input.Note ?? "").Trim();
                 item.Status = input.Status;
                 if (input.SortOrder > 0) item.SortOrder = input.SortOrder;
-                item.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                item.UpdatedAt = ProfileUpdatedAtNow();
                 return new JsonMutationResult<DictionaryOption>(item, true);
             });
             Audit(user, "修改字典项", saved.Category + " " + saved.Name);
