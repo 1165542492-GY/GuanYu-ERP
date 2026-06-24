@@ -1522,10 +1522,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("BOM 不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 input.Id = item.Id;
                 input.Code = item.Code;
                 input.CreatedAt = item.CreatedAt;
-                input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                input.UpdatedAt = BizUpdatedAtNow();
                 list[list.IndexOf(item)] = input;
                 return new JsonMutationResult<BomItem>(input, true);
             });
@@ -1631,9 +1632,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("机型成本记录不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 input.Id = item.Id;
                 input.CreatedAt = item.CreatedAt;
-                input.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                input.UpdatedAt = BizUpdatedAtNow();
                 list[list.IndexOf(item)] = input;
                 return new JsonMutationResult<ModelCost>(input, true);
             });

@@ -26,6 +26,8 @@ namespace SupplierErpApp
             { "成品入库", "finishedInbounds" },
             { "应收款", "receivables" },
             { "应付款", "payables" },
+            { "财务收支", "financeTransactions" },
+            { "财务期初余额", "financeOpening" },
             { "库存汇总", "stockReference" },
             { "异常测试数据", "testValidation" }
         };
@@ -45,6 +47,8 @@ namespace SupplierErpApp
             { "finishedInbounds", "成品入库" },
             { "receivables", "应收款" },
             { "payables", "应付款" },
+            { "financeTransactions", "财务收支" },
+            { "financeOpening", "财务期初余额" },
             { "stockReference", "库存汇总" },
             { "testValidation", "异常测试数据" }
         };
@@ -52,7 +56,8 @@ namespace SupplierErpApp
         static readonly string[] TestDataImportOrder = {
             "suppliers", "customers", "materials", "boms", "modelCosts",
             "purchaseOrders", "purchaseInbounds", "salesOrders", "salesOutbounds",
-            "productionPicks", "finishedInbounds", "receivables", "payables"
+            "productionPicks", "finishedInbounds", "receivables", "payables",
+            "financeTransactions", "financeOpening"
         };
 
         static bool RequireTestDataAccess(HttpListenerContext ctx, UserSession user)
@@ -79,6 +84,8 @@ namespace SupplierErpApp
                 WriteFinishedInboundSheet(wb);
                 WriteReceivableSheet(wb);
                 WritePayableSheet(wb);
+                WriteFinanceSheet(wb);
+                WriteFinanceOpeningSheet(wb);
                 WriteStockReferenceSheet(wb);
                 using (var ms = new MemoryStream())
                 {
@@ -358,6 +365,21 @@ namespace SupplierErpApp
                 WriteRow(ws, r++, x.Code, x.PurchaseNo, x.SupplierName, Money2(x.PayableAmount), Money2(x.PaidAmount), Money2(x.UnpaidAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
         }
 
+        static void WriteFinanceSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "财务收支", new[] { "记录ID", "日期", "账户类型", "收款金额", "付款金额", "收付款方式", "收付款用途", "对方账户主体", "备注", "最后更新", "操作人" });
+            int r = 2;
+            foreach (var x in LoadFinance())
+                WriteRow(ws, r++, x.Id, DateOnly(x.Date), x.AccountType, Money2(x.Receipt), Money2(x.Payment), x.PaymentMethod, x.Purpose, x.Counterparty, x.Note, x.UpdatedAt, x.UpdatedBy);
+        }
+
+        static void WriteFinanceOpeningSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "财务期初余额", new[] { "公户期初余额", "公司私户期初余额", "个人私户期初余额", "最后更新" });
+            var o = LoadOpeningBalances();
+            WriteRow(ws, 2, Money2(o.PublicAccount), Money2(o.CompanyPrivate), Money2(o.PersonalPrivate), o.UpdatedAt ?? "");
+        }
+
         static void WriteStockReferenceSheet(XLWorkbook wb)
         {
             var ws = AddSheet(wb, "库存汇总", new[] { "类型", "编码", "名称", "规格", "单位", "仓库", "当前数量", "成本价", "库存金额" });
@@ -390,6 +412,8 @@ namespace SupplierErpApp
                 case "finishedInbounds": return ImportFinishedInboundsTest(rows, user, previewOnly);
                 case "receivables": return ImportReceivablesTest(rows, user, previewOnly);
                 case "payables": return ImportPayablesTest(rows, user, previewOnly);
+                case "financeTransactions": return ImportFinanceTransactionsTest(rows, user, previewOnly);
+                case "financeOpening": return ImportFinanceOpeningTest(rows, user, previewOnly);
                 default: return new TestDataModuleResult { ModuleKey = moduleKey, ModuleLabel = moduleKey, Skipped = rows.Count };
             }
         }
@@ -940,6 +964,85 @@ namespace SupplierErpApp
             };
             if (previewOnly) importLoop(LoadPayables());
             else MutateJsonList<Payable, object>(PayablesFile, "payables", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            res.Errors = errors.ToArray(); return res;
+        }
+
+        static TestDataModuleResult ImportFinanceTransactionsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        {
+            var res = NewModuleResult("financeTransactions");
+            var errors = new List<string>();
+            bool changed = false;
+            int rowNo = 1;
+            Action<List<FinanceTransaction>> importLoop = list =>
+            {
+                foreach (var row in rows)
+                {
+                    rowNo++;
+                    try
+                    {
+                        string id = Cell(row, "记录ID", "ID");
+                        var item = new FinanceTransaction
+                        {
+                            Date = Cell(row, "日期"),
+                            AccountType = Cell(row, "账户类型"),
+                            Receipt = Money(Cell(row, "收款金额")),
+                            Payment = Money(Cell(row, "付款金额")),
+                            PaymentMethod = Cell(row, "收付款方式"),
+                            Purpose = Cell(row, "收付款用途"),
+                            Counterparty = Cell(row, "对方账户主体"),
+                            Note = Cell(row, "备注")
+                        };
+                        ValidateFinance(item);
+                        var existing = !Placeholder(id) ? list.FirstOrDefault(x => string.Equals(x.Id, id.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+                        if (existing != null)
+                        {
+                            if (previewOnly) { res.Updated++; continue; }
+                            existing.Date = item.Date; existing.AccountType = item.AccountType; existing.Receipt = item.Receipt; existing.Payment = item.Payment;
+                            existing.PaymentMethod = item.PaymentMethod; existing.Purpose = item.Purpose; existing.Counterparty = item.Counterparty; existing.Note = item.Note;
+                            existing.UpdatedAt = ProfileUpdatedAtNow(); existing.UpdatedBy = user.DisplayName;
+                            res.Updated++; changed = true;
+                        }
+                        else
+                        {
+                            if (previewOnly) { res.Added++; continue; }
+                            item.Id = Placeholder(id) ? Guid.NewGuid().ToString("N") : id.Trim();
+                            item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                            list.Add(item); res.Added++; changed = true;
+                        }
+                    }
+                    catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
+                }
+            };
+            if (previewOnly) importLoop(LoadFinance());
+            else MutateJsonList<FinanceTransaction, object>(FinanceFile, "finance", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            res.Errors = errors.ToArray(); return res;
+        }
+
+        static TestDataModuleResult ImportFinanceOpeningTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        {
+            var res = NewModuleResult("financeOpening");
+            var errors = new List<string>();
+            var row = rows.FirstOrDefault(x => !string.IsNullOrWhiteSpace(Cell(x, "公户期初余额")) || !string.IsNullOrWhiteSpace(Cell(x, "公司私户期初余额")) || !string.IsNullOrWhiteSpace(Cell(x, "个人私户期初余额")));
+            if (row == null) { res.Skipped = rows.Count; res.Errors = errors.ToArray(); return res; }
+            try
+            {
+                var value = new OpeningBalances
+                {
+                    PublicAccount = Money(Cell(row, "公户期初余额")),
+                    CompanyPrivate = Money(Cell(row, "公司私户期初余额")),
+                    PersonalPrivate = Money(Cell(row, "个人私户期初余额"))
+                };
+                if (previewOnly) { res.Updated = 1; res.Errors = errors.ToArray(); return res; }
+                RunUnderDataLock(() =>
+                {
+                    value.UpdatedAt = ProfileUpdatedAtNow();
+                    if (File.Exists(OpeningFile)) File.Copy(OpeningFile, Path.Combine(BackupDir, "opening_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"), true);
+                    File.WriteAllText(OpeningFile, Json.Serialize(value), new UTF8Encoding(false));
+                    CleanBackups();
+                });
+                res.Updated = 1;
+            }
+            catch (Exception ex) { AddErr(res, errors, 2, ex.Message); }
             res.Errors = errors.ToArray(); return res;
         }
     }
