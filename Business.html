@@ -277,8 +277,9 @@ if(!body.CustomerId&&!body.CustomerCode&&!body.CustomerName){tip('请选择客�
 if(cfg.view==='salesOutboundView'){
 if(!bizStr(body.SalesOrderId)){tip('请选择来源销售订单');return}
 }
+if(isEdit&&(cfg.view==='salesOrderView'||cfg.view==='salesOutboundView'))body.UpdatedAt=st.editingUpdatedAt||'';
 try{await api(isEdit?cfg.api+'/'+st.editing:cfg.api,{method:isEdit?'PUT':'POST',body:JSON.stringify(body)});
-closeBizModal(cfg);if(searchEl)searchEl.value='';await bizLoad(cfg);await bizLoadRefs();tip(isEdit?'已更新':'已新增')}catch(err){tip(err.message||'保存失败')}
+closeBizModal(cfg);if(searchEl)searchEl.value='';await bizLoad(cfg);await bizLoadRefs();tip(isEdit?'已更新':'已新增')}catch(err){if((cfg.view==='salesOrderView'||cfg.view==='salesOutboundView')&&await handleEditConflict(err,function(){closeBizModal(cfg)},function(){return bizLoad(cfg)}))return;tip(err.message||'保存失败')}
 };
 }
 var closeBtn=document.getElementById(p+'Close'),cancelBtn=document.getElementById(p+'Cancel');
@@ -432,6 +433,7 @@ if(!item&&!bizCan(cfg,'add')){tip('无权限操作');return}
 var modal=document.getElementById(cfg.prefix+'Modal');
 if(!modal){tip('弹窗未初始化，请刷新页面后重试');return}
 var st=bizEnsureState(cfg.view);st.editing=item?item.Id:null;
+st.editingUpdatedAt=(item&&(cfg.view==='salesOrderView'||cfg.view==='salesOutboundView'))?(item.UpdatedAt||''):null;
 document.getElementById(cfg.prefix+'ModalTitle').textContent=item?'编辑'+cfg.title:'新增'+cfg.title;
 bizFillForm(cfg,item);
 modal.classList.add('show');modal.setAttribute('aria-hidden','false');
@@ -443,7 +445,7 @@ function closeBizModal(cfg){
 var modal=document.getElementById(cfg.prefix+'Modal');if(!modal)return;
 modal.classList.remove('show');modal.setAttribute('aria-hidden','true');
 if(!document.querySelector('.modal.show'))document.body.style.overflow='';
-bizEnsureState(cfg.view).editing=null;
+var st=bizEnsureState(cfg.view);st.editing=null;st.editingUpdatedAt=null;
 }
 var stockData=[];
 function stockVisibleRows(){var q=(document.getElementById('stockSearch')||{}).value||'';q=q.trim().toLowerCase();return stockData.filter(function(x){return [x.ItemType,x.ItemCode,x.ItemName,x.Spec,x.WarehouseName].join(' ').toLowerCase().indexOf(q)>=0})}

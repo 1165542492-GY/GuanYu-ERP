@@ -4284,6 +4284,11 @@ namespace SupplierErpApp
             return Json.Deserialize<BatchSalesOrderRequest>(node.ToJsonString());
         }
 
+        static string BizUpdatedAtNow()
+        {
+            return DateTimeOffset.UtcNow.ToString("O");
+        }
+
         static List<SalesOrder> LoadSalesOrders() { return LoadJsonList<SalesOrder>(SalesOrdersFile); }
         static void SaveSalesOrders(List<SalesOrder> items) { SaveJsonList(SalesOrdersFile, "sales_orders", items); }
 
@@ -4338,7 +4343,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<SalesOrder>(item, true);
             });
@@ -4352,6 +4357,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售订单不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
                 item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
@@ -4359,7 +4365,7 @@ namespace SupplierErpApp
                 item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
                 item.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; item.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
                 item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
-                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<SalesOrder>(item, true);
             });
             Audit(user, "修改销售订单", saved.Code); WriteJson(ctx, saved);
@@ -4406,7 +4412,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
-                item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
@@ -4420,11 +4426,12 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
                 item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
-                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
             Audit(user, "修改销售出库", saved.Code); WriteJson(ctx, saved);
