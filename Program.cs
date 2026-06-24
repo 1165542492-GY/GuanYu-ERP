@@ -526,6 +526,7 @@ namespace SupplierErpApp
         public string DueDate { get; set; }
         public string Status { get; set; }
         public string Note { get; set; }
+        public string SourceType { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -543,6 +544,7 @@ namespace SupplierErpApp
         public string DueDate { get; set; }
         public string Status { get; set; }
         public string Note { get; set; }
+        public string SourceType { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -4375,49 +4377,28 @@ namespace SupplierErpApp
         static void AddSalesOrder(HttpListenerContext ctx, UserSession user)
         {
             var item = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(item);
-            var saved = MutateJsonList<SalesOrder, SalesOrder>(SalesOrdersFile, "sales_orders", list =>
-            {
-                item.Id = Guid.NewGuid().ToString("N");
-                item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
-                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
-                list.Insert(0, item);
-                return new JsonMutationResult<SalesOrder>(item, true);
-            });
+            var saved = PersistSalesOrderAdd(item, user);
             Audit(user, "新增销售订单", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(input);
-            var saved = MutateJsonList<SalesOrder, SalesOrder>(SalesOrdersFile, "sales_orders", list =>
-            {
-                var item = list.FirstOrDefault(x => x.Id == id);
-                if (item == null) throw new BusinessException("销售订单不存在", 404);
-                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
-                item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
-                item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-                item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
-                item.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; item.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
-                item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
-                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
-                return new JsonMutationResult<SalesOrder>(item, true);
-            });
+            var saved = PersistSalesOrderUpdate(id, input, user);
             Audit(user, "修改销售订单", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeleteSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
-            MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list =>
+            RunUnderDataLock(() =>
             {
-                var item = list.FirstOrDefault(x => x.Id == id);
+                var orders = ReadJsonListCore<SalesOrder>(SalesOrdersFile);
+                var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售订单不存在", 404);
                 auditCode = item.Code;
-                list.Remove(item);
-                return new JsonMutationResult<object>(new { ok = true }, true);
             });
+            PersistSalesOrderDelete(id, user);
             Audit(user, "删除销售订单", auditCode); WriteJson(ctx, new { ok = true });
         }
 
@@ -4444,6 +4425,7 @@ namespace SupplierErpApp
         static void AddSalesOutbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(item);
+            ValidateStockForConfirmedOutbound(item);
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
@@ -4458,6 +4440,7 @@ namespace SupplierErpApp
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
+            ValidateStockForConfirmedOutbound(input, id);
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -4510,45 +4493,28 @@ namespace SupplierErpApp
         static void AddPurchaseOrder(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(item);
-            var saved = MutateJsonList<PurchaseOrder, PurchaseOrder>(PurchaseOrdersFile, "purchase_orders", list =>
-            {
-                item.Id = Guid.NewGuid().ToString("N");
-                item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
-                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
-                list.Insert(0, item);
-                return new JsonMutationResult<PurchaseOrder>(item, true);
-            });
+            var saved = PersistPurchaseOrderAdd(item, user);
             Audit(user, "新增采购单", saved.Code); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(input);
-            var saved = MutateJsonList<PurchaseOrder, PurchaseOrder>(PurchaseOrdersFile, "purchase_orders", list =>
-            {
-                var item = list.FirstOrDefault(x => x.Id == id);
-                if (item == null) throw new BusinessException("采购单不存在", 404);
-                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
-                item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
-                item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;
-                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
-                return new JsonMutationResult<PurchaseOrder>(item, true);
-            });
+            var saved = PersistPurchaseOrderUpdate(id, input, user);
             Audit(user, "修改采购单", saved.Code); WriteJson(ctx, saved);
         }
 
         static void DeletePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
-            MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list =>
+            RunUnderDataLock(() =>
             {
-                var item = list.FirstOrDefault(x => x.Id == id);
+                var orders = ReadJsonListCore<PurchaseOrder>(PurchaseOrdersFile);
+                var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购单不存在", 404);
                 auditCode = item.Code;
-                list.Remove(item);
-                return new JsonMutationResult<object>(new { ok = true }, true);
             });
+            PersistPurchaseOrderDelete(id, user);
             Audit(user, "删除采购单", auditCode); WriteJson(ctx, new { ok = true });
         }
 
@@ -4893,6 +4859,7 @@ namespace SupplierErpApp
         static void AddProductionPick(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(item);
+            ValidateStockForConfirmedPick(item);
             var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
@@ -4907,6 +4874,7 @@ namespace SupplierErpApp
         static void UpdateProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
+            ValidateStockForConfirmedPick(input, id);
             var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -5186,8 +5154,9 @@ namespace SupplierErpApp
             StockAdd(map, "物料", mid, mcode, mname, mspec, munit, qty, unitCost);
         }
 
-        static Dictionary<string, StockAgg> BuildStockMap()
+        static Dictionary<string, StockAgg> BuildStockMap(StockMapOptions options = null)
         {
+            options = options ?? new StockMapOptions();
             var map = new Dictionary<string, StockAgg>(StringComparer.OrdinalIgnoreCase);
             foreach (var x in LoadPurchaseInbounds().Where(x => IsConfirmedStatus(x.Status)))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, x.Quantity, x.InboundPrice);
@@ -5196,9 +5165,9 @@ namespace SupplierErpApp
                 string pid = !string.IsNullOrWhiteSpace(x.ModelCostId) ? x.ModelCostId : x.BomId;
                 StockAdd(map, "成品", pid, x.BomCode, x.ProductName, "", "", x.Quantity, x.UnitCost);
             }
-            foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status)))
+            foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeSalesOutboundId))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
-            foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status)))
+            foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeProductionPickId))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
             return map;
         }
