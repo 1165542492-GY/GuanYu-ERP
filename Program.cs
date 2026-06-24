@@ -3709,7 +3709,7 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<ContractSetting>(ReadBody(ctx.Request));
             ValidateContractSetting(item);
-            string now = NowTimeString();
+            string now = BizUpdatedAtNow();
             var saved = MutateJsonList<ContractSetting, ContractSetting>(ContractSettingsFile, "contract_settings", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
@@ -3733,10 +3733,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("合同资料不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 input.Id = item.Id;
                 input.Code = item.Code;
                 input.CreatedAt = item.CreatedAt;
-                input.UpdatedAt = NowTimeString();
+                input.UpdatedAt = BizUpdatedAtNow();
                 if (input.IsDefault)
                     foreach (var x in list.Where(x => x.Type == input.Type && x.Id != id)) x.IsDefault = false;
                 list[list.IndexOf(item)] = input;
@@ -3768,7 +3769,7 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(item.PartyAName)) throw new Exception("甲方名称不能为空");
             if (item.Items == null || item.Items.Count == 0) throw new Exception("请至少添加一条设备明细");
             NormalizeContract(item);
-            string now = NowTimeString();
+            string now = BizUpdatedAtNow();
             var saved = MutateJsonList<ContractItem, ContractItem>(ContractsFile, "contracts", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
@@ -3797,10 +3798,11 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("合同不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 input.Id = item.Id;
                 input.Code = item.Code;
                 input.CreatedAt = item.CreatedAt;
-                input.UpdatedAt = NowTimeString();
+                input.UpdatedAt = BizUpdatedAtNow();
                 list[list.IndexOf(item)] = input;
                 return new JsonMutationResult<ContractItem>(input, true);
             });
@@ -3825,12 +3827,25 @@ namespace SupplierErpApp
 
         static void VoidContract(HttpListenerContext ctx, UserSession user, string id)
         {
+            string clientUpdatedAt = "";
+            try
+            {
+                var raw = ReadBody(ctx.Request);
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    var req = Json.Deserialize<Dictionary<string, string>>(raw);
+                    if (req != null && req.TryGetValue("UpdatedAt", out var ua))
+                        clientUpdatedAt = ua ?? "";
+                }
+            }
+            catch { }
             var saved = MutateJsonList<ContractItem, ContractItem>(ContractsFile, "contracts", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("合同不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, clientUpdatedAt);
                 item.Status = "已作废";
-                item.UpdatedAt = NowTimeString();
+                item.UpdatedAt = BizUpdatedAtNow();
                 return new JsonMutationResult<ContractItem>(item, true);
             });
             Audit(user, "作废合同", saved.Code + " " + saved.Name);
