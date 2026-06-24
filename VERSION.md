@@ -64,6 +64,16 @@
 - 保留：users.json、system_settings.json、dictionary_options.json、contract_settings.json
 - 密码错误返回：「二次密码错误，禁止清空数据」
 
+**测试数据导入导出（长期保留，仅 admin）**
+
+- 入口：系统设置 → 测试数据导入导出
+- 用途：测试数据备份、恢复、回归测试
+- 权限：仅系统管理员可见、可用；子账号无入口，API 非 admin 返回 403
+- 导出：`GET /api/test-data/export-all` → `ERP测试数据总表yyyyMMdd.xlsx`（多 Sheet）
+- 导入：`POST /api/test-data/import-preview`（预检查）、`POST /api/test-data/import-run`（正式导入）
+- 库存汇总 Sheet 仅导出参考，不正式导入
+- 不影响各模块单页 CSV 导出文件名规则
+
 **Ver2.8 测试报告修复**
 
 - 合同页面脚本注入修复（LastIndexOf `</body>`）

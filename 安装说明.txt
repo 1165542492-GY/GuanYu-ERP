@@ -80,6 +80,17 @@ C:\ProgramData\智造ERP供应商管理
 - 不会清空：账号、权限、系统设置、字典选项、合同资料模板
 - 子账号看不到入口，也不能调用接口
 
+（5）测试数据导入导出（长期保留，仅 admin）
+路径：设置 → 系统设置 → 测试数据导入导出
+- 系统长期保留功能，用于测试数据备份、恢复、回归测试
+- 仅系统管理员可见入口、可操作；子账号无入口，强行访问提示无权限并返回首页
+- 一键导出：ERP测试数据总表yyyyMMdd.xlsx（多 Sheet Excel）
+- 支持选择 Excel 总表进行预检查和正式导入
+- 库存汇总 Sheet 仅导出参考，不正式导入
+- 接口：GET /api/test-data/export-all、POST /api/test-data/import-preview、POST /api/test-data/import-run
+- 子账号调用上述接口返回 403
+- 不影响各模块原有单页 CSV 导出
+
 八、Ver2.8 测试报告修复说明
 1. 合同页面：修复 Business 资源注入破坏合同 JS 的问题，新增合同按钮可正常弹窗
 2. 手动备份：系统设置 → 数据备份，备份至 backups/manual_backup_年月日_时分秒/，包含全部业务 JSON、用户、设置、字典、合同、操作日志

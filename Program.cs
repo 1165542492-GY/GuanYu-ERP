@@ -95,6 +95,42 @@ namespace SupplierErpApp
     }
 
     public class ImportRequest { public string FileName { get; set; } public string Data { get; set; } }
+    public class TestDataImportRequest { public string FileName { get; set; } public string Data { get; set; } }
+    public class TestDataSheetInfo
+    {
+        public string SheetName { get; set; }
+        public string ModuleKey { get; set; }
+        public string ModuleLabel { get; set; }
+        public bool Importable { get; set; }
+        public bool ReferenceOnly { get; set; }
+        public int RowCount { get; set; }
+        public string[] Errors { get; set; }
+    }
+    public class TestDataModuleResult
+    {
+        public string ModuleKey { get; set; }
+        public string ModuleLabel { get; set; }
+        public int Added { get; set; }
+        public int Updated { get; set; }
+        public int Skipped { get; set; }
+        public int Failed { get; set; }
+        public string[] Errors { get; set; }
+    }
+    public class TestDataPreviewResult
+    {
+        public string FileName { get; set; }
+        public TestDataSheetInfo[] Sheets { get; set; }
+        public string[] UnknownSheets { get; set; }
+    }
+    public class TestDataRunResult
+    {
+        public string FileName { get; set; }
+        public TestDataModuleResult[] Modules { get; set; }
+        public int TotalAdded { get; set; }
+        public int TotalUpdated { get; set; }
+        public int TotalSkipped { get; set; }
+        public int TotalFailed { get; set; }
+    }
     public class CsvImportRequest { public string FileName { get; set; } public string Data { get; set; } public Dictionary<string, string> ConflictActions { get; set; } }
     public class TableImportResult
     {
@@ -536,7 +572,7 @@ namespace SupplierErpApp
     public class PermissionGroup { public string Module { get; set; } public PermissionItem[] Items { get; set; } }
     public class PermissionItem { public string Key { get; set; } public string Label { get; set; } }
 
-    public static class Program
+    public static partial class Program
     {
         static readonly object DataLock = new object();
         static readonly object SessionLock = new object();
@@ -868,6 +904,9 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "payable.edit")) return; UpdatePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
+                if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user)) return; ExportTestDataAll(ctx, user); return; }
+                if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataPreview(ctx, user); return; }
+                if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (BusinessException ex)
@@ -920,6 +959,10 @@ namespace SupplierErpApp
             {
                 if (s == null) throw new Exception("业务界面资源缺失");
                 using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
+            }
+            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.TestData.html"))
+            {
+                if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             byte[] bytes = Encoding.UTF8.GetBytes(html);
             ctx.Response.ContentType = "text/html; charset=utf-8";

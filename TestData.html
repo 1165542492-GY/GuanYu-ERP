@@ -1,0 +1,119 @@
+<style>
+.test-data-tools{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.test-data-meta{margin:0 0 14px;line-height:1.7;color:var(--muted)}
+.test-data-section{margin-top:18px}
+.test-data-section h4{margin:0 0 10px;font-size:15px}
+.test-data-errors{color:var(--red);white-space:pre-wrap;line-height:1.6;font-size:13px}
+.test-data-summary{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+.test-data-summary span{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px}
+.test-data-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef3ff;color:#2569ed}
+.test-data-tag.ref{background:#f3f4f6;color:#738197}
+.test-data-tag.skip{background:#fff7ed;color:#c2410c}
+</style>
+<div id="systemSettingTestDataPanel" style="display:none">
+<div class="panel">
+<div class="form" style="padding:24px 28px">
+<div class="formtitle">测试数据导入导出</div>
+<p class="mini test-data-meta">用于测试阶段快速备份和恢复业务数据。导出为含多个 Sheet 的 Excel 总表；导入时按依赖顺序写入，重复编号会自动跳过或更新。</p>
+<div class="test-data-tools">
+<button type="button" class="btn primary" id="testDataExportBtn">一键导出测试总表</button>
+<input id="testDataImportFile" type="file" accept=".xlsx" style="display:none">
+<button type="button" class="btn" id="testDataPickBtn">选择 Excel 文件</button>
+<button type="button" class="btn" id="testDataPreviewBtn" disabled>预检查</button>
+<button type="button" class="btn primary" id="testDataImportBtn" disabled>开始导入</button>
+</div>
+<div class="mini">当前文件：<b id="testDataFileName">未选择</b></div>
+<div class="test-data-section" id="testDataPreviewSection" style="display:none">
+<h4>Sheet 识别与预检查结果</h4>
+<div class="tablewrap"><table><thead><tr><th>Sheet 名称</th><th>对应模块</th><th>数据条数</th><th>导入说明</th></tr></thead><tbody id="testDataSheetBody"></tbody></table></div>
+<div id="testDataUnknownWrap" style="display:none;margin-top:10px" class="mini"></div>
+<div class="test-data-section"><h4>预检查错误</h4><div id="testDataPreviewErrors" class="test-data-errors">无</div></div>
+</div>
+<div class="test-data-section" id="testDataResultSection" style="display:none">
+<h4>导入结果</h4>
+<div class="test-data-summary" id="testDataResultSummary"></div>
+<div class="tablewrap"><table><thead><tr><th>模块</th><th>新增</th><th>更新</th><th>跳过</th><th>失败</th><th>失败原因</th></tr></thead><tbody id="testDataResultBody"></tbody></table></div>
+</div>
+</div>
+</div>
+</div>
+<script>
+(function(){
+var panel=document.getElementById('systemSettingTestDataPanel');
+var detail=document.getElementById('systemSettingsDetail');
+var placeholder=document.getElementById('systemSettingPlaceholderPanel');
+if(panel&&detail){if(placeholder&&placeholder.parentNode)placeholder.parentNode.insertBefore(panel,placeholder);else detail.appendChild(panel);}
+var state={fileName:'',data:''};
+function resetTestDataView(){state.fileName='';state.data='';var fn=document.getElementById('testDataFileName');if(fn)fn.textContent='未选择';['testDataPreviewSection','testDataResultSection'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});['testDataPreviewBtn','testDataImportBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.disabled=true;});}
+window.resetTestDataPanel=resetTestDataView;
+function renderPreview(res){
+var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='block';
+var body=document.getElementById('testDataSheetBody');
+if(body){
+var rows=(res.Sheets||[]).map(function(s){
+var tag=s.ReferenceOnly?'<span class="test-data-tag ref">仅参考，不导入</span>':(s.Importable?'<span class="test-data-tag">将导入</span>':'<span class="test-data-tag skip">跳过</span>');
+return'<tr><td>'+safe(s.SheetName)+'</td><td>'+safe(s.ModuleLabel||'-')+'</td><td>'+(s.RowCount||0)+'</td><td>'+tag+'</td></tr>';
+}).join('');
+body.innerHTML=rows||'<tr><td colspan="4" class="empty">未识别到可导入 Sheet</td></tr>';
+}
+var unk=document.getElementById('testDataUnknownWrap');
+if(unk){
+var unknown=res.UnknownSheets||[];
+if(unknown.length){unk.style.display='block';unk.innerHTML='未识别 Sheet（已跳过）：'+unknown.map(function(x){return safe(x);}).join('、');}
+else{unk.style.display='none';unk.innerHTML='';}
+}
+var errBox=document.getElementById('testDataPreviewErrors');
+if(errBox){
+var errs=[];
+(res.Sheets||[]).forEach(function(s){if(s.Errors&&s.Errors.length)s.Errors.forEach(function(e){errs.push('['+s.SheetName+'] '+e);});});
+errBox.textContent=errs.length?errs.join('\n'):'无';
+}
+}
+function renderRun(res){
+var sec=document.getElementById('testDataResultSection');if(sec)sec.style.display='block';
+var sum=document.getElementById('testDataResultSummary');
+if(sum)sum.innerHTML='<span>新增 <b>'+(res.TotalAdded||0)+'</b></span><span>更新 <b>'+(res.TotalUpdated||0)+'</b></span><span>跳过 <b>'+(res.TotalSkipped||0)+'</b></span><span>失败 <b>'+(res.TotalFailed||0)+'</b></span>';
+var body=document.getElementById('testDataResultBody');
+if(body){
+body.innerHTML=(res.Modules||[]).map(function(m){
+var errs=(m.Errors&&m.Errors.length)?m.Errors.join('；'):'-';
+return'<tr><td>'+safe(m.ModuleLabel||m.ModuleKey)+'</td><td>'+(m.Added||0)+'</td><td>'+(m.Updated||0)+'</td><td>'+(m.Skipped||0)+'</td><td>'+(m.Failed||0)+'</td><td class="test-data-errors" style="white-space:normal">'+safe(errs)+'</td></tr>';
+}).join('')||'<tr><td colspan="6" class="empty">无导入结果</td></tr>';
+}
+}
+function readSelectedFile(file,cb){
+var reader=new FileReader();
+reader.onload=function(){state.fileName=file.name;state.data=reader.result;var fn=document.getElementById('testDataFileName');if(fn)fn.textContent=file.name;['testDataPreviewBtn','testDataImportBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.disabled=false;});if(typeof cb==='function')cb();};
+reader.readAsDataURL(file);
+}
+var exportBtn=document.getElementById('testDataExportBtn');
+if(exportBtn)exportBtn.onclick=function(){
+if(!isAdminUser()){tip('仅管理员可操作');return;}
+if(typeof downloadBinaryExport==='function')downloadBinaryExport('/api/test-data/export-all',buildExportFileName('ERP测试数据总表','.xlsx'));
+else tip('导出功能未就绪');
+};
+var pickBtn=document.getElementById('testDataPickBtn');
+if(pickBtn)pickBtn.onclick=function(){if(!isAdminUser()){tip('仅管理员可操作');return}document.getElementById('testDataImportFile').click();};
+var fileInput=document.getElementById('testDataImportFile');
+if(fileInput)fileInput.onchange=function(){var f=this.files[0];if(!f)return;if(!/\.xlsx$/i.test(f.name)){tip('请选择 .xlsx 文件');this.value='';return}readSelectedFile(f,function(){tip('已选择：'+f.name)});this.value='';};
+var previewBtn=document.getElementById('testDataPreviewBtn');
+if(previewBtn)previewBtn.onclick=async function(){
+if(!isAdminUser()){tip('仅管理员可操作');return}
+if(!state.data){tip('请先选择 Excel 文件');return}
+try{
+var res=await api('/api/test-data/import-preview',{method:'POST',body:JSON.stringify({FileName:state.fileName,Data:state.data})});
+renderPreview(res);tip('预检查完成');
+}catch(e){tip(e.message||'预检查失败')}
+};
+var importBtn=document.getElementById('testDataImportBtn');
+if(importBtn)importBtn.onclick=async function(){
+if(!isAdminUser()){tip('仅管理员可操作');return}
+if(!state.data){tip('请先选择 Excel 文件');return}
+if(!confirm('确认导入测试数据总表？重复编号将跳过或更新，建议先备份。'))return;
+try{
+var res=await api('/api/test-data/import-run',{method:'POST',body:JSON.stringify({FileName:state.fileName,Data:state.data})});
+renderRun(res);tip('导入完成：新增 '+(res.TotalAdded||0)+'，更新 '+(res.TotalUpdated||0)+'，跳过 '+(res.TotalSkipped||0)+'，失败 '+(res.TotalFailed||0));
+}catch(e){tip(e.message||'导入失败')}
+};
+})();
+</script>

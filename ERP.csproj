@@ -16,5 +16,10 @@
     <EmbeddedResource Include="Material.html" LogicalName="SupplierErpApp.Material.html" />
     <EmbeddedResource Include="Contract.html" LogicalName="SupplierErpApp.Contract.html" />
     <EmbeddedResource Include="Business.html" LogicalName="SupplierErpApp.Business.html" />
+    <EmbeddedResource Include="TestData.html" LogicalName="SupplierErpApp.TestData.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
   </ItemGroup>
 </Project>
