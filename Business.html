@@ -1,6 +1,15 @@
 <!-- Ver2.8 销售/采购/生产/库存/应收应付基础模块 -->
 <style>
 .biz-table{min-width:2400px!important}
+.arap-detail-summary{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0 0 14px;color:var(--muted);font-size:13px}
+.arap-detail-summary b{color:var(--text);font-size:15px}
+.arap-detail-tablewrap{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.arap-detail-table{width:100%;border-collapse:collapse;font-size:13px}
+.arap-detail-table th,.arap-detail-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.arap-detail-table th{background:#f8fafc;position:sticky;top:0;z-index:1}
+.arap-detail-form .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.arap-detail-form .field.full{grid-column:1/-1}
+@media (max-width:720px){.arap-detail-form .grid{grid-template-columns:1fr}}
 #salesOrderView>.panel,#salesOutboundView>.panel,#purchaseOrderView>.panel,#purchaseInboundView>.panel,#productionPickView>.panel,#finishedInboundView>.panel,#receivableView>.panel,#payableView>.panel,#stockView>.panel{overflow:hidden}
 #soDualScroll,#soutDualScroll,#poDualScroll,#pinDualScroll,#ppDualScroll,#finDualScroll,#recDualScroll,#payDualScroll,#stockDualScroll{max-width:100%;overflow:hidden}
 </style>
@@ -62,13 +71,13 @@ var bizModules={
 {key:'SalesOrderId',label:'来源销售订单',type:'refSelect',ref:'salesOrders',display:'Code',fill:{SalesOrderNo:'Code',CustomerName:'CustomerName',ReceivableAmount:'Amount'}},
 {key:'SalesOrderNo',label:'销售订单号',readonly:1},{key:'CustomerName',label:'客户名称',req:1},
 {key:'ReceivableAmount',label:'应收金额',type:'number',step:'0.01',calc:1,money:1},
-{key:'ReceivedAmount',label:'已收金额',type:'number',step:'0.01',calc:1,money:1},{key:'UnreceivedAmount',label:'未收金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.ReceivableAmount)-numVal(r.ReceivedAmount)}},
+{key:'ReceivedAmount',label:'已收金额',type:'number',step:'0.01',readonly:1,money:1},{key:'UnreceivedAmount',label:'未收金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.ReceivableAmount)-numVal(r.ReceivedAmount)}},
 {key:'DueDate',label:'到期日期',type:'date'},{key:'Status',label:'状态',type:'select',options:['未收款','部分收款','已收清'],readonly:1},{key:'Note',label:'备注',full:1}]},
 'payable':{view:'payableView',perm:'payable',api:'/api/payables',title:'应付款',addLabel:'新增应付款',codeLabel:'应付编号',prefix:'pay',fields:[
 {key:'PurchaseOrderId',label:'来源采购单',type:'refSelect',ref:'purchaseOrders',display:'Code',fill:{PurchaseNo:'Code',SupplierName:'SupplierName',PayableAmount:'Amount'}},
 {key:'PurchaseNo',label:'采购单号',readonly:1},{key:'SupplierName',label:'供应商名称',req:1},
 {key:'PayableAmount',label:'应付金额',type:'number',step:'0.01',calc:1,money:1},
-{key:'PaidAmount',label:'已付金额',type:'number',step:'0.01',calc:1,money:1},{key:'UnpaidAmount',label:'未付金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.PayableAmount)-numVal(r.PaidAmount)}},
+{key:'PaidAmount',label:'已付金额',type:'number',step:'0.01',readonly:1,money:1},{key:'UnpaidAmount',label:'未付金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.PayableAmount)-numVal(r.PaidAmount)}},
 {key:'DueDate',label:'到期日期',type:'date'},{key:'Status',label:'状态',type:'select',options:['未付款','部分付款','已付清'],readonly:1},{key:'Note',label:'备注',full:1}]}
 };
 var BIZ_SCROLL_PAGES=['sales-order','sales-outbound','purchase-order','purchase-inbound','production-pick','finished-inbound','receivable','payable','warehouse-stock'];
@@ -400,7 +409,10 @@ var checkCell=cfg.batch?'<td class="col-check">'+(canBatch?'<input type="checkbo
 var cells=cfg.fields.map(function(f){
 var v=x[f.key];if(f.key==='Status')return'<td><span class="status">● '+safe(v||'-')+'</span></td>';
 return'<td>'+bizFormatCell(f,v)+'</td>'}).join('');
-var actions='';if(canEdit)actions+='<button class="action" onclick="bizEdit(\''+cfg.view+'\',\''+x.Id+'\')">编辑</button>';
+var actions='';
+if(cfg.view==='receivableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenReceiptDetails(\''+x.Id+'\')">收款明细</button>';
+if(cfg.view==='payableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenPaymentDetails(\''+x.Id+'\')">付款明细</button>';
+if(canEdit)actions+='<button class="action" onclick="bizEdit(\''+cfg.view+'\',\''+x.Id+'\')">编辑</button>';
 if(canDel)actions+='<button class="action del" onclick="bizDelete(\''+cfg.view+'\',\''+x.Id+'\')">删除</button>';
 if(!actions)actions='-';
 return'<tr>'+checkCell+'<td><b>'+safe(x.Code)+'</b></td>'+cells+'<td>'+safe(x.UpdatedAt||'-')+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td>'+actions+'</td></tr>';
@@ -469,5 +481,156 @@ renderStockList();
 }
 if(document.getElementById('stockSearch'))document.getElementById('stockSearch').oninput=renderStockList;
 if(document.getElementById('stockReset'))document.getElementById('stockReset').onclick=function(){document.getElementById('stockSearch').value='';renderStockList();};
+
+var ARAP_ACCOUNTS=['现金','银行','微信','支付宝','其他'];
+var arapDetailState={type:'',parentId:'',parentUpdatedAt:'',editingDetailId:null,item:null,cfg:null};
+
+function ensureArapDetailModals(){
+var root=ensureBizModalRoot();
+if(document.getElementById('arapDetailModal'))return;
+root.insertAdjacentHTML('beforeend',
+'<div class="modal biz-modal" id="arapDetailModal" aria-hidden="true"><div class="dialog" style="max-width:920px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailTitle">收款明细</div><button type="button" class="close" id="arapDetailClose" aria-label="关闭">×</button></div>'+
+'<div style="padding:0 23px 16px"><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
+'<div class="tools" style="margin-bottom:10px"><button type="button" class="btn primary" id="arapDetailAddBtn">＋ 新增明细</button></div>'+
+'<div class="arap-detail-tablewrap"><table class="arap-detail-table"><thead><tr><th>日期</th><th>金额</th><th>账户</th><th>方式</th><th>经办人</th><th>备注</th><th>操作</th></tr></thead><tbody id="arapDetailBody"></tbody></table></div></div>'+
+'<div class="dialogfoot"><button type="button" class="btn" id="arapDetailDone">关闭</button></div></div></div>'+
+'<div class="modal biz-modal" id="arapDetailEditModal" aria-hidden="true"><div class="dialog" style="max-width:640px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailEditTitle">新增收款</div><button type="button" class="close" id="arapDetailEditClose" aria-label="关闭">×</button></div>'+
+'<form id="arapDetailEditForm"><div class="form arap-detail-form"><div class="grid">'+
+'<div class="field"><label class="req">日期</label><input id="arapDetailDate" type="date"></div>'+
+'<div class="field"><label class="req">金额</label><input id="arapDetailAmount" type="number" step="0.01" min="0.01"></div>'+
+'<div class="field"><label class="req">账户</label><select id="arapDetailAccount"></select></div>'+
+'<div class="field"><label>方式</label><input id="arapDetailMethod" maxlength="100" placeholder="如：转账、刷卡"></div>'+
+'<div class="field"><label>经办人</label><input id="arapDetailHandler" maxlength="100"></div>'+
+'<div class="field full"><label>备注</label><input id="arapDetailNote" maxlength="200"></div>'+
+'</div></div><div class="dialogfoot"><button type="button" class="btn" id="arapDetailEditCancel">取消</button><button type="submit" class="btn primary">保存</button></div></form></div></div>');
+var accSel=document.getElementById('arapDetailAccount');
+accSel.innerHTML=ARAP_ACCOUNTS.map(function(a){return'<option>'+safe(a)+'</option>'}).join('');
+document.getElementById('arapDetailClose').onclick=closeArapDetailModal;
+document.getElementById('arapDetailDone').onclick=closeArapDetailModal;
+document.getElementById('arapDetailAddBtn').onclick=function(){openArapDetailEdit(null);};
+document.getElementById('arapDetailEditClose').onclick=closeArapDetailEditModal;
+document.getElementById('arapDetailEditCancel').onclick=closeArapDetailEditModal;
+document.getElementById('arapDetailEditForm').onsubmit=async function(e){e.preventDefault();await saveArapDetailEdit();};
+}
+
+function arapDetailList(item,type){return type==='receipt'?(item.ReceiptDetails||[]):(item.PaymentDetails||[]);}
+function arapDetailDateKey(type){return type==='receipt'?'ReceiptDate':'PaymentDate';}
+
+function renderArapDetailModal(){
+var st=arapDetailState,item=st.item,type=st.type,isReceipt=type==='receipt';
+document.getElementById('arapDetailTitle').textContent=(isReceipt?'收款明细 · ':'付款明细 · ')+(item.Code||'');
+var sumHtml='<span>应收/应付：<b>'+money(isReceipt?item.ReceivableAmount:item.PayableAmount)+'</b></span>';
+sumHtml+='<span>已收/已付：<b>'+money(isReceipt?item.ReceivedAmount:item.PaidAmount)+'</b></span>';
+sumHtml+='<span>未收/未付：<b>'+money(isReceipt?item.UnreceivedAmount:item.UnpaidAmount)+'</b></span>';
+sumHtml+='<span>状态：<b>'+safe(item.Status||'-')+'</b></span>';
+document.getElementById('arapDetailSummary').innerHTML=sumHtml;
+var canEdit=st.cfg&&bizCan(st.cfg,'edit');
+document.getElementById('arapDetailAddBtn').style.display=canEdit?'':'none';
+var list=arapDetailList(item,type),dk=arapDetailDateKey(type),body=document.getElementById('arapDetailBody');
+body.innerHTML=list.length?list.map(function(d){
+var acts='';
+if(canEdit)acts+='<button type="button" class="action" onclick="openArapDetailEdit(\''+d.Id+'\')">编辑</button> ';
+if(canEdit)acts+='<button type="button" class="action del" onclick="deleteArapDetail(\''+d.Id+'\')">删除</button>';
+if(!acts)acts='-';
+return'<tr><td>'+safe((d[dk]||'').slice(0,10))+'</td><td><b>'+money(d.Amount)+'</b></td><td>'+safe(d.Account||'-')+'</td><td>'+safe(d.PaymentMethod||'-')+'</td><td>'+safe(d.Handler||'-')+'</td><td>'+safe(d.Note||'-')+'</td><td>'+acts+'</td></tr>';
+}).join(''):'<tr><td colspan="7" class="empty">暂无明细，请点击新增</td></tr>';
+}
+
+async function refreshArapDetailParent(){
+var st=arapDetailState,cfg=st.cfg;if(!cfg||!st.parentId)return;
+await bizLoad(cfg);
+st.item=(bizEnsureState(cfg.view).data||[]).find(function(x){return x.Id===st.parentId});
+if(!st.item){closeArapDetailModal();tip('记录不存在');return;}
+st.parentUpdatedAt=st.item.UpdatedAt||'';
+renderArapDetailModal();
+}
+
+window.bizOpenReceiptDetails=function(id){openArapDetailModal('receipt',id);};
+window.bizOpenPaymentDetails=function(id){openArapDetailModal('payment',id);};
+
+function openArapDetailModal(type,id){
+ensureArapDetailModals();
+var cfg=bizFindCfgByView(type==='receipt'?'receivableView':'payableView');
+if(!cfg||!bizCan(cfg,'view')){tip('无权限操作');return;}
+var item=(bizEnsureState(cfg.view).data||[]).find(function(x){return x.Id===id});
+if(!item){tip('记录不存在');return;}
+arapDetailState={type:type,parentId:id,parentUpdatedAt:item.UpdatedAt||'',editingDetailId:null,item:item,cfg:cfg};
+renderArapDetailModal();
+document.getElementById('arapDetailModal').classList.add('show');
+document.body.style.overflow='hidden';
+}
+
+function closeArapDetailModal(){
+var m=document.getElementById('arapDetailModal');if(m){m.classList.remove('show');if(!document.querySelector('.modal.show'))document.body.style.overflow='';}
+var cfg=arapDetailState.cfg;if(cfg)bizLoad(cfg);
+arapDetailState={type:'',parentId:'',parentUpdatedAt:'',editingDetailId:null,item:null,cfg:null};
+}
+
+function openArapDetailEdit(detailId){
+if(!bizCan(arapDetailState.cfg,'edit')){tip('无权限操作');return;}
+ensureArapDetailModals();
+var st=arapDetailState,isReceipt=st.type==='receipt',detail=null;
+if(detailId){detail=arapDetailList(st.item,st.type).find(function(x){return x.Id===detailId});if(!detail)return;}
+st.editingDetailId=detailId;
+document.getElementById('arapDetailEditTitle').textContent=detail?(isReceipt?'编辑收款':'编辑付款'):(isReceipt?'新增收款':'新增付款');
+document.getElementById('arapDetailDate').value=detail?(detail[arapDetailDateKey(st.type)]||'').slice(0,10):bizToday();
+document.getElementById('arapDetailAmount').value=detail?bizMoney2(detail.Amount):'';
+document.getElementById('arapDetailAccount').value=detail&&detail.Account?detail.Account:ARAP_ACCOUNTS[0];
+document.getElementById('arapDetailMethod').value=detail?(detail.PaymentMethod||''):'';
+document.getElementById('arapDetailHandler').value=detail?(detail.Handler||''):'';
+document.getElementById('arapDetailNote').value=detail?(detail.Note||''):'';
+document.getElementById('arapDetailEditModal').classList.add('show');
+}
+
+function closeArapDetailEditModal(){
+document.getElementById('arapDetailEditModal').classList.remove('show');
+arapDetailState.editingDetailId=null;
+}
+
+async function saveArapDetailEdit(){
+var st=arapDetailState,cfg=st.cfg,isReceipt=st.type==='receipt';
+var amt=numVal(document.getElementById('arapDetailAmount').value);
+if(amt<=0){tip(isReceipt?'收款金额必须大于 0':'付款金额必须大于 0');return;}
+var body={
+UpdatedAt:st.parentUpdatedAt,
+Amount:bizMoney2(amt),
+Account:document.getElementById('arapDetailAccount').value,
+PaymentMethod:document.getElementById('arapDetailMethod').value.trim(),
+Handler:document.getElementById('arapDetailHandler').value.trim(),
+Note:document.getElementById('arapDetailNote').value.trim()
+};
+if(isReceipt)body.ReceiptDate=document.getElementById('arapDetailDate').value;else body.PaymentDate=document.getElementById('arapDetailDate').value;
+var base=cfg.api+'/'+st.parentId+'/'+(isReceipt?'receipts':'payments');
+var url=st.editingDetailId?base+'/'+st.editingDetailId:base;
+try{
+await api(url,{method:st.editingDetailId?'PUT':'POST',body:JSON.stringify(body)});
+closeArapDetailEditModal();
+await refreshArapDetailParent();
+tip(st.editingDetailId?'已更新':'已新增');
+}catch(err){
+if(await handleEditConflict(err,function(){closeArapDetailEditModal();closeArapDetailModal();},function(){return refreshArapDetailParent();}))return;
+tip(err.message||'保存失败');
+}
+}
+
+window.openArapDetailEdit=openArapDetailEdit;
+
+async function deleteArapDetail(detailId){
+if(!bizCan(arapDetailState.cfg,'edit')){tip('无权限操作');return;}
+if(!deleteConfirm('确定删除这条明细吗？'))return;
+var st=arapDetailState,cfg=st.cfg,isReceipt=st.type==='receipt';
+var url=cfg.api+'/'+st.parentId+'/'+(isReceipt?'receipts':'payments')+'/'+detailId;
+try{
+await api(url,{method:'DELETE',body:JSON.stringify({UpdatedAt:st.parentUpdatedAt})});
+await refreshArapDetailParent();
+tip('已删除');
+}catch(err){
+if(await handleEditConflict(err,closeArapDetailModal,function(){return refreshArapDetailParent();}))return;
+tip(err.message||'删除失败');
+}
+}
+window.deleteArapDetail=deleteArapDetail;
+
+ensureArapDetailModals();
 })();
 </script>

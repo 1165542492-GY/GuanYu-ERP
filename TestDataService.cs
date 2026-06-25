@@ -355,6 +355,7 @@ namespace SupplierErpApp
             int r = 2;
             foreach (var x in LoadReceivables())
                 WriteRow(ws, r++, x.Code, x.SalesOrderNo, x.CustomerName, Money2(x.ReceivableAmount), Money2(x.ReceivedAmount), Money2(x.UnreceivedAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            ws.Cell(r, 1).Value = "说明：收款明细保存在 receivables.json 的 ReceiptDetails 数组；本表仅导出汇总金额，导入时按已收/未收汇总写入，不重复生成明细。";
         }
 
         static void WritePayableSheet(XLWorkbook wb)
@@ -363,6 +364,7 @@ namespace SupplierErpApp
             int r = 2;
             foreach (var x in LoadPayables())
                 WriteRow(ws, r++, x.Code, x.PurchaseNo, x.SupplierName, Money2(x.PayableAmount), Money2(x.PaidAmount), Money2(x.UnpaidAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            ws.Cell(r, 1).Value = "说明：付款明细保存在 payables.json 的 PaymentDetails 数组；本表仅导出汇总金额，导入时按已付/未付汇总写入，不重复生成明细。";
         }
 
         static void WriteFinanceSheet(XLWorkbook wb)

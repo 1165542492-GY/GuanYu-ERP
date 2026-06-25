@@ -513,6 +513,32 @@ namespace SupplierErpApp
         public string UpdatedBy { get; set; }
     }
 
+    public class ReceiptDetail
+    {
+        public string Id { get; set; }
+        public string ReceiptDate { get; set; }
+        public decimal Amount { get; set; }
+        public string Account { get; set; }
+        public string PaymentMethod { get; set; }
+        public string Handler { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+    }
+
+    public class PaymentDetail
+    {
+        public string Id { get; set; }
+        public string PaymentDate { get; set; }
+        public decimal Amount { get; set; }
+        public string Account { get; set; }
+        public string PaymentMethod { get; set; }
+        public string Handler { get; set; }
+        public string Note { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+    }
+
     public class Receivable
     {
         public string Id { get; set; }
@@ -527,6 +553,7 @@ namespace SupplierErpApp
         public string Status { get; set; }
         public string Note { get; set; }
         public string SourceType { get; set; }
+        public List<ReceiptDetail> ReceiptDetails { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -545,6 +572,7 @@ namespace SupplierErpApp
         public string Status { get; set; }
         public string Note { get; set; }
         public string SourceType { get; set; }
+        public List<PaymentDetail> PaymentDetails { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -999,10 +1027,12 @@ namespace SupplierErpApp
                 if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "receivable.add")) return; AddReceivable(ctx, user); return; }
+                if (TryHandleReceivableReceiptRoutes(ctx, user, path)) return;
                 if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "receivable.edit")) return; UpdateReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
                 if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "receivable.delete")) return; DeleteReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
                 if (path == "/api/payables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "payable.view")) return; WriteJson(ctx, LoadPayables()); return; }
                 if (path == "/api/payables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "payable.add")) return; AddPayable(ctx, user); return; }
+                if (TryHandlePayablePaymentRoutes(ctx, user, path)) return;
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "payable.edit")) return; UpdatePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
@@ -4981,11 +5011,10 @@ namespace SupplierErpApp
             item.SalesOrderNo = (item.SalesOrderNo ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.CustomerName)) BizFail("请填写客户名称");
             if (item.ReceivableAmount < 0) BizFail("应收金额不能为负数");
-            if (item.ReceivedAmount < 0) BizFail("已收金额不能为负数");
-            if (item.ReceivedAmount > item.ReceivableAmount) BizFail("已收金额不能大于应收金额", 422);
-            item.UnreceivedAmount = RoundMoney(item.ReceivableAmount - item.ReceivedAmount);
+            if (item.ReceiptDetails == null) item.ReceiptDetails = new List<ReceiptDetail>();
+            SyncReceivableAmountsFromDetails(item);
+            ValidateReceivableTotals(item);
             item.DueDate = (item.DueDate ?? "").Trim();
-            item.Status = NormalizeReceivableStatus(item.ReceivableAmount, item.ReceivedAmount);
             item.Note = (item.Note ?? "").Trim();
         }
 
@@ -5012,8 +5041,12 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("应收款不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.CustomerName = input.CustomerName; item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
-                item.ReceivableAmount = input.ReceivableAmount; item.ReceivedAmount = input.ReceivedAmount;
-                item.UnreceivedAmount = input.UnreceivedAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+                item.ReceivableAmount = input.ReceivableAmount;
+                if (item.ReceiptDetails == null || item.ReceiptDetails.Count == 0)
+                    item.ReceivedAmount = input.ReceivedAmount;
+                item.DueDate = input.DueDate; item.Note = input.Note;
+                SyncReceivableAmountsFromDetails(item);
+                ValidateReceivableTotals(item);
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Receivable>(item, true);
             });
@@ -5046,11 +5079,10 @@ namespace SupplierErpApp
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.SupplierName)) BizFail("请填写供应商名称");
             if (item.PayableAmount < 0) BizFail("应付金额不能为负数");
-            if (item.PaidAmount < 0) BizFail("已付金额不能为负数");
-            if (item.PaidAmount > item.PayableAmount) BizFail("已付金额不能大于应付金额", 422);
-            item.UnpaidAmount = RoundMoney(item.PayableAmount - item.PaidAmount);
+            if (item.PaymentDetails == null) item.PaymentDetails = new List<PaymentDetail>();
+            SyncPayableAmountsFromDetails(item);
+            ValidatePayableTotals(item);
             item.DueDate = (item.DueDate ?? "").Trim();
-            item.Status = NormalizePayableStatus(item.PayableAmount, item.PaidAmount);
             item.Note = (item.Note ?? "").Trim();
         }
 
@@ -5077,8 +5109,12 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("应付款不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 item.SupplierName = input.SupplierName; item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
-                item.PayableAmount = input.PayableAmount; item.PaidAmount = input.PaidAmount;
-                item.UnpaidAmount = input.UnpaidAmount; item.DueDate = input.DueDate; item.Status = input.Status; item.Note = input.Note;
+                item.PayableAmount = input.PayableAmount;
+                if (item.PaymentDetails == null || item.PaymentDetails.Count == 0)
+                    item.PaidAmount = input.PaidAmount;
+                item.DueDate = input.DueDate; item.Note = input.Note;
+                SyncPayableAmountsFromDetails(item);
+                ValidatePayableTotals(item);
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Payable>(item, true);
             });
