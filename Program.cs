@@ -934,6 +934,11 @@ namespace SupplierErpApp
                 if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.export")) return; ExportCustomersCsv(ctx); return; }
                 if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.export")) return; ExportMaterialsCsv(ctx); return; }
                 if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!RequireAdmin(ctx, user)) return; string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
+                if (path == "/api/backups" && ctx.Request.HttpMethod == "GET") { ListDataBackups(ctx, user); return; }
+                if (path == "/api/backups/create" && ctx.Request.HttpMethod == "POST") { CreateDataBackup(ctx, user); return; }
+                if (path == "/api/backups/restore" && ctx.Request.HttpMethod == "POST") { RestoreDataBackup(ctx, user); return; }
+                if (path == "/api/backups/open-data-dir" && ctx.Request.HttpMethod == "POST") { OpenBackupDirectory(ctx, user, true); return; }
+                if (path == "/api/backups/open-backup-dir" && ctx.Request.HttpMethod == "POST") { OpenBackupDirectory(ctx, user, false); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequireAdmin(ctx, user)) return; SaveTaxRate(ctx, user); return; }
                 if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "GET") { if (!CanReadDictionaryOptions(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } ListDictionaryOptions(ctx); return; }
