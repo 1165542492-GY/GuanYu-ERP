@@ -228,7 +228,7 @@ if(importBtn)importBtn.onclick=async function(){
 if(!isAdminUser()){tip('仅管理员可操作');return}
 if(!state.data){tip('请先选择 Excel 文件');return}
 if(!state.previewPassed||state.totalFailed>0){tip('请先完成预检查，确认无错误后再正式导入');return}
-if(!confirm('确认导入测试数据总表？重复编号将跳过或更新，建议先备份。'))return
+if(!confirm('测试数据正式导入会写入多张表。建议先在「数据备份恢复」中立即备份。确认已经备份或确认继续导入吗？'))return
 return runSubmitOnce(this,async function(){
 setTestDataBusy(true,'正在导入，请勿切换页面或关闭窗口...');
 try{

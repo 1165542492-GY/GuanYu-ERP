@@ -1,6 +1,11 @@
 <!-- Ver2.8 销售/采购/生产/库存/应收应付基础模块 -->
 <style>
 .biz-table{min-width:2400px!important}
+.arap-detail-notice{padding:0 0 12px;color:var(--muted);font-size:13px;line-height:1.6;border-bottom:1px solid var(--line);margin-bottom:12px}
+.stock-row-negative td{background:#fff5f5}
+.stock-row-negative td.stock-qty-negative{color:var(--red);font-weight:700}
+.stock-qty-warn{display:inline-block;margin-left:8px;font-size:12px;color:var(--red);font-weight:600}
+.stock-negative-hint{background:#fff8f8!important;border-color:#f0d4d4!important;color:#8a3a3a!important}
 .arap-detail-summary{display:flex;flex-wrap:wrap;gap:12px 24px;padding:0 0 14px;color:var(--muted);font-size:13px}
 .arap-detail-summary b{color:var(--text);font-size:15px}
 .arap-detail-tablewrap{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px}
@@ -27,6 +32,13 @@
 <script>
 (function(){
 var DOC_STATUS=['草稿','已确认','已取消'];
+var BIZ_CONFIRM_STATUS_VIEWS=['salesOrderView','salesOutboundView','purchaseOrderView','purchaseInboundView','productionPickView','finishedInboundView'];
+function bizNeedsConfirmStatus(cfg,body,isEdit,st){
+if(BIZ_CONFIRM_STATUS_VIEWS.indexOf(cfg.view)<0||body.Status!=='已确认')return false;
+var prev='';
+if(isEdit&&st.editing){var orig=(bizEnsureState(cfg.view).data||[]).find(function(x){return x.Id===st.editing});prev=orig?orig.Status||'':'';}
+return prev!=='已确认';
+}
 var bizModules={
 'sales-order':{view:'salesOrderView',perm:'sales_order',api:'/api/sales-orders',title:'销售订单',addLabel:'新增销售订单',codeLabel:'订单编号',prefix:'so',batch:1,fields:[
 {key:'CustomerId',label:'客户',type:'refSelect',ref:'customers',display:'Company',req:1,batchRef:1,fill:{CustomerCode:'Code',CustomerName:'Company',CustomerContact:'Contact',CustomerPhone:'Phone',CustomerAddress:'Address'}},
@@ -287,6 +299,9 @@ if(!body.CustomerId&&!body.CustomerCode&&!body.CustomerName){tip('请选择客�
 if(cfg.view==='salesOutboundView'){
 if(!bizStr(body.SalesOrderId)){tip('请选择来源销售订单');return}
 }
+if(bizNeedsConfirmStatus(cfg,body,isEdit,st)){
+if(!window.confirm('当前单据保存为「已确认」后，可能会影响库存、应收或应付数据。确定继续保存吗？'))return;
+}
 if(isEdit&&bizHasEditConflictView(cfg.view))body.UpdatedAt=st.editingUpdatedAt||'';
 try{await erpSaveSubmit(form,async function(){await api(isEdit?cfg.api+'/'+st.editing:cfg.api,{method:isEdit?'PUT':'POST',body:JSON.stringify(body)});closeBizModal(cfg);if(searchEl)searchEl.value='';await bizLoad(cfg);await bizLoadRefs();tip(isEdit?'已更新':'已新增')})}catch(err){if(bizHasEditConflictView(cfg.view)&&await handleEditConflict(err,function(){closeBizModal(cfg)},function(){return bizLoad(cfg)}))return;tip(err.message||'保存失败')}
 };
@@ -312,6 +327,7 @@ buildStockView();
 }
 function buildStockView(){
 var html='<div class="notice"><span>库存汇总 · 只读统计</span><span>仅统计已确认记录：采购入库 + 成品入库 - 销售出库 - 生产领用</span></div>';
+html+='<div class="notice stock-negative-hint"><span>负库存表示出库/领用数量超过当前入库库存，请检查相关业务单据。</span></div>';
 html+='<div class="cards"><div class="card"><span class="dot">品</span><div class="card-label">品项数</div><div class="card-value" id="stockItemCount">0</div></div>';
 html+='<div class="card"><span class="dot">量</span><div class="card-label">数量合计</div><div class="card-value" id="stockQtySum">0</div></div></div>';
 html+='<div class="panel"><div class="tools"><div class="lefttools"><input class="search" id="stockSearch" placeholder="搜索品项名称"><button class="btn" id="stockReset">重置</button></div></div>';
@@ -460,7 +476,12 @@ function stockVisibleRows(){var q=(document.getElementById('stockSearch')||{}).v
 function renderStockList(){
 var rows=stockVisibleRows(),body=document.getElementById('stockBody');
 if(!can('stock.view')){if(body)body.innerHTML='<tr><td colspan="9" class="empty">无权限查看</td></tr>';return}
-if(body)body.innerHTML=rows.length?rows.map(function(x){return'<tr><td>'+safe(x.ItemType||'-')+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+safe(x.ItemName||'-')+'</td><td>'+safe(x.Spec||'-')+'</td><td>'+safe(x.Unit||'-')+'</td><td>'+safe(x.WarehouseName||'-')+'</td><td><b>'+bizQty(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity)+'</b></td><td>'+money(x.CostPrice||0)+'</td><td>'+money(x.StockAmount||0)+'</td></tr>'}).join(''):'<tr><td colspan="9" class="empty">暂无库存数据，请先录入并确认入库/出库记录</td></tr>';
+if(body)body.innerHTML=rows.length?rows.map(function(x){
+var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
+var neg=qty<0;
+var qtyHtml='<b>'+bizQty(qty)+'</b>'+(neg?'<span class="stock-qty-warn">负库存</span>':'');
+return'<tr'+(neg?' class="stock-row-negative"':'')+'><td>'+safe(x.ItemType||'-')+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+safe(x.ItemName||'-')+'</td><td>'+safe(x.Spec||'-')+'</td><td>'+safe(x.Unit||'-')+'</td><td>'+safe(x.WarehouseName||'-')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+money(x.CostPrice||0)+'</td><td>'+money(x.StockAmount||0)+'</td></tr>';
+}).join(''):'<tr><td colspan="9" class="empty">暂无库存数据，请先录入并确认入库/出库记录</td></tr>';
 if(document.getElementById('stockCount'))document.getElementById('stockCount').textContent='共 '+rows.length+' 条记录';
 if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('warehouse-stock');else if(typeof refreshAllDualScroll==='function')setTimeout(refreshAllDualScroll,0);
 }
@@ -485,7 +506,7 @@ var root=ensureBizModalRoot();
 if(document.getElementById('arapDetailModal'))return;
 root.insertAdjacentHTML('beforeend',
 '<div class="modal biz-modal" id="arapDetailModal" aria-hidden="true"><div class="dialog" style="max-width:920px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailTitle">收款明细</div><button type="button" class="close" id="arapDetailClose" aria-label="关闭">×</button></div>'+
-'<div style="padding:0 23px 16px"><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
+'<div style="padding:0 23px 16px"><div class="arap-detail-notice">说明：收款/付款明细用于更新应收应付状态；如需记录银行或现金流水，请到「财务管理 → 财务收支」中单独登记。</div><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
 '<div class="tools" style="margin-bottom:10px"><button type="button" class="btn primary" id="arapDetailAddBtn">＋ 新增明细</button></div>'+
 '<div class="arap-detail-tablewrap"><table class="arap-detail-table"><thead><tr><th>日期</th><th>金额</th><th>账户</th><th>方式</th><th>经办人</th><th>备注</th><th>操作</th></tr></thead><tbody id="arapDetailBody"></tbody></table></div></div>'+
 '<div class="dialogfoot"><button type="button" class="btn" id="arapDetailDone">关闭</button></div></div></div>'+
