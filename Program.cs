@@ -1527,12 +1527,13 @@ namespace SupplierErpApp
         {
             var input = Json.Deserialize<BomItem>(ReadBody(ctx.Request));
             ValidateBom(input);
-            ApplyCurrentMaterialPrices(input);
             var saved = MutateJsonList<BomItem, BomItem>(BomFile, "bom", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("BOM 不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureBomReferenceLockForEdit(id, item, input);
+                if (!IsBomUsedByModelCost(id)) ApplyCurrentMaterialPrices(input);
                 input.Id = item.Id;
                 input.Code = item.Code;
                 input.CreatedAt = item.CreatedAt;
@@ -2034,6 +2035,7 @@ namespace SupplierErpApp
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该供应商公司已经存在", 409);
+                EnsureSupplierReferenceLockForEdit(item, input);
                 item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Goods = input.Goods; item.Address = input.Address; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Payable = input.Payable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Supplier>(item, true);
             });
@@ -2046,7 +2048,12 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("供应商不存在", 404);
-                if (IsSupplierUsedByMaterial(item.Company)) throw new BusinessException("该供应商已被物料使用，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。", 409);
+                if (IsSupplierReferencedByBusiness(item.Company))
+                {
+                    if (IsSupplierUsedByMaterial(item.Company))
+                        throw new BusinessException("该供应商已被物料使用，不能删除。如需删除，请先从物料管理中移除或更换相关物料的供应商。", 409);
+                    throw new BusinessException(ReferenceLockMessage, 409);
+                }
                 list.Remove(item);
                 Audit(user, "删除供应商", item.Company);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -2311,6 +2318,7 @@ namespace SupplierErpApp
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (list.Any(x => x.Id != id && string.Equals(x.Company, input.Company, StringComparison.OrdinalIgnoreCase)))
                     throw new BusinessException("该客户公司已经存在", 409);
+                EnsureCustomerReferenceLockForEdit(item, input);
                 item.Company = input.Company; item.Contact = input.Contact; item.Phone = input.Phone; item.Bank = input.Bank; item.Account = input.Account; item.BankNo = input.BankNo; item.Address = input.Address; item.Receivable = input.Receivable; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Customer>(item, true);
             });
@@ -2324,6 +2332,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("客户不存在", 404);
+                EnsureCustomerReferenceLockForDelete(item);
                 auditDetail = item.Code + " " + item.Company;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -2341,6 +2350,8 @@ namespace SupplierErpApp
             {
                 var removed = list.Where(x => ids.Contains(x.Id)).ToList();
                 if (removed.Count == 0) throw new BusinessException("未找到可删除的客户", 404);
+                var blocked = removed.Where(item => IsCustomerReferenced(item.Id, item.Code, item.Company)).ToList();
+                if (blocked.Count > 0) throw new BusinessException(ReferenceLockMessage, 409);
                 foreach (var item in removed) list.Remove(item);
                 return new JsonMutationResult<int>(removed.Count, true);
             });
@@ -2410,8 +2421,6 @@ namespace SupplierErpApp
             var item = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(item);
             var saved = MutateJsonList<Material, Material>(MaterialFile, "materials", list =>
             {
-                if (list.Any(x => string.Equals(x.Supplier, item.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, item.NameSpec, StringComparison.OrdinalIgnoreCase)))
-                    throw new BusinessException("该供应商的相同物料已经存在", 409);
                 item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL"); item.PriceType = NormalizePriceType(item.PriceType); item.Status = "启用"; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 list.Insert(0, item);
                 return new JsonMutationResult<Material>(item, true);
@@ -2427,8 +2436,7 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("物料不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                if (list.Any(x => x.Id != id && string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)))
-                    throw new BusinessException("该供应商的相同物料已经存在", 409);
+                EnsureMaterialReferenceLockForEdit(item, input);
                 item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Material>(item, true);
             });
@@ -2442,7 +2450,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("物料不存在", 404);
-                if (IsMaterialUsedByBom(item.Id, item.Code)) throw new BusinessException(FormatMaterialDeleteBlockedMessage(GetBomsUsingMaterial(item.Id, item.Code)), 409);
+                EnsureMaterialReferenceLockForDelete(item);
                 auditDetail = item.Code + " " + item.NameSpec;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -2460,7 +2468,7 @@ namespace SupplierErpApp
             {
                 var removed = list.Where(x => ids.Contains(x.Id)).ToList();
                 if (removed.Count == 0) throw new BusinessException("未找到可删除的物料", 404);
-                var blocked = removed.Where(item => IsMaterialUsedByBom(item.Id, item.Code)).ToList();
+                var blocked = removed.Where(item => IsMaterialReferenced(item.Id, item.Code)).ToList();
                 if (blocked.Count > 0)
                 {
                     var parts = new List<string>();
@@ -2470,7 +2478,9 @@ namespace SupplierErpApp
                         var bomRefs = string.Join("、", boms.Take(3).Select(b => (b.Code ?? "") + " " + b.ModelName).Select(x => x.Trim()).Where(x => x.Length > 0));
                         parts.Add((item.Code ?? "") + " " + item.NameSpec + (bomRefs.Length > 0 ? "（BOM：" + bomRefs + "）" : ""));
                     }
-                    string msg = "以下物料已被 BOM 使用，不能删除。请先删除相关 BOM 后再删除物料。 " + string.Join("；", parts);
+                    string msg = blocked.Any(item => IsMaterialUsedByBom(item.Id, item.Code))
+                        ? "以下物料已被业务引用，不能删除。 " + string.Join("；", parts)
+                        : ReferenceLockMessage + " " + string.Join("；", parts);
                     if (blocked.Count > 10) msg += " 等共" + blocked.Count + "条";
                     throw new BusinessException(msg, 409);
                 }
@@ -2510,9 +2520,9 @@ namespace SupplierErpApp
                             skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
                         }
                         string key = input.Supplier + "\t" + input.NameSpec;
-                        if (list.Any(x => string.Equals(x.Supplier, input.Supplier, StringComparison.OrdinalIgnoreCase) && string.Equals(x.NameSpec, input.NameSpec, StringComparison.OrdinalIgnoreCase)) || batchKeys.Contains(key))
+                        if (batchKeys.Contains(key))
                         {
-                            skipped++; errors.Add("第" + rowNo + "行：物料已存在"); continue;
+                            skipped++; errors.Add("第" + rowNo + "行：本批次中重复物料"); continue;
                         }
                         var item = new Material
                         {
@@ -4148,13 +4158,11 @@ namespace SupplierErpApp
             var materials = LoadMaterials();
             if (!string.IsNullOrWhiteSpace(materialId))
             {
-                var byId = materials.FirstOrDefault(x => x.Id == materialId);
-                if (byId != null) return byId;
+                return materials.FirstOrDefault(x => x.Id == materialId);
             }
             if (!string.IsNullOrWhiteSpace(materialName))
             {
                 return materials.FirstOrDefault(x =>
-                    string.Equals(x.NameSpec, materialName, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(x.Code, materialName, StringComparison.OrdinalIgnoreCase));
             }
             return null;
@@ -4432,6 +4440,9 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "销售出库");
+                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                    BizFail(ReferenceLockMessage, 409);
                 item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
                 item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
@@ -4449,6 +4460,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
+                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "销售出库");
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -4548,6 +4560,9 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "采购入库");
+                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                    BizFail(ReferenceLockMessage, 409);
                 item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
                 item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
@@ -4565,6 +4580,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
+                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "采购入库");
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -4866,6 +4882,9 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "生产领用");
+                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                    BizFail(ReferenceLockMessage, 409);
                 item.BomId = input.BomId; item.BomName = input.BomName;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
                 item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
@@ -4883,6 +4902,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
+                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "生产领用");
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -4932,6 +4952,9 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "成品入库");
+                if (IsConfirmedStatus(item.Status) && item.Quantity != input.Quantity)
+                    BizFail(ReferenceLockMessage, 409);
                 item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
                 item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
                 item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
@@ -4948,6 +4971,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
+                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "成品入库");
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);

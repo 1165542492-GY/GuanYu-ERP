@@ -36,7 +36,9 @@ namespace SupplierErpApp
             {
                 string mid, mcode, mname, mspec, munit;
                 ResolveMaterialFields(materialId, materialName, out mid, out mcode, out mname, out mspec, out munit);
-                string display = !string.IsNullOrWhiteSpace(mname) ? mname : (materialName ?? "未知物料");
+                string display = !string.IsNullOrWhiteSpace(mcode) ? mcode + " " + mname : (!string.IsNullOrWhiteSpace(mname) ? mname : (materialName ?? "未知物料"));
+                if (available <= 0.0001m)
+                    BizFail(string.Format("该物料「{0}」当前库存为 0，不能出库/领用", display), 409);
                 BizFail(string.Format("物料「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty)), 409);
             }
         }
@@ -180,9 +182,11 @@ namespace SupplierErpApp
             {
                 var orders = ReadJsonListCore<SalesOrder>(SalesOrdersFile);
                 var receivables = ReadJsonListCore<Receivable>(ReceivablesFile);
+                var outbounds = ReadJsonListCore<SalesOutbound>(SalesOutboundsFile);
                 var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售订单不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsureSalesOrderReferenceLockForEdit(item, input, outbounds, receivables);
                 item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
                 item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
@@ -250,9 +254,11 @@ namespace SupplierErpApp
             {
                 var orders = ReadJsonListCore<PurchaseOrder>(PurchaseOrdersFile);
                 var payables = ReadJsonListCore<Payable>(PayablesFile);
+                var inbounds = ReadJsonListCore<PurchaseInbound>(PurchaseInboundsFile);
                 var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购单不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                EnsurePurchaseOrderReferenceLockForEdit(item, input, inbounds, payables);
                 item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.UnitPrice = input.UnitPrice; item.Amount = input.Amount; item.OrderDate = input.OrderDate;

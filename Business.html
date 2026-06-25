@@ -1,7 +1,8 @@
 <!-- Ver2.8 销售/采购/生产/库存/应收应付基础模块 -->
 <style>
 .biz-table{min-width:2400px!important}
-.arap-detail-notice{margin:0 23px 14px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #ea580c;color:#9a3412;font-size:14px;line-height:1.65;border-radius:0 8px 8px 0}
+.arap-detail-notice,.arap-main-notice{margin:0 0 14px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #ea580c;color:#9a3412;font-size:14px;line-height:1.65;border-radius:0 8px 8px 0}
+.arap-main-notice{margin-bottom:16px}
 .stock-row-negative td{background:#fff5f5}
 .stock-row-negative td.stock-qty-negative{color:var(--red);font-weight:700}
 .stock-qty-warn{display:inline-block;margin-left:8px;font-size:12px;color:var(--red);font-weight:600}
@@ -163,7 +164,7 @@ return safe(v);
 function bizQty(v){return String(bizMoney2(v))}
 function bizRefLabel(refKey,item,display){
 if(!item)return'';
-if(refKey==='materials')return safe((item.Code||'')+' '+ (item.NameSpec||''));
+if(refKey==='materials'){var mp=typeof materialDisplayUnitPrice==='function'?materialDisplayUnitPrice(item):'';return safe((item.Code||'')+' '+ (item.NameSpec||'')+(mp?(' · '+money(mp)):''));}
 if(refKey==='customers')return safe((item.Code||'')+' '+ (item.Company||''));
 if(refKey==='salesOrders')return safe((item.Code||'')+' / '+(item.CustomerCode||'')+' / '+(item.CustomerName||''));
 if(refKey==='boms')return safe((item.Code||'')+' '+ (item.ModelName||item.ProductName||''));
@@ -274,6 +275,7 @@ function buildBizView(page,cfg){
 var v=cfg.view,p=cfg.prefix;
 var tblCls=BIZ_SCROLL_PAGES.indexOf(page)>=0?'data-table biz-table':'data-table';
 var html='<div class="notice"><span>'+safe(cfg.title)+' · 编号自动生成</span><span>金额保留 2 位小数 · 局域网共享</span></div>';
+if(cfg.view==='receivableView'||cfg.view==='payableView')html+='<div class="arap-main-notice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>';
 html+='<div class="cards"><div class="card"><span class="dot">总</span><div class="card-label">记录总数</div><div class="card-value" id="'+p+'Total">0</div></div>';
 html+='<div class="card"><span class="dot">确</span><div class="card-label">已确认</div><div class="card-value" id="'+p+'Confirmed">0</div></div>';
 html+='<div class="card"><span class="dot">草</span><div class="card-label">草稿</div><div class="card-value" id="'+p+'Draft">0</div></div>';
@@ -526,6 +528,7 @@ root.insertAdjacentHTML('beforeend',
 '<div class="arap-detail-tablewrap"><table class="arap-detail-table"><thead><tr><th>日期</th><th>金额</th><th>账户</th><th>方式</th><th>经办人</th><th>备注</th><th>操作</th></tr></thead><tbody id="arapDetailBody"></tbody></table></div></div>'+
 '<div class="dialogfoot"><button type="button" class="btn" id="arapDetailDone">关闭</button></div></div></div>'+
 '<div class="modal biz-modal" id="arapDetailEditModal" aria-hidden="true"><div class="dialog" style="max-width:640px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailEditTitle">新增收款</div><button type="button" class="close" id="arapDetailEditClose" aria-label="关闭">×</button></div>'+
+'<div class="arap-detail-notice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>'+
 '<form id="arapDetailEditForm"><div class="form arap-detail-form"><div class="grid">'+
 '<div class="field"><label class="req">日期</label><input id="arapDetailDate" type="date"></div>'+
 '<div class="field"><label class="req">金额</label><input id="arapDetailAmount" type="number" step="0.01" min="0.01"></div>'+
