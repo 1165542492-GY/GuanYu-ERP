@@ -39,6 +39,15 @@ var prev='';
 if(isEdit&&st.editing){var orig=(bizEnsureState(cfg.view).data||[]).find(function(x){return x.Id===st.editing});prev=orig?orig.Status||'':'';}
 return prev!=='已确认';
 }
+var BIZ_DELETE_LINK_VIEWS=['salesOrderView','salesOutboundView','purchaseOrderView','purchaseInboundView','productionPickView','finishedInboundView'];
+function bizBuildDeleteConfirm(cfg,item){
+var lines=[];
+if(BIZ_DELETE_LINK_VIEWS.indexOf(cfg.view)>=0&&item&&item.Status==='已确认')lines.push('删除已确认单据可能影响库存、应收或应付数据。确定继续删除吗？');
+if(cfg.view==='receivableView'&&item&&((item.ReceiptDetails&&item.ReceiptDetails.length)||numVal(item.ReceivedAmount)>0))lines.push('删除有关联明细的单据可能导致数据不一致，请确认已核对相关业务。');
+if(cfg.view==='payableView'&&item&&((item.PaymentDetails&&item.PaymentDetails.length)||numVal(item.PaidAmount)>0))lines.push('删除有关联明细的单据可能导致数据不一致，请确认已核对相关业务。');
+lines.push('确定删除“'+(item&&item.Code||'')+'”吗？\n删除前系统会自动备份。');
+return lines.join('\n\n');
+}
 var bizModules={
 'sales-order':{view:'salesOrderView',perm:'sales_order',api:'/api/sales-orders',title:'销售订单',addLabel:'新增销售订单',codeLabel:'订单编号',prefix:'so',batch:1,fields:[
 {key:'CustomerId',label:'客户',type:'refSelect',ref:'customers',display:'Company',req:1,batchRef:1,fill:{CustomerCode:'Code',CustomerName:'Company',CustomerContact:'Contact',CustomerPhone:'Phone',CustomerAddress:'Address'}},
@@ -449,7 +458,7 @@ try{var st=bizEnsureState(cfg.view);st.data=await api(cfg.api)||[];st.editing=nu
 function bizFindCfgByView(view){for(var k in bizModules){if(bizModules[k].view===view)return bizModules[k]}return null}
 window.bizLoadPage=function(page){if(page==='production-purchase-inbound')page='purchase-inbound';var cfg=bizModules[page];if(cfg)bizLoad(cfg);if(page==='warehouse-stock')loadStockPage();};
 window.bizEdit=function(view,id){var cfg=bizFindCfgByView(view);if(!cfg)return;var item=(bizEnsureState(view).data||[]).find(function(x){return x.Id===id});if(item)openBizModal(cfg,item);};
-window.bizDelete=async function(view,id){return runActionOnce('biz-del-'+view+'-'+id,async function(){var cfg=bizFindCfgByView(view);if(!cfg||!bizCan(cfg,'delete')){tip('无权限操作');return}var x=(bizEnsureState(view).data||[]).find(function(v){return v.Id===id});if(!deleteConfirm('确定删除“'+(x.Code||'')+'”吗？\n删除前系统会自动备份。'))return;await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')},'删除中...')};
+window.bizDelete=async function(view,id){return runActionOnce('biz-del-'+view+'-'+id,async function(){var cfg=bizFindCfgByView(view);if(!cfg||!bizCan(cfg,'delete')){tip('无权限操作');return}var x=(bizEnsureState(view).data||[]).find(function(v){return v.Id===id});if(!deleteConfirm(bizBuildDeleteConfirm(cfg,x)))return;try{await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')}catch(err){tip(err.message||'删除失败')}},'删除中...')};
 function openBizModal(cfg,item){
 if(item&&!bizCan(cfg,'edit')){tip('无权限操作');return}
 if(!item&&!bizCan(cfg,'add')){tip('无权限操作');return}

@@ -235,7 +235,7 @@ namespace SupplierErpApp
                 WriteJson(ctx, new
                 {
                     ok = true,
-                    message = "恢复完成，请重启 ERP 后重新登录检查数据。",
+                    message = "备份恢复成功。请关闭并重新启动冠誉制造ERP.exe，然后在浏览器按 Ctrl+F5 强制刷新。",
                     backupName = backupName,
                     beforeRestoreFolder = Path.GetFileName(beforeRestoreFolder),
                     beforeRestorePath = beforeRestoreFolder

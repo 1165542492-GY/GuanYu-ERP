@@ -205,8 +205,17 @@ namespace SupplierErpApp
             {
                 var orders = ReadJsonListCore<SalesOrder>(SalesOrdersFile);
                 var receivables = ReadJsonListCore<Receivable>(ReceivablesFile);
+                var outbounds = ReadJsonListCore<SalesOutbound>(SalesOutboundsFile);
                 var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售订单不存在", 404);
+                var linkedOut = outbounds.Where(x => x.SalesOrderId == id).ToList();
+                if (linkedOut.Count > 0)
+                {
+                    var refs = string.Join("、", linkedOut.Take(3).Select(x => x.Code ?? "").Where(x => x.Length > 0));
+                    var msg = "该销售订单已被销售出库引用，请先删除相关出库单后再删除订单。";
+                    if (refs.Length > 0) msg += " 引用出库：" + refs + (linkedOut.Count > 3 ? " 等" : "");
+                    BizFail(msg, 409);
+                }
                 RemoveAutoReceivableForSalesOrder(id, receivables);
                 orders.Remove(item);
                 WriteJsonListCore(SalesOrdersFile, "sales_orders", orders);
@@ -262,8 +271,17 @@ namespace SupplierErpApp
             {
                 var orders = ReadJsonListCore<PurchaseOrder>(PurchaseOrdersFile);
                 var payables = ReadJsonListCore<Payable>(PayablesFile);
+                var inbounds = ReadJsonListCore<PurchaseInbound>(PurchaseInboundsFile);
                 var item = orders.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购单不存在", 404);
+                var linkedIn = inbounds.Where(x => x.PurchaseOrderId == id).ToList();
+                if (linkedIn.Count > 0)
+                {
+                    var refs = string.Join("、", linkedIn.Take(3).Select(x => x.Code ?? "").Where(x => x.Length > 0));
+                    var msg = "该采购单已被采购入库引用，请先删除相关入库单后再删除采购单。";
+                    if (refs.Length > 0) msg += " 引用入库：" + refs + (linkedIn.Count > 3 ? " 等" : "");
+                    BizFail(msg, 409);
+                }
                 RemoveAutoPayableForPurchaseOrder(id, payables);
                 orders.Remove(item);
                 WriteJsonListCore(PurchaseOrdersFile, "purchase_orders", orders);

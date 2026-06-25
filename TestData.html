@@ -11,7 +11,7 @@
 .test-data-summary span{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px}
 .test-data-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef3ff;color:#2569ed}
 .test-data-tag.ref{background:#f3f4f6;color:#738197}
-.test-data-tag.skip{background:#fff7ed;color:#c2410c}
+.test-data-copy-tools{display:flex;gap:8px;margin:8px 0 12px;flex-wrap:wrap}
 </style>
 <div id="systemSettingTestDataPanel" style="display:none">
 <div class="panel">
@@ -30,12 +30,14 @@
 <div id="testDataImportHint" class="test-data-hint">请先完成预检查，确认无错误后再正式导入</div>
 <div class="test-data-section" id="testDataPreviewSection" style="display:none">
 <h4>Sheet 识别与预检查结果</h4>
+<div class="test-data-copy-tools" id="testDataPreviewCopyWrap" style="display:none"><button type="button" class="btn" id="testDataCopyPreviewBtn">复制预检查结果</button></div>
 <div class="tablewrap"><table><thead><tr><th>Sheet 名称</th><th>对应模块</th><th>数据条数</th><th>预检查统计</th><th>导入说明</th></tr></thead><tbody id="testDataSheetBody"></tbody></table></div>
 <div id="testDataUnknownWrap" style="display:none;margin-top:10px" class="mini"></div>
 <div class="test-data-section"><h4>预检查错误</h4><div id="testDataPreviewErrors" class="test-data-errors">无</div></div>
 </div>
 <div class="test-data-section" id="testDataResultSection" style="display:none">
 <h4>导入结果</h4>
+<div class="test-data-copy-tools" id="testDataResultCopyWrap" style="display:none"><button type="button" class="btn" id="testDataCopyRunBtn">复制导入结果</button></div>
 <div class="test-data-summary" id="testDataResultSummary"></div>
 <div class="tablewrap"><table><thead><tr><th>模块</th><th>新增</th><th>更新</th><th>跳过</th><th>失败</th><th>失败原因</th></tr></thead><tbody id="testDataResultBody"></tbody></table></div>
 </div>
@@ -48,7 +50,7 @@ var panel=document.getElementById('systemSettingTestDataPanel');
 var detail=document.getElementById('systemSettingsDetail');
 var placeholder=document.getElementById('systemSettingPlaceholderPanel');
 if(panel&&detail){if(placeholder&&placeholder.parentNode)placeholder.parentNode.insertBefore(panel,placeholder);else detail.appendChild(panel);}
-var state={fileName:'',data:'',fileHash:'',previewPassed:false,totalFailed:0};
+var state={fileName:'',data:'',fileHash:'',previewPassed:false,totalFailed:0,lastPreview:null,lastRun:null};
 var importTaskActive=false,_execMode=null;
 function isTestDataImportTaskActive(){return importTaskActive}
 function activateImportTask(){
@@ -113,15 +115,16 @@ var hint=document.getElementById('testDataImportHint');
 if(busy&&msg&&hint){hint.className='test-data-hint';hint.textContent=msg;}
 }
 function clearPreviewResult(){
-state.previewPassed=false;state.fileHash='';state.totalFailed=0;
+state.previewPassed=false;state.fileHash='';state.totalFailed=0;state.lastPreview=null;
 var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='none';
+var copyWrap=document.getElementById('testDataPreviewCopyWrap');if(copyWrap)copyWrap.style.display='none';
 var body=document.getElementById('testDataSheetBody');if(body)body.innerHTML='';
 var unk=document.getElementById('testDataUnknownWrap');if(unk){unk.style.display='none';unk.innerHTML='';}
 var errBox=document.getElementById('testDataPreviewErrors');if(errBox)errBox.textContent='无';
 setImportHint('pending');refreshTestDataButtons();
 }
 function resetTestDataView(){
-state.fileName='';state.data='';state.fileHash='';state.previewPassed=false;state.totalFailed=0;
+state.fileName='';state.data='';state.fileHash='';state.previewPassed=false;state.totalFailed=0;state.lastPreview=null;state.lastRun=null;
 _execMode=null;
 finishImportTask();
 var fn=document.getElementById('testDataFileName');if(fn)fn.textContent='未选择';
@@ -129,12 +132,52 @@ var body=document.getElementById('testDataSheetBody');if(body)body.innerHTML='';
 var unk=document.getElementById('testDataUnknownWrap');if(unk){unk.style.display='none';unk.innerHTML='';}
 var errBox=document.getElementById('testDataPreviewErrors');if(errBox)errBox.textContent='无';
 ['testDataPreviewSection','testDataResultSection'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});
+['testDataPreviewCopyWrap','testDataResultCopyWrap'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});
 var previewBtn=document.getElementById('testDataPreviewBtn');if(previewBtn)previewBtn.disabled=true;
 setImportHint('pending');refreshTestDataButtons();updateFlowUi();
 }
 window.resetTestDataPanel=resetTestDataView;
+function buildPreviewCopyText(res){
+var lines=['【测试数据预检查结果】','文件名：'+(state.fileName||res.FileName||'-'),'SHA256：'+(state.fileHash||res.FileHash||'-'),'CanImport：'+(res.CanImport?'是':'否'),'总失败数：'+(typeof res.TotalFailed==='number'?res.TotalFailed:state.totalFailed)];
+var added=0,updated=0,skipped=0,failed=0;
+(res.Sheets||[]).forEach(function(s){
+if(s.ReferenceOnly)return;
+added+=s.Added||0;updated+=s.Updated||0;skipped+=s.Skipped||0;failed+=s.Failed||0;
+lines.push('');
+lines.push('Sheet：'+(s.SheetName||'-')+' / '+(s.ModuleLabel||'-'));
+lines.push('数据条数：'+(s.RowCount||0));
+lines.push('统计：新增 '+(s.Added||0)+' · 更新 '+(s.Updated||0)+' · 跳过 '+(s.Skipped||0)+' · 失败 '+(s.Failed||0));
+if(s.Errors&&s.Errors.length)s.Errors.forEach(function(e){lines.push('失败：'+e);});
+});
+lines.splice(4,0,'总体统计：新增 '+added+' · 更新 '+updated+' · 跳过 '+skipped+' · 失败 '+failed);
+if(res.UnknownSheets&&res.UnknownSheets.length)lines.push('\n未识别 Sheet：'+res.UnknownSheets.join('、'));
+return lines.join('\n');
+}
+function buildRunCopyText(res){
+var lines=['【测试数据导入结果】','文件名：'+(state.fileName||res.FileName||'-'),'SHA256：'+(state.fileHash||'-'),'总体统计：新增 '+(res.TotalAdded||0)+' · 更新 '+(res.TotalUpdated||0)+' · 跳过 '+(res.TotalSkipped||0)+' · 失败 '+(res.TotalFailed||0)];
+(res.Modules||[]).forEach(function(m){
+lines.push('');
+lines.push('模块：'+(m.ModuleLabel||m.ModuleKey||'-'));
+lines.push('统计：新增 '+(m.Added||0)+' · 更新 '+(m.Updated||0)+' · 跳过 '+(m.Skipped||0)+' · 失败 '+(m.Failed||0));
+if(m.Errors&&m.Errors.length)m.Errors.forEach(function(e){lines.push('失败：'+e);});
+});
+return lines.join('\n');
+}
+async function copyTestDataText(text){
+if(!text){tip('暂无可复制内容');return}
+try{
+if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);tip('已复制结果');return}
+}catch(e){}
+var ta=document.createElement('textarea');
+ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);
+ta.select();
+try{document.execCommand('copy');tip('已复制结果')}catch(e2){tip('复制失败，请手动选择页面内容复制')}
+document.body.removeChild(ta);
+}
 function renderPreview(res){
+state.lastPreview=res;
 var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='block';
+var copyWrap=document.getElementById('testDataPreviewCopyWrap');if(copyWrap)copyWrap.style.display='block';
 var body=document.getElementById('testDataSheetBody');
 if(body){
 var rows=(res.Sheets||[]).map(function(s){
@@ -163,7 +206,9 @@ setImportHint(state.previewPassed?'ok':'error');
 refreshTestDataButtons();
 }
 function renderRun(res){
+state.lastRun=res;
 var sec=document.getElementById('testDataResultSection');if(sec)sec.style.display='block';
+var copyWrap=document.getElementById('testDataResultCopyWrap');if(copyWrap)copyWrap.style.display='block';
 var sum=document.getElementById('testDataResultSummary');
 if(sum)sum.innerHTML='<span>新增 <b>'+(res.TotalAdded||0)+'</b></span><span>更新 <b>'+(res.TotalUpdated||0)+'</b></span><span>跳过 <b>'+(res.TotalSkipped||0)+'</b></span><span>失败 <b>'+(res.TotalFailed||0)+'</b></span>';
 var body=document.getElementById('testDataResultBody');
@@ -244,6 +289,10 @@ setTestDataBusy(false);
 };
 var cancelBtn=document.getElementById('testDataCancelBtn');
 if(cancelBtn)cancelBtn.onclick=function(){cancelTestDataImportFlow({fromBack:false})};
+var copyPreviewBtn=document.getElementById('testDataCopyPreviewBtn');
+if(copyPreviewBtn)copyPreviewBtn.onclick=function(){copyTestDataText(state.lastPreview?buildPreviewCopyText(state.lastPreview):'')};
+var copyRunBtn=document.getElementById('testDataCopyRunBtn');
+if(copyRunBtn)copyRunBtn.onclick=function(){copyTestDataText(state.lastRun?buildRunCopyText(state.lastRun):'')};
 setImportHint('pending');
 updateFlowUi();
 })();

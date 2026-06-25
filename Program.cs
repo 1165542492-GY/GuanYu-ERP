@@ -4910,6 +4910,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("应收款不存在", 404);
+                if (item.ReceiptDetails != null && item.ReceiptDetails.Count > 0)
+                    BizFail("该应收款已有收款明细，请先删除收款明细后再删除应收款。", 409);
+                if (item.ReceivedAmount > 0)
+                    BizFail("该应收款已有收款记录，请先删除收款明细后再删除应收款。", 409);
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
@@ -4978,6 +4982,10 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("应付款不存在", 404);
+                if (item.PaymentDetails != null && item.PaymentDetails.Count > 0)
+                    BizFail("该应付款已有付款明细，请先删除付款明细后再删除应付款。", 409);
+                if (item.PaidAmount > 0)
+                    BizFail("该应付款已有付款记录，请先删除付款明细后再删除应付款。", 409);
                 auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
