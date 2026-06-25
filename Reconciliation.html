@@ -1,0 +1,33 @@
+<section class="content" id="customerReconciliationView" style="display:none">
+  <div class="notice"><span>客户对账单 · 每月发给客户核对应收款</span><span>导出 Excel 可直接打印或发送</span></div>
+  <div class="panel">
+    <div class="tools">
+      <div class="lefttools">
+        <label class="mini">客户 <select id="crCustomer" class="search" style="width:240px;max-width:100%"><option value="">请选择客户</option></select></label>
+        <label class="mini">月份 <input type="month" id="crMonth" class="search" style="width:150px"></label>
+      </div>
+      <div><button type="button" class="btn primary" id="crExportBtn">导出 Excel</button></div>
+    </div>
+    <div class="form" style="padding:24px 28px">
+      <div class="formtitle">客户对账单</div>
+      <p class="mini" style="margin:0 0 16px;line-height:1.7">选择客户与对账月份后导出 Excel。统计口径：期初应收 + 本期新增应收 - 本期收款 = 期末未收。</p>
+      <div class="cards" style="margin:0">
+        <div class="card"><span class="dot">初</span><div class="card-label">期初应收</div><div class="card-value" id="crOpening">—</div></div>
+        <div class="card"><span class="dot">增</span><div class="card-label">本期新增应收</div><div class="card-value" id="crNew">—</div></div>
+        <div class="card"><span class="dot">收</span><div class="card-label">本期收款</div><div class="card-value" id="crReceipt">—</div></div>
+        <div class="card"><span class="dot">末</span><div class="card-label">期末未收</div><div class="card-value" id="crClosing">—</div></div>
+      </div>
+      <p class="mini" id="crHint" style="margin:16px 0 0;line-height:1.7;color:var(--muted)">请选择客户和月份后点击「导出 Excel」。</p>
+    </div>
+  </div>
+</section>
+<script>
+(function(){
+function crInitMonth(){var el=document.getElementById('crMonth');if(!el)return;var d=new Date(),m=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');el.value=m;}
+function crSelectedCustomerName(){var sel=document.getElementById('crCustomer');if(!sel||!sel.value)return '';var opt=sel.options[sel.selectedIndex];return opt?opt.text:'';}
+async function loadCustomerReconciliationPage(){if(!can('reconciliation.customer_view')){tip('无权限访问');return}crInitMonth();try{var list=await api('/api/reconciliation/customers')||[];var sel=document.getElementById('crCustomer');if(!sel)return;var cur=sel.value;sel.innerHTML='<option value="">请选择客户</option>'+list.map(function(x){return'<option value="'+safe(x.Id)+'">'+safe(x.Company||x.Code||'-')+'</option>'}).join('');if(cur)sel.value=cur}catch(e){tip(e.message||'加载客户列表失败')}}
+async function exportCustomerReconciliation(){if(!can('reconciliation.customer_export')){tip('无权限操作');return}var cid=document.getElementById('crCustomer')?document.getElementById('crCustomer').value:'';var month=document.getElementById('crMonth')?document.getElementById('crMonth').value:'';if(!cid){tip('请选择客户');return}if(!month){tip('请选择月份');return}var name=crSelectedCustomerName()||'客户';var ym=month.replace('-','');var fallback='客户对账单_'+name+'_'+ym+'.xlsx';await downloadBinaryExport('/api/reconciliation/customer/export?customerId='+encodeURIComponent(cid)+'&month='+encodeURIComponent(month),fallback)}
+window.loadCustomerReconciliationPage=loadCustomerReconciliationPage;
+document.addEventListener('DOMContentLoaded',function(){crInitMonth();var btn=document.getElementById('crExportBtn');if(btn)btn.onclick=exportCustomerReconciliation;});
+})();
+</script>

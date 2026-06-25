@@ -1012,6 +1012,8 @@ namespace SupplierErpApp
                 if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
                 if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
+                if (path == "/api/reconciliation/customers" && ctx.Request.HttpMethod == "GET") { ListReconciliationCustomers(ctx, user); return; }
+                if (path == "/api/reconciliation/customer/export" && ctx.Request.HttpMethod == "GET") { ExportCustomerReconciliation(ctx, user); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "receivable.add")) return; AddReceivable(ctx, user); return; }
                 if (TryHandleReceivableReceiptRoutes(ctx, user, path)) return;
                 if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "receivable.edit")) return; UpdateReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
@@ -1083,6 +1085,10 @@ namespace SupplierErpApp
                 using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.TestData.html"))
+            {
+                if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
+            }
+            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Reconciliation.html"))
             {
                 if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }

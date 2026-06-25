@@ -18,6 +18,7 @@
     <EmbeddedResource Include="Contract.html" LogicalName="SupplierErpApp.Contract.html" />
     <EmbeddedResource Include="Business.html" LogicalName="SupplierErpApp.Business.html" />
     <EmbeddedResource Include="TestData.html" LogicalName="SupplierErpApp.TestData.html" />
+    <EmbeddedResource Include="Reconciliation.html" LogicalName="SupplierErpApp.Reconciliation.html" />
   </ItemGroup>
 
   <ItemGroup>
