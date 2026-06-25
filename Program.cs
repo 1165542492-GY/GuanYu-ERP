@@ -616,26 +616,6 @@ namespace SupplierErpApp
         static readonly JsonCodec Json = new JsonCodec();
         static readonly Dictionary<string, UserSession> Sessions = new Dictionary<string, UserSession>();
         static List<UserDef> Users = new List<UserDef>();
-        static readonly string[] AllPermissionKeys = {
-            "supplier.view","supplier.add","supplier.edit","supplier.delete","supplier.batch_delete",
-            "customer.view","customer.add","customer.edit","customer.delete","customer.batch_delete",
-            "material.view","material.add","material.edit","material.delete","material.batch_delete",
-            "finance.view","finance.add","finance.edit","finance.delete","finance.import",
-            "bom.view","bom.add","bom.edit","bom.delete","bom.export","bom.import",
-            "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
-            "contract.view","contract.add","contract.edit","contract.delete","contract.preview","contract.print",
-            "contract_setting.view","contract_setting.add","contract_setting.edit","contract_setting.delete",
-            "settings.view","settings.account","settings.password","settings.tax_rate",
-            "sales_order.view","sales_order.add","sales_order.edit","sales_order.delete",
-            "sales_outbound.view","sales_outbound.add","sales_outbound.edit","sales_outbound.delete",
-            "purchase_order.view","purchase_order.add","purchase_order.edit","purchase_order.delete",
-            "purchase_inbound.view","purchase_inbound.add","purchase_inbound.edit","purchase_inbound.delete",
-            "production_pick.view","production_pick.add","production_pick.edit","production_pick.delete",
-            "finished_inbound.view","finished_inbound.add","finished_inbound.edit","finished_inbound.delete",
-            "stock.view",
-            "receivable.view","receivable.add","receivable.edit","receivable.delete",
-            "payable.view","payable.add","payable.edit","payable.delete"
-        };
         const string AdminUsername = "admin";
         const string DefaultClearDataPassword = "88888888";
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
@@ -915,51 +895,51 @@ namespace SupplierErpApp
                 if (path == "/api/me") { WriteJson(ctx, user); return; }
                 if (path == "/api/permissions" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, GetPermissionDefinitions()); return; }
                 if (path == "/api/me/password" && ctx.Request.HttpMethod == "PUT") { ChangePassword(ctx, user); return; }
-                if (path == "/api/users" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "settings.account")) return; ListUsers(ctx); return; }
-                if (path == "/api/users" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "settings.account")) return; CreateUser(ctx, user); return; }
-                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.account")) return; UpdateUser(ctx, user, path.Substring("/api/users/".Length)); return; }
-                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "settings.account")) return; DeleteUser(ctx, user, path.Substring("/api/users/".Length)); return; }
+                if (path == "/api/users" && ctx.Request.HttpMethod == "GET") { if (!RequireAdmin(ctx, user)) return; ListUsers(ctx); return; }
+                if (path == "/api/users" && ctx.Request.HttpMethod == "POST") { if (!RequireAdmin(ctx, user)) return; CreateUser(ctx, user); return; }
+                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "PUT") { if (!RequireAdmin(ctx, user)) return; UpdateUser(ctx, user, path.Substring("/api/users/".Length)); return; }
+                if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "DELETE") { if (!RequireAdmin(ctx, user)) return; DeleteUser(ctx, user, path.Substring("/api/users/".Length)); return; }
                 if (path == "/api/info") { WriteJson(ctx, new { ip = GetLanIp(), port = Port, dataDir = DataDir }); return; }
                 if (path == "/api/dashboard/business" && ctx.Request.HttpMethod == "GET") { GetBusinessDashboard(ctx, user); return; }
                 if (path == "/api/suppliers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "supplier.view")) return; WriteJson(ctx, LoadSuppliers()); return; }
                 if (path == "/api/suppliers" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; AddSupplier(ctx, user); return; }
                 if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "supplier.edit")) return; UpdateSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
                 if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "supplier.delete")) return; DeleteSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
-                if (path == "/api/suppliers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; ImportSuppliers(ctx, user); return; }
+                if (path == "/api/suppliers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.import")) return; ImportSuppliers(ctx, user); return; }
                 if (path == "/api/suppliers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.batch_delete")) return; BatchDeleteSuppliers(ctx, user); return; }
                 if (path == "/api/suppliers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; BatchAddSuppliers(ctx, user); return; }
                 if (path == "/api/customers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "customer.view")) return; WriteJson(ctx, LoadCustomers()); return; }
                 if (path == "/api/customers" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; AddCustomer(ctx, user); return; }
                 if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "customer.edit")) return; UpdateCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
                 if (path.StartsWith("/api/customers/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "customer.delete")) return; DeleteCustomer(ctx, user, path.Substring("/api/customers/".Length)); return; }
-                if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; ImportCustomers(ctx, user); return; }
+                if (path == "/api/customers/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.import")) return; ImportCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.batch_delete")) return; BatchDeleteCustomers(ctx, user); return; }
                 if (path == "/api/customers/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "customer.add")) return; BatchAddCustomers(ctx, user); return; }
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "GET") { if (!HasPermission(user, "material.view") && !HasPermission(user, "bom.view")) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadMaterials()); return; }
                 if (path == "/api/materials" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; AddMaterial(ctx, user); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "material.edit")) return; UpdateMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
                 if (path.StartsWith("/api/materials/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "material.delete")) return; DeleteMaterial(ctx, user, path.Substring("/api/materials/".Length)); return; }
-                if (path == "/api/materials/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; ImportMaterials(ctx, user); return; }
+                if (path == "/api/materials/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.import")) return; ImportMaterials(ctx, user); return; }
                 if (path == "/api/materials/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.batch_delete")) return; BatchDeleteMaterials(ctx, user); return; }
                 if (path == "/api/materials/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "material.add")) return; BatchAddMaterials(ctx, user); return; }
-                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.view")) return; WriteJson(ctx, LoadOpeningBalances()); return; }
-                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; SaveOpeningBalances(ctx, user); return; }
+                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.opening_view")) return; WriteJson(ctx, LoadOpeningBalances()); return; }
+                if (path == "/api/finance/opening" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.opening_edit")) return; SaveOpeningBalances(ctx, user); return; }
                 if (path == "/api/finance" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.view")) return; WriteJson(ctx, LoadFinance()); return; }
                 if (path == "/api/finance" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finance.add")) return; AddFinance(ctx, user); return; }
                 if (path == "/api/finance/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finance.import")) return; ImportFinance(ctx, user); return; }
                 if (path == "/api/finance/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finance.import")) return; ExportFinanceTemplateCsv(ctx); return; }
                 if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finance.edit")) return; UpdateFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
                 if (path.StartsWith("/api/finance/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finance.delete")) return; DeleteFinance(ctx, user, path.Substring("/api/finance/".Length)); return; }
-                if (path == "/api/export") { if (!RequirePermission(ctx, user, "supplier.view")) return; ExportCsv(ctx); return; }
-                if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.view")) return; ExportCustomersCsv(ctx); return; }
-                if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.view")) return; ExportMaterialsCsv(ctx); return; }
-                if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!IsAdminUser(user)) { if (!RequirePermission(ctx, user, "settings.view")) return; } string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
+                if (path == "/api/export") { if (!RequirePermission(ctx, user, "supplier.export")) return; ExportCsv(ctx); return; }
+                if (path == "/api/customers/export") { if (!RequirePermission(ctx, user, "customer.export")) return; ExportCustomersCsv(ctx); return; }
+                if (path == "/api/materials/export") { if (!RequirePermission(ctx, user, "material.export")) return; ExportMaterialsCsv(ctx); return; }
+                if (path == "/api/backup" && ctx.Request.HttpMethod == "POST") { if (!RequireAdmin(ctx, user)) return; string f = ManualBackup(); Audit(user, "手动备份", Path.GetFileName(f)); WriteJson(ctx, new { ok = true, file = f }); return; }
                 if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "GET") { if (!CanReadTaxRate(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } WriteJson(ctx, LoadSystemSettings()); return; }
-                if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.tax_rate")) return; SaveTaxRate(ctx, user); return; }
+                if (path == "/api/settings/tax-rate" && ctx.Request.HttpMethod == "PUT") { if (!RequireAdmin(ctx, user)) return; SaveTaxRate(ctx, user); return; }
                 if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "GET") { if (!CanReadDictionaryOptions(user)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return; } ListDictionaryOptions(ctx); return; }
-                if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; AddDictionaryOption(ctx, user); return; }
-                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; UpdateDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
-                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "settings.dictionary")) return; DeleteDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
+                if (path == "/api/dictionary-options" && ctx.Request.HttpMethod == "POST") { if (!RequireAdmin(ctx, user)) return; AddDictionaryOption(ctx, user); return; }
+                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "PUT") { if (!RequireAdmin(ctx, user)) return; UpdateDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
+                if (path.StartsWith("/api/dictionary-options/") && ctx.Request.HttpMethod == "DELETE") { if (!RequireAdmin(ctx, user)) return; DeleteDictionaryOption(ctx, user, path.Substring("/api/dictionary-options/".Length)); return; }
                 if (path == "/api/bom/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.export")) return; ExportBomCsv(ctx); return; }
                 if (path == "/api/bom/template" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "bom.import")) return; ExportBomTemplateCsv(ctx); return; }
                 if (path == "/api/bom/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "bom.import")) return; ImportBomCsv(ctx, user); return; }
@@ -981,7 +961,7 @@ namespace SupplierErpApp
                 if (path == "/api/contracts" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "contract.view")) return; WriteJson(ctx, LoadContracts()); return; }
                 if (path == "/api/contracts" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.add")) return; AddContract(ctx, user); return; }
                 if (path.StartsWith("/api/contracts/") && path.EndsWith("/preview") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "contract.preview")) return; PreviewContract(ctx, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/preview".Length)); return; }
-                if (path.StartsWith("/api/contracts/") && path.EndsWith("/void") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.edit")) return; VoidContract(ctx, user, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/void".Length)); return; }
+                if (path.StartsWith("/api/contracts/") && path.EndsWith("/void") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "contract.void")) return; VoidContract(ctx, user, path.Substring("/api/contracts/".Length, path.Length - "/api/contracts/".Length - "/void".Length)); return; }
                 if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "contract.edit")) return; UpdateContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
                 if (path.StartsWith("/api/contracts/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "contract.delete")) return; DeleteContract(ctx, user, path.Substring("/api/contracts/".Length)); return; }
                 if (path == "/api/sales-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "sales_order.view")) return; WriteJson(ctx, LoadSalesOrders()); return; }
@@ -990,32 +970,32 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/sales-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_order.delete")) return; DeleteSalesOrder(ctx, user, path.Substring("/api/sales-orders/".Length)); return; }
                 if (path == "/api/sales-orders/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.delete")) return; BatchDeleteSalesOrders(ctx, user); return; }
                 if (path == "/api/sales-orders/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; BatchAddSalesOrders(ctx, user); return; }
-                if (path == "/api/sales-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.add")) return; ImportSalesOrders(ctx, user); return; }
-                if (path == "/api/sales-orders/export") { if (!RequirePermission(ctx, user, "sales_order.view")) return; ExportSalesOrdersCsv(ctx); return; }
+                if (path == "/api/sales-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_order.import")) return; ImportSalesOrders(ctx, user); return; }
+                if (path == "/api/sales-orders/export") { if (!RequirePermission(ctx, user, "sales_order.export")) return; ExportSalesOrdersCsv(ctx); return; }
                 if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "sales_outbound.view")) return; WriteJson(ctx, LoadSalesOutbounds()); return; }
                 if (path == "/api/sales-outbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; AddSalesOutbound(ctx, user); return; }
                 if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "sales_outbound.edit")) return; UpdateSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
                 if (path.StartsWith("/api/sales-outbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "sales_outbound.delete")) return; DeleteSalesOutbound(ctx, user, path.Substring("/api/sales-outbounds/".Length)); return; }
                 if (path == "/api/sales-outbounds/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.delete")) return; BatchDeleteSalesOutbounds(ctx, user); return; }
                 if (path == "/api/sales-outbounds/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; BatchAddSalesOutbounds(ctx, user); return; }
-                if (path == "/api/sales-outbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.add")) return; ImportSalesOutbounds(ctx, user); return; }
-                if (path == "/api/sales-outbounds/export") { if (!RequirePermission(ctx, user, "sales_outbound.view")) return; ExportSalesOutboundsCsv(ctx); return; }
+                if (path == "/api/sales-outbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "sales_outbound.import")) return; ImportSalesOutbounds(ctx, user); return; }
+                if (path == "/api/sales-outbounds/export") { if (!RequirePermission(ctx, user, "sales_outbound.export")) return; ExportSalesOutboundsCsv(ctx); return; }
                 if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_order.view")) return; WriteJson(ctx, LoadPurchaseOrders()); return; }
                 if (path == "/api/purchase-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; AddPurchaseOrder(ctx, user); return; }
                 if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_order.edit")) return; UpdatePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
                 if (path.StartsWith("/api/purchase-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_order.delete")) return; DeletePurchaseOrder(ctx, user, path.Substring("/api/purchase-orders/".Length)); return; }
                 if (path == "/api/purchase-orders/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.delete")) return; BatchDeletePurchaseOrders(ctx, user); return; }
                 if (path == "/api/purchase-orders/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; BatchAddPurchaseOrders(ctx, user); return; }
-                if (path == "/api/purchase-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.add")) return; ImportPurchaseOrders(ctx, user); return; }
-                if (path == "/api/purchase-orders/export") { if (!RequirePermission(ctx, user, "purchase_order.view")) return; ExportPurchaseOrdersCsv(ctx); return; }
+                if (path == "/api/purchase-orders/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_order.import")) return; ImportPurchaseOrders(ctx, user); return; }
+                if (path == "/api/purchase-orders/export") { if (!RequirePermission(ctx, user, "purchase_order.export")) return; ExportPurchaseOrdersCsv(ctx); return; }
                 if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "purchase_inbound.view")) return; WriteJson(ctx, LoadPurchaseInbounds()); return; }
                 if (path == "/api/purchase-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; AddPurchaseInbound(ctx, user); return; }
                 if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "purchase_inbound.edit")) return; UpdatePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
                 if (path.StartsWith("/api/purchase-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "purchase_inbound.delete")) return; DeletePurchaseInbound(ctx, user, path.Substring("/api/purchase-inbounds/".Length)); return; }
                 if (path == "/api/purchase-inbounds/batch-delete" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.delete")) return; BatchDeletePurchaseInbounds(ctx, user); return; }
                 if (path == "/api/purchase-inbounds/batch" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; BatchAddPurchaseInbounds(ctx, user); return; }
-                if (path == "/api/purchase-inbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.add")) return; ImportPurchaseInbounds(ctx, user); return; }
-                if (path == "/api/purchase-inbounds/export") { if (!RequirePermission(ctx, user, "purchase_inbound.view")) return; ExportPurchaseInboundsCsv(ctx); return; }
+                if (path == "/api/purchase-inbounds/import" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "purchase_inbound.import")) return; ImportPurchaseInbounds(ctx, user); return; }
+                if (path == "/api/purchase-inbounds/export") { if (!RequirePermission(ctx, user, "purchase_inbound.export")) return; ExportPurchaseInboundsCsv(ctx); return; }
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; WriteJson(ctx, LoadProductionPicks()); return; }
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionPick(ctx, user); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
@@ -1214,27 +1194,6 @@ namespace SupplierErpApp
                 IsAdmin = isAdmin,
                 Permissions = isAdmin ? AllPermissionKeys : NormalizePermissions(user.Permissions)
             };
-        }
-
-        static string[] NormalizePermissions(string[] permissions)
-        {
-            if (permissions == null || permissions.Length == 0) return new string[0];
-            return permissions.Where(p => !string.IsNullOrWhiteSpace(p) && AllPermissionKeys.Contains(p)).Distinct().ToArray();
-        }
-
-        static bool HasPermission(UserSession user, string permission)
-        {
-            if (user == null) return false;
-            if (user.IsAdmin) return true;
-            if (permission == "finance.import" && user.Permissions != null && user.Permissions.Contains("finance.add")) return true;
-            return user.Permissions != null && user.Permissions.Contains(permission);
-        }
-
-        static bool RequirePermission(HttpListenerContext ctx, UserSession user, string permission)
-        {
-            if (HasPermission(user, permission)) return true;
-            WriteJson(ctx, new { error = "无权限操作" }, 403);
-            return false;
         }
 
         static bool CanReadTaxRate(UserSession user)
@@ -1690,134 +1649,6 @@ namespace SupplierErpApp
             });
             Audit(user, "删除机型成本", auditDetail);
             WriteJson(ctx, new { ok = true });
-        }
-
-        static PermissionGroup[] GetPermissionDefinitions()
-        {
-            return new[]
-            {
-                new PermissionGroup { Module = "供应商管理", Items = new[] {
-                    new PermissionItem { Key = "supplier.view", Label = "查看" },
-                    new PermissionItem { Key = "supplier.add", Label = "新增" },
-                    new PermissionItem { Key = "supplier.edit", Label = "修改" },
-                    new PermissionItem { Key = "supplier.delete", Label = "删除" },
-                    new PermissionItem { Key = "supplier.batch_delete", Label = "批量删除" }
-                }},
-                new PermissionGroup { Module = "客户管理", Items = new[] {
-                    new PermissionItem { Key = "customer.view", Label = "查看" },
-                    new PermissionItem { Key = "customer.add", Label = "新增" },
-                    new PermissionItem { Key = "customer.edit", Label = "修改" },
-                    new PermissionItem { Key = "customer.delete", Label = "删除" },
-                    new PermissionItem { Key = "customer.batch_delete", Label = "批量删除" }
-                }},
-                new PermissionGroup { Module = "物料管理", Items = new[] {
-                    new PermissionItem { Key = "material.view", Label = "查看" },
-                    new PermissionItem { Key = "material.add", Label = "新增" },
-                    new PermissionItem { Key = "material.edit", Label = "修改" },
-                    new PermissionItem { Key = "material.delete", Label = "删除" },
-                    new PermissionItem { Key = "material.batch_delete", Label = "批量删除" }
-                }},
-                new PermissionGroup { Module = "财务收支", Items = new[] {
-                    new PermissionItem { Key = "finance.view", Label = "查看" },
-                    new PermissionItem { Key = "finance.add", Label = "新增" },
-                    new PermissionItem { Key = "finance.edit", Label = "修改" },
-                    new PermissionItem { Key = "finance.delete", Label = "删除" },
-                    new PermissionItem { Key = "finance.import", Label = "导入" }
-                }},
-                new PermissionGroup { Module = "BOM表", Items = new[] {
-                    new PermissionItem { Key = "bom.view", Label = "查看" },
-                    new PermissionItem { Key = "bom.add", Label = "新增" },
-                    new PermissionItem { Key = "bom.edit", Label = "修改" },
-                    new PermissionItem { Key = "bom.delete", Label = "删除" },
-                    new PermissionItem { Key = "bom.export", Label = "导出" },
-                    new PermissionItem { Key = "bom.import", Label = "导入" }
-                }},
-                new PermissionGroup { Module = "机型成本", Items = new[] {
-                    new PermissionItem { Key = "model_cost.view", Label = "查看" },
-                    new PermissionItem { Key = "model_cost.add", Label = "新增" },
-                    new PermissionItem { Key = "model_cost.edit", Label = "修改" },
-                    new PermissionItem { Key = "model_cost.delete", Label = "删除" },
-                    new PermissionItem { Key = "model_cost.export", Label = "导出" },
-                    new PermissionItem { Key = "model_cost.import", Label = "导入" }
-                }},
-                new PermissionGroup { Module = "合同管理", Items = new[] {
-                    new PermissionItem { Key = "contract.view", Label = "查看合同" },
-                    new PermissionItem { Key = "contract.add", Label = "新增合同" },
-                    new PermissionItem { Key = "contract.edit", Label = "修改合同" },
-                    new PermissionItem { Key = "contract.delete", Label = "删除合同" },
-                    new PermissionItem { Key = "contract.preview", Label = "预览合同" },
-                    new PermissionItem { Key = "contract.print", Label = "打印合同" }
-                }},
-                new PermissionGroup { Module = "合同资料", Items = new[] {
-                    new PermissionItem { Key = "contract_setting.view", Label = "查看" },
-                    new PermissionItem { Key = "contract_setting.add", Label = "新增" },
-                    new PermissionItem { Key = "contract_setting.edit", Label = "修改" },
-                    new PermissionItem { Key = "contract_setting.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "系统设置", Items = new[] {
-                    new PermissionItem { Key = "settings.view", Label = "查看系统设置" },
-                    new PermissionItem { Key = "settings.account", Label = "账号管理" },
-                    new PermissionItem { Key = "settings.password", Label = "修改密码" },
-                    new PermissionItem { Key = "settings.tax_rate", Label = "税率修改" },
-                    new PermissionItem { Key = "settings.dictionary", Label = "字典选项" }
-                }},
-                new PermissionGroup { Module = "销售订单", Items = new[] {
-                    new PermissionItem { Key = "sales_order.view", Label = "查看" },
-                    new PermissionItem { Key = "sales_order.add", Label = "新增" },
-                    new PermissionItem { Key = "sales_order.edit", Label = "修改" },
-                    new PermissionItem { Key = "sales_order.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "销售出库", Items = new[] {
-                    new PermissionItem { Key = "sales_outbound.view", Label = "查看" },
-                    new PermissionItem { Key = "sales_outbound.add", Label = "新增" },
-                    new PermissionItem { Key = "sales_outbound.edit", Label = "修改" },
-                    new PermissionItem { Key = "sales_outbound.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "采购单", Items = new[] {
-                    new PermissionItem { Key = "purchase_order.view", Label = "查看" },
-                    new PermissionItem { Key = "purchase_order.add", Label = "新增" },
-                    new PermissionItem { Key = "purchase_order.edit", Label = "修改" },
-                    new PermissionItem { Key = "purchase_order.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "采购入库", Items = new[] {
-                    new PermissionItem { Key = "purchase_inbound.view", Label = "查看" },
-                    new PermissionItem { Key = "purchase_inbound.add", Label = "新增" },
-                    new PermissionItem { Key = "purchase_inbound.edit", Label = "修改" },
-                    new PermissionItem { Key = "purchase_inbound.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "生产领用", Items = new[] {
-                    new PermissionItem { Key = "production_pick.view", Label = "查看" },
-                    new PermissionItem { Key = "production_pick.add", Label = "新增" },
-                    new PermissionItem { Key = "production_pick.edit", Label = "修改" },
-                    new PermissionItem { Key = "production_pick.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "成品入库", Items = new[] {
-                    new PermissionItem { Key = "finished_inbound.view", Label = "查看" },
-                    new PermissionItem { Key = "finished_inbound.add", Label = "新增" },
-                    new PermissionItem { Key = "finished_inbound.edit", Label = "修改" },
-                    new PermissionItem { Key = "finished_inbound.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "库存汇总", Items = new[] {
-                    new PermissionItem { Key = "stock.view", Label = "查看" }
-                }},
-                new PermissionGroup { Module = "应收款", Items = new[] {
-                    new PermissionItem { Key = "receivable.view", Label = "查看" },
-                    new PermissionItem { Key = "receivable.add", Label = "新增" },
-                    new PermissionItem { Key = "receivable.edit", Label = "修改" },
-                    new PermissionItem { Key = "receivable.delete", Label = "删除" }
-                }},
-                new PermissionGroup { Module = "应付款", Items = new[] {
-                    new PermissionItem { Key = "payable.view", Label = "查看" },
-                    new PermissionItem { Key = "payable.add", Label = "新增" },
-                    new PermissionItem { Key = "payable.edit", Label = "修改" },
-                    new PermissionItem { Key = "payable.delete", Label = "删除" }
-                }}
-            };
-        }
-
-        static bool CanReadDictionaryOptions( UserSession user)
-        {
-            return HasPermission(user, "settings.view") || HasPermission(user, "settings.dictionary");
         }
 
         static string GetQueryParam(HttpListenerContext ctx, string key)

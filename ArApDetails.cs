@@ -280,7 +280,7 @@ namespace SupplierErpApp
             string method = ctx.Request.HttpMethod ?? "";
             if (parts.Length == 2 && method == "POST")
             {
-                if (!RequirePermission(ctx, user, "receivable.edit")) return true;
+                if (!RequirePermission(ctx, user, "receivable.receipt_add")) return true;
                 AddReceivableReceipt(ctx, user, receivableId);
                 return true;
             }
@@ -289,13 +289,13 @@ namespace SupplierErpApp
                 string detailId = parts[2];
                 if (method == "PUT")
                 {
-                    if (!RequirePermission(ctx, user, "receivable.edit")) return true;
+                    if (!RequirePermission(ctx, user, "receivable.receipt_edit")) return true;
                     UpdateReceivableReceipt(ctx, user, receivableId, detailId);
                     return true;
                 }
                 if (method == "DELETE")
                 {
-                    if (!RequirePermission(ctx, user, "receivable.edit")) return true;
+                    if (!RequirePermission(ctx, user, "receivable.receipt_delete")) return true;
                     DeleteReceivableReceipt(ctx, user, receivableId, detailId);
                     return true;
                 }
@@ -315,7 +315,7 @@ namespace SupplierErpApp
             string method = ctx.Request.HttpMethod ?? "";
             if (parts.Length == 2 && method == "POST")
             {
-                if (!RequirePermission(ctx, user, "payable.edit")) return true;
+                if (!RequirePermission(ctx, user, "payable.payment_add")) return true;
                 AddPayablePayment(ctx, user, payableId);
                 return true;
             }
@@ -324,13 +324,13 @@ namespace SupplierErpApp
                 string detailId = parts[2];
                 if (method == "PUT")
                 {
-                    if (!RequirePermission(ctx, user, "payable.edit")) return true;
+                    if (!RequirePermission(ctx, user, "payable.payment_edit")) return true;
                     UpdatePayablePayment(ctx, user, payableId, detailId);
                     return true;
                 }
                 if (method == "DELETE")
                 {
-                    if (!RequirePermission(ctx, user, "payable.edit")) return true;
+                    if (!RequirePermission(ctx, user, "payable.payment_delete")) return true;
                     DeletePayablePayment(ctx, user, payableId, detailId);
                     return true;
                 }
