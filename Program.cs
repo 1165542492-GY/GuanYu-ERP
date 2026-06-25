@@ -2503,7 +2503,8 @@ namespace SupplierErpApp
                         if (string.IsNullOrWhiteSpace(input.NameSpec)) { skipped++; errors.Add("第" + rowNo + "行：物料名称/规格不能为空"); continue; }
                         if (string.IsNullOrWhiteSpace(input.Supplier)) { skipped++; errors.Add("第" + rowNo + "行：请选择供应商"); continue; }
                         input.Supplier = input.Supplier.Trim(); input.NameSpec = input.NameSpec.Trim();
-                        input.QuantityUnit = (input.QuantityUnit ?? "").Trim(); input.Note = (input.Note ?? "").Trim();
+                        input.QuantityUnit = NormalizeMaterialQuantityUnit(input.QuantityUnit);
+                        input.Note = (input.Note ?? "").Trim();
                         if (!suppliers.Any(x => string.Equals(x.Company, input.Supplier, StringComparison.OrdinalIgnoreCase)))
                         {
                             skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
@@ -2522,6 +2523,7 @@ namespace SupplierErpApp
                             Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
                             UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
+                        NormalizeMaterialPriceFields(item);
                         batchKeys.Add(key);
                         pending.Insert(0, item);
                         imported++;
@@ -2726,8 +2728,41 @@ namespace SupplierErpApp
         {
             if(item==null||string.IsNullOrWhiteSpace(item.NameSpec))throw new Exception("物料名称/规格不能为空");
             if(string.IsNullOrWhiteSpace(item.Supplier))throw new Exception("请选择供应商");
-            item.Supplier=item.Supplier.Trim();item.NameSpec=item.NameSpec.Trim();item.QuantityUnit=(item.QuantityUnit??"").Trim();item.Note=(item.Note??"").Trim();
+            item.Supplier=item.Supplier.Trim();item.NameSpec=item.NameSpec.Trim();item.QuantityUnit=NormalizeMaterialQuantityUnit(item.QuantityUnit);item.Note=(item.Note??"").Trim();
             if(!LoadSuppliers().Any(x=>string.Equals(x.Company,item.Supplier,StringComparison.OrdinalIgnoreCase)))throw new Exception("所选供应商不在供应商管理中，请先建立供应商档案");
+            NormalizeMaterialPriceFields(item);
+        }
+
+        static string NormalizeMaterialQuantityUnit(string raw)
+        {
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(s)) return "1 件";
+            var m = System.Text.RegularExpressions.Regex.Match(s, @"^(\d+(?:\.\d+)?)\s*(.*)$");
+            if (!m.Success) return "1 " + s;
+            decimal baseQty;
+            if (!decimal.TryParse(m.Groups[1].Value, out baseQty) || baseQty <= 0) baseQty = 1;
+            var unit = (m.Groups[2].Value ?? "").Trim();
+            if (string.IsNullOrEmpty(unit)) unit = "件";
+            return baseQty.ToString("0.##") + " " + unit;
+        }
+
+        static void NormalizeMaterialPriceFields(Material item)
+        {
+            if (item.TaxPrice > 0 && item.NoTaxPrice > 0)
+                throw new BusinessException("含税价和不含税价只能填写一个", 422);
+            if (item.TaxPrice > 0)
+            {
+                item.PriceType = "含税";
+                item.NoTaxPrice = 0;
+                return;
+            }
+            if (item.NoTaxPrice > 0)
+            {
+                item.PriceType = "不含税";
+                item.TaxPrice = 0;
+                return;
+            }
+            item.PriceType = NormalizePriceType(item.PriceType);
         }
 
         static List<Dictionary<string,string>> ReadImportRows(HttpListenerContext ctx)
@@ -2797,12 +2832,80 @@ namespace SupplierErpApp
             Audit(user,"导入客户","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
         }
 
+        static decimal MaterialDisplayUnitPrice(Material x)
+        {
+            if (x == null) return 0;
+            return NormalizePriceType(x.PriceType) == "含税" ? x.TaxPrice : x.NoTaxPrice;
+        }
+
+        static (decimal BaseQty, string Unit) ParseMaterialQtyUnitParts(string raw)
+        {
+            var normalized = NormalizeMaterialQuantityUnit(raw);
+            var m = System.Text.RegularExpressions.Regex.Match(normalized, @"^(\d+(?:\.\d+)?)\s*(.*)$");
+            if (!m.Success) return (1, "件");
+            decimal baseQty;
+            if (!decimal.TryParse(m.Groups[1].Value, out baseQty) || baseQty <= 0) baseQty = 1;
+            var unit = (m.Groups[2].Value ?? "").Trim();
+            if (string.IsNullOrEmpty(unit)) unit = "件";
+            return (baseQty, unit);
+        }
+
+        static Material BuildMaterialFromImportRow(Dictionary<string, string> row)
+        {
+            var item = new Material();
+            item.Supplier = Cell(row, "供应商");
+            item.NameSpec = Cell(row, "物料名称/规格");
+            string baseQty = Cell(row, "基准数量");
+            string unit = Cell(row, "单位");
+            string legacyQty = Cell(row, "数量/单位");
+            if (!string.IsNullOrWhiteSpace(baseQty) || !string.IsNullOrWhiteSpace(unit))
+                item.QuantityUnit = NormalizeMaterialQuantityUnit((baseQty ?? "1").Trim() + " " + (unit ?? "件").Trim());
+            else
+                item.QuantityUnit = NormalizeMaterialQuantityUnit(legacyQty);
+            string unitPriceText = Cell(row, "单价");
+            string priceType = Cell(row, "价格类型");
+            if (!string.IsNullOrWhiteSpace(unitPriceText))
+            {
+                var price = Money(unitPriceText);
+                priceType = NormalizePriceType(string.IsNullOrWhiteSpace(priceType) ? "不含税" : priceType);
+                item.PriceType = priceType;
+                item.TaxPrice = priceType == "含税" ? price : 0;
+                item.NoTaxPrice = priceType == "不含税" ? price : 0;
+            }
+            else
+            {
+                item.TaxPrice = Money(Cell(row, "含税价"));
+                item.NoTaxPrice = Money(Cell(row, "不含税价"));
+                item.PriceType = NormalizePriceType(priceType);
+            }
+            item.Note = Cell(row, "备注");
+            item.Status = Cell(row, "状态");
+            if (string.IsNullOrEmpty(item.Status)) item.Status = "启用";
+            NormalizeMaterialPriceFields(item);
+            return item;
+        }
+
         static void ImportMaterials(HttpListenerContext ctx,UserSession user)
         {
             var rows=ReadImportRows(ctx);var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             MutateJsonList<Material, object>(MaterialFile, "materials", list =>
             {
-                foreach(var row in rows){rowNo++;string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");if(Placeholder(name)){skipped++;continue;}if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}var item=new Material{Id=Guid.NewGuid().ToString("N"),Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL"),Supplier=supplier,NameSpec=name,QuantityUnit=Cell(row,"数量/单位"),TaxPrice=Money(Cell(row,"含税价")),NoTaxPrice=Money(Cell(row,"不含税价")),PriceType=NormalizePriceType(Cell(row,"价格类型")),Note=Cell(row,"备注"),Status=Cell(row,"状态"),UpdatedAt=ProfileUpdatedAtNow(),UpdatedBy=user.DisplayName};if(string.IsNullOrEmpty(item.Status))item.Status="启用";list.Insert(0,item);imported++;}
+                foreach(var row in rows){
+                    rowNo++;
+                    try {
+                        string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");
+                        if(Placeholder(name)){skipped++;continue;}
+                        if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}
+                        if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}
+                        var item=BuildMaterialFromImportRow(row);
+                        item.Supplier=supplier;item.NameSpec=name;
+                        ValidateMaterial(item);
+                        item.Id=Guid.NewGuid().ToString("N");
+                        item.Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL");
+                        item.UpdatedAt=ProfileUpdatedAtNow();item.UpdatedBy=user.DisplayName;
+                        list.Insert(0,item);imported++;
+                    } catch (Exception ex) { skipped++; errors.Add("第"+rowNo+"行："+ToUserMessage(ex)); }
+                }
                 return new JsonMutationResult<object>(null, imported > 0);
             });
             Audit(user,"导入物料","成功"+imported+"条，跳过"+skipped+"条");WriteJson(ctx,new{imported=imported,skipped=skipped,errors=errors.Take(8).ToArray()});
@@ -3443,8 +3546,11 @@ namespace SupplierErpApp
 
         static void ExportMaterialsCsv(HttpListenerContext ctx)
         {
-            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,数量/单位,含税价,不含税价,价格类型,备注,状态,最后更新,操作人");
-            foreach(var x in LoadMaterials())sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,x.QuantityUnit,x.TaxPrice.ToString("0.00"),x.NoTaxPrice.ToString("0.00"),NormalizePriceType(x.PriceType),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
+            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,基准数量,单位,价格类型,单价,备注,状态,最后更新,操作人");
+            foreach(var x in LoadMaterials()){
+                var parts=ParseMaterialQtyUnitParts(x.QuantityUnit);
+                sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,parts.BaseQty.ToString("0.##"),parts.Unit,NormalizePriceType(x.PriceType),MaterialDisplayUnitPrice(x).ToString("0.00"),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
+            }
             WriteCsvDownload(ctx, BuildExportFileName("物料管理"), sb.ToString());
         }
 

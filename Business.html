@@ -1,7 +1,7 @@
 <!-- Ver2.8 销售/采购/生产/库存/应收应付基础模块 -->
 <style>
 .biz-table{min-width:2400px!important}
-.arap-detail-notice{padding:0 0 12px;color:var(--muted);font-size:13px;line-height:1.6;border-bottom:1px solid var(--line);margin-bottom:12px}
+.arap-detail-notice{margin:0 23px 14px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #ea580c;color:#9a3412;font-size:14px;line-height:1.65;border-radius:0 8px 8px 0}
 .stock-row-negative td{background:#fff5f5}
 .stock-row-negative td.stock-qty-negative{color:var(--red);font-weight:700}
 .stock-qty-warn{display:inline-block;margin-left:8px;font-size:12px;color:var(--red);font-weight:600}
@@ -53,7 +53,7 @@ var bizModules={
 {key:'CustomerId',label:'客户',type:'refSelect',ref:'customers',display:'Company',req:1,batchRef:1,fill:{CustomerCode:'Code',CustomerName:'Company',CustomerContact:'Contact',CustomerPhone:'Phone',CustomerAddress:'Address'}},
 {key:'CustomerCode',label:'客户编号',readonly:1},{key:'CustomerName',label:'客户名称',readonly:1},{key:'CustomerContact',label:'联系人',readonly:1},{key:'CustomerPhone',label:'联系电话',readonly:1},{key:'CustomerAddress',label:'地址',readonly:1},
 {key:'MaterialId',label:'物料',type:'refSelect',ref:'materials',display:'NameSpec',fill:{MaterialCode:'Code',MaterialName:'NameSpec'}},
-{key:'MaterialName',label:'物料名称',req:1},{key:'Quantity',label:'数量',type:'number',step:'0.01',req:1,calc:1},
+{key:'MaterialName',label:'物料名称',req:1},{key:'Quantity',label:'数量',type:'number',step:'0.01',req:1,calc:1},{key:'MaterialUnit',label:'单位',readonly:1},
 {key:'TaxExcludedSalePrice',label:'不含税销售单价',type:'number',step:'0.01',calc:1,money:1,taxPrice:1},{key:'TaxIncludedSalePrice',label:'含税销售单价',type:'number',step:'0.01',calc:1,money:1,taxPrice:1},
 {key:'TaxExcludedSaleAmount',label:'不含税销售金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.Quantity)*numVal(r.TaxExcludedSalePrice)}},
 {key:'TaxIncludedSaleAmount',label:'含税销售金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.Quantity)*numVal(r.TaxIncludedSalePrice)}},
@@ -66,7 +66,7 @@ var bizModules={
 {key:'OutboundDate',label:'出库日期',type:'date'},{key:'Status',label:'状态',type:'select',options:DOC_STATUS},{key:'Note',label:'备注',full:1}]},
 'purchase-order':{view:'purchaseOrderView',perm:'purchase_order',api:'/api/purchase-orders',title:'采购单',addLabel:'新增采购单',codeLabel:'采购编号',prefix:'po',batch:1,fields:[
 {key:'SupplierName',label:'供应商名称',req:1},{key:'MaterialId',label:'物料',type:'refSelect',ref:'materials',display:'NameSpec',fill:{MaterialCode:'Code',MaterialName:'NameSpec'}},
-{key:'MaterialName',label:'物料名称',req:1},{key:'Quantity',label:'数量',type:'number',step:'0.01',req:1,calc:1},
+{key:'MaterialName',label:'物料名称',req:1},{key:'Quantity',label:'数量',type:'number',step:'0.01',req:1,calc:1},{key:'MaterialUnit',label:'单位',readonly:1},
 {key:'UnitPrice',label:'采购单价',type:'number',step:'0.01',calc:1,money:1},{key:'Amount',label:'采购金额',type:'number',step:'0.01',readonly:1,money:1,computed:function(r){return numVal(r.Quantity)*numVal(r.UnitPrice)}},
 {key:'OrderDate',label:'订单日期',type:'date'},{key:'Status',label:'状态',type:'select',options:DOC_STATUS},{key:'Note',label:'备注',full:1}]},
 'purchase-inbound':{view:'purchaseInboundView',perm:'purchase_inbound',api:'/api/purchase-inbounds',title:'采购入库',addLabel:'新增采购入库',codeLabel:'入库编号',prefix:'pin',batch:1,fields:[
@@ -198,6 +198,7 @@ var mc=bizFindCustomer('',item.CustomerCode,item.CustomerName);
 if(mc)el.value=mc.Id;
 }else el.value='';
 }
+function bizMaterialUnitFromQtyUnit(qu){var s=bizStr(qu);if(!s)return'';var m=s.match(/^\d+(?:\.\d+)?\s*(.+)$/);return m&&m[1]?m[1].trim():s}
 function bizApplyRefFill(cfg,f){
 var el=document.getElementById(bizId(cfg,f.key));if(!el||!f.fill)return;
 var it=(bizRefs[f.ref]||[]).find(function(x){return bizStr(x.Id)===bizStr(el.value)});
@@ -207,6 +208,10 @@ var tel=document.getElementById(bizId(cfg,tk));if(!tel)return;
 var val=bizStr(it[f.fill[tk]]);
 if(tel.tagName==='SELECT')tel.value=val;else tel.value=val;
 });
+if(f.ref==='materials'){
+var unitEl=document.getElementById(bizId(cfg,'MaterialUnit'));
+if(unitEl)unitEl.value=bizMaterialUnitFromQtyUnit(it.QuantityUnit);
+}
 if(cfg.view==='salesOutboundView'&&f.ref==='salesOrders'){
 var qEl=document.getElementById(bizId(cfg,'Quantity'));
 if(qEl&&it.Quantity!=null&&numVal(qEl.value)<=0)qEl.value=bizMoney2(it.Quantity);
@@ -515,7 +520,8 @@ var root=ensureBizModalRoot();
 if(document.getElementById('arapDetailModal'))return;
 root.insertAdjacentHTML('beforeend',
 '<div class="modal biz-modal" id="arapDetailModal" aria-hidden="true"><div class="dialog" style="max-width:920px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailTitle">收款明细</div><button type="button" class="close" id="arapDetailClose" aria-label="关闭">×</button></div>'+
-'<div style="padding:0 23px 16px"><div class="arap-detail-notice">说明：收款/付款明细用于更新应收应付状态；如需记录银行或现金流水，请到「财务管理 → 财务收支」中单独登记。</div><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
+'<div class="arap-detail-notice" id="arapDetailNotice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>'+
+'<div style="padding:0 23px 16px"><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
 '<div class="tools" style="margin-bottom:10px"><button type="button" class="btn primary" id="arapDetailAddBtn">＋ 新增明细</button></div>'+
 '<div class="arap-detail-tablewrap"><table class="arap-detail-table"><thead><tr><th>日期</th><th>金额</th><th>账户</th><th>方式</th><th>经办人</th><th>备注</th><th>操作</th></tr></thead><tbody id="arapDetailBody"></tbody></table></div></div>'+
 '<div class="dialogfoot"><button type="button" class="btn" id="arapDetailDone">关闭</button></div></div></div>'+
