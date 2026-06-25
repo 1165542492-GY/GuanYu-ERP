@@ -60,6 +60,11 @@ namespace SupplierErpApp
             "financeTransactions", "financeOpening"
         };
 
+        class TestDataPreviewApproval { public string FileHash; public string FileName; public int TotalFailed; public DateTime ApprovedAt; }
+
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<string, TestDataPreviewApproval> TestDataPreviewApprovals =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, TestDataPreviewApproval>(StringComparer.OrdinalIgnoreCase);
+
         static bool RequireTestDataAccess(HttpListenerContext ctx, UserSession user)
         {
             if (user == null) { WriteJson(ctx, new { error = "请先登录" }, 401); return false; }
@@ -100,6 +105,7 @@ namespace SupplierErpApp
         {
             var req = Json.Deserialize<TestDataImportRequest>(ReadBody(ctx.Request));
             var parsed = ParseTestDataWorkbook(req);
+            var excelCtx = ExcelImportContext.FromParsedWorkbook(parsed);
             var sheets = new List<TestDataSheetInfo>();
             var unknown = new List<string>();
             foreach (var kv in parsed.Sheets)
@@ -111,6 +117,7 @@ namespace SupplierErpApp
                     continue;
                 }
                 bool reference = moduleKey == "stockReference" || moduleKey == "testValidation";
+                var preview = reference ? null : ImportModuleRows(moduleKey, kv.Value, null, true, excelCtx);
                 var info = new TestDataSheetInfo
                 {
                     SheetName = kv.Key,
@@ -119,29 +126,53 @@ namespace SupplierErpApp
                     Importable = !reference,
                     ReferenceOnly = reference,
                     RowCount = kv.Value.Count,
-                    Errors = reference ? new string[0] : PreviewModuleErrors(moduleKey, kv.Value).Take(20).ToArray()
+                    Added = preview != null ? preview.Added : 0,
+                    Updated = preview != null ? preview.Updated : 0,
+                    Skipped = preview != null ? preview.Skipped : 0,
+                    Failed = preview != null ? preview.Failed : 0,
+                    Errors = reference ? new string[0] : (preview.Errors ?? new string[0]).Take(20).ToArray()
                 };
                 sheets.Add(info);
             }
+            string fileHash = ComputeTestDataFileHash(req);
+            int totalFailed = sheets.Where(x => x.Importable).Sum(x => x.Failed);
+            bool canImport = totalFailed == 0;
+            if (canImport)
+            {
+                TestDataPreviewApprovals[user.Username] = new TestDataPreviewApproval
+                {
+                    FileHash = fileHash,
+                    FileName = parsed.FileName ?? req.FileName ?? "import.xlsx",
+                    TotalFailed = totalFailed,
+                    ApprovedAt = DateTime.UtcNow
+                };
+            }
+            else TestDataPreviewApprovals.TryRemove(user.Username, out _);
             WriteJson(ctx, new TestDataPreviewResult
             {
                 FileName = parsed.FileName,
                 Sheets = sheets.ToArray(),
-                UnknownSheets = unknown.ToArray()
+                UnknownSheets = unknown.ToArray(),
+                FileHash = fileHash,
+                TotalFailed = totalFailed,
+                CanImport = canImport
             });
         }
 
         static void ImportTestDataRun(HttpListenerContext ctx, UserSession user)
         {
             var req = Json.Deserialize<TestDataImportRequest>(ReadBody(ctx.Request));
+            EnsureTestDataImportPreviewApproved(user, req);
             var parsed = ParseTestDataWorkbook(req);
+            var excelCtx = ExcelImportContext.FromParsedWorkbook(parsed);
             var results = new List<TestDataModuleResult>();
             foreach (var moduleKey in TestDataImportOrder)
             {
-                var rows = parsed.Sheets.Where(x => TestDataSheetMap.TryGetValue(x.Key, out var mk) && mk == moduleKey).SelectMany(x => x.Value).ToList();
+                var rows = excelCtx.GetModuleRows(moduleKey);
                 if (rows.Count == 0) continue;
-                results.Add(ImportModuleRows(moduleKey, rows, user));
+                results.Add(ImportModuleRows(moduleKey, rows, user, false, excelCtx));
             }
+            TestDataPreviewApprovals.TryRemove(user.Username, out _);
             WriteJson(ctx, new TestDataRunResult
             {
                 FileName = parsed.FileName,
@@ -156,20 +187,206 @@ namespace SupplierErpApp
 
         class ParsedTestWorkbook { public string FileName; public Dictionary<string, List<Dictionary<string, string>>> Sheets = new Dictionary<string, List<Dictionary<string, string>>>(StringComparer.OrdinalIgnoreCase); }
 
-        static ParsedTestWorkbook ParseTestDataWorkbook(TestDataImportRequest req)
+        class ExcelImportContext
+        {
+            readonly Dictionary<string, List<Dictionary<string, string>>> _moduleRows = new Dictionary<string, List<Dictionary<string, string>>>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _supplierCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _supplierCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _customerCompanies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _customerCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _materialCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _materialNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _bomCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _bomKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _purchaseOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _salesOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            public static ExcelImportContext FromParsedWorkbook(ParsedTestWorkbook parsed)
+            {
+                var ctx = new ExcelImportContext();
+                if (parsed == null || parsed.Sheets == null) return ctx;
+                foreach (var kv in parsed.Sheets)
+                {
+                    string moduleKey;
+                    if (!TestDataSheetMap.TryGetValue(kv.Key, out moduleKey)) continue;
+                    if (moduleKey == "stockReference" || moduleKey == "testValidation") continue;
+                    if (!ctx._moduleRows.ContainsKey(moduleKey)) ctx._moduleRows[moduleKey] = new List<Dictionary<string, string>>();
+                    ctx._moduleRows[moduleKey].AddRange(kv.Value);
+                    ctx.IndexModuleRows(moduleKey, kv.Value);
+                }
+                return ctx;
+            }
+
+            void IndexModuleRows(string moduleKey, List<Dictionary<string, string>> rows)
+            {
+                foreach (var row in rows)
+                {
+                    switch (moduleKey)
+                    {
+                        case "suppliers":
+                            AddIfPresent(_supplierCompanies, Cell(row, "供应商名称", "供应商公司名"));
+                            AddIfPresent(_supplierCodes, Cell(row, "供应商编号"));
+                            break;
+                        case "customers":
+                            AddIfPresent(_customerCompanies, Cell(row, "客户名称", "公司名"));
+                            AddIfPresent(_customerCodes, Cell(row, "客户编号"));
+                            break;
+                        case "materials":
+                            AddIfPresent(_materialCodes, Cell(row, "物料编号"));
+                            AddIfPresent(_materialNames, Cell(row, "物料名称/规格", "物料名称"));
+                            break;
+                        case "boms":
+                            string bomCode = Cell(row, "BOM编号"), bomVer = Cell(row, "BOM版本");
+                            AddIfPresent(_bomCodes, bomCode);
+                            if (!string.IsNullOrWhiteSpace(bomCode) && !string.IsNullOrWhiteSpace(bomVer))
+                                _bomKeys.Add(BomConflictKey(bomCode, bomVer));
+                            break;
+                        case "purchaseOrders":
+                            AddIfPresent(_purchaseOrderCodes, Cell(row, "采购编号", "采购单号"));
+                            break;
+                        case "salesOrders":
+                            AddIfPresent(_salesOrderCodes, Cell(row, "订单编号", "销售单号"));
+                            break;
+                    }
+                }
+            }
+
+            static void AddIfPresent(HashSet<string> set, string value)
+            {
+                if (!Placeholder(value)) set.Add(value.Trim());
+            }
+
+            public List<Dictionary<string, string>> GetModuleRows(string moduleKey)
+            {
+                List<Dictionary<string, string>> rows;
+                return _moduleRows.TryGetValue(moduleKey, out rows) ? rows : new List<Dictionary<string, string>>();
+            }
+
+            public bool SupplierExists(string company)
+            {
+                if (Placeholder(company)) return false;
+                company = company.Trim();
+                return LoadSuppliers().Any(x => string.Equals((x.Company ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase))
+                    || _supplierCompanies.Contains(company);
+            }
+
+            public bool CustomerExists(string code, string company)
+            {
+                code = Placeholder(code) ? "" : code.Trim();
+                company = Placeholder(company) ? "" : company.Trim();
+                var customers = LoadCustomers();
+                if (!string.IsNullOrWhiteSpace(code) && customers.Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))) return true;
+                if (!string.IsNullOrWhiteSpace(code) && _customerCodes.Contains(code)) return true;
+                if (!string.IsNullOrWhiteSpace(company) && customers.Any(x => string.Equals((x.Company ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase))) return true;
+                if (!string.IsNullOrWhiteSpace(company) && _customerCompanies.Contains(company)) return true;
+                return false;
+            }
+
+            public bool MaterialExists(string code, string name)
+            {
+                code = Placeholder(code) ? "" : code.Trim();
+                name = Placeholder(name) ? "" : name.Trim();
+                var materials = LoadMaterials();
+                if (!string.IsNullOrWhiteSpace(code) && materials.Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))) return true;
+                if (!string.IsNullOrWhiteSpace(code) && _materialCodes.Contains(code)) return true;
+                if (!string.IsNullOrWhiteSpace(name) && materials.Any(x => string.Equals((x.NameSpec ?? "").Trim(), name, StringComparison.OrdinalIgnoreCase))) return true;
+                if (!string.IsNullOrWhiteSpace(name) && _materialNames.Contains(name)) return true;
+                return false;
+            }
+
+            public bool BomExists(string code, string version)
+            {
+                if (Placeholder(code)) return false;
+                code = code.Trim();
+                version = Placeholder(version) ? "" : version.Trim();
+                var boms = LoadBom();
+                if (!string.IsNullOrWhiteSpace(version))
+                {
+                    string key = BomConflictKey(code, version);
+                    if (boms.Any(x => string.Equals(BomConflictKey(x.Code, x.Version), key, StringComparison.OrdinalIgnoreCase))) return true;
+                    if (_bomKeys.Contains(key)) return true;
+                }
+                if (boms.Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))) return true;
+                return _bomCodes.Contains(code);
+            }
+
+            public bool PurchaseOrderExists(string code)
+            {
+                if (Placeholder(code)) return false;
+                code = code.Trim();
+                return LoadPurchaseOrders().Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))
+                    || _purchaseOrderCodes.Contains(code);
+            }
+
+            public bool SalesOrderExists(string code)
+            {
+                if (Placeholder(code)) return false;
+                code = code.Trim();
+                return LoadSalesOrders().Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))
+                    || _salesOrderCodes.Contains(code);
+            }
+
+            public List<Material> GetMergedMaterials()
+            {
+                var list = LoadMaterials().ToList();
+                foreach (var row in GetModuleRows("materials"))
+                {
+                    string code = Cell(row, "物料编号"), name = Cell(row, "物料名称/规格", "物料名称");
+                    if (Placeholder(code) && Placeholder(name)) continue;
+                    if (list.Any(x => (!Placeholder(code) && string.Equals((x.Code ?? "").Trim(), code.Trim(), StringComparison.OrdinalIgnoreCase))
+                        || (!Placeholder(name) && string.Equals((x.NameSpec ?? "").Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)))) continue;
+                    list.Add(new Material
+                    {
+                        Id = "",
+                        Code = Placeholder(code) ? "" : code.Trim(),
+                        NameSpec = name,
+                        QuantityUnit = Cell(row, "数量/单位")
+                    });
+                }
+                return list;
+            }
+        }
+
+        static byte[] DecodeTestDataImportBytes(TestDataImportRequest req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.Data)) throw new BusinessException("请选择 Excel 文件");
-            if (!string.IsNullOrEmpty(req.FileName) && !req.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                throw new BusinessException("仅支持 .xlsx 格式文件");
             string encoded = req.Data.Trim();
             if (encoded.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
                 int comma = encoded.IndexOf(',');
                 if (comma >= 0) encoded = encoded.Substring(comma + 1);
             }
-            byte[] bytes;
-            try { bytes = Convert.FromBase64String(encoded); }
+            try { return Convert.FromBase64String(encoded); }
             catch { throw new BusinessException("Excel 文件内容无效"); }
+        }
+
+        static string ComputeTestDataFileHash(TestDataImportRequest req)
+        {
+            byte[] bytes = DecodeTestDataImportBytes(req);
+            if (bytes.Length > 50 * 1024 * 1024) throw new BusinessException("Excel 文件不能超过 50MB");
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+        }
+
+        static void EnsureTestDataImportPreviewApproved(UserSession user, TestDataImportRequest req)
+        {
+            if (user == null || string.IsNullOrWhiteSpace(user.Username)) throw new BusinessException("请先登录", 401);
+            TestDataPreviewApproval approval;
+            if (!TestDataPreviewApprovals.TryGetValue(user.Username, out approval))
+                throw new BusinessException("请先执行预检查，通过后再正式导入。", 422);
+            string fileHash = ComputeTestDataFileHash(req);
+            if (!string.Equals(approval.FileHash, fileHash, StringComparison.OrdinalIgnoreCase))
+                throw new BusinessException("文件已变更，请重新执行预检查后再正式导入。", 422);
+            if (approval.TotalFailed > 0)
+                throw new BusinessException("预检查存在错误，不能正式导入。", 422);
+        }
+
+        static ParsedTestWorkbook ParseTestDataWorkbook(TestDataImportRequest req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.Data)) throw new BusinessException("请选择 Excel 文件");
+            if (!string.IsNullOrEmpty(req.FileName) && !req.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                throw new BusinessException("仅支持 .xlsx 格式文件");
+            byte[] bytes = DecodeTestDataImportBytes(req);
             if (bytes.Length > 50 * 1024 * 1024) throw new BusinessException("Excel 文件不能超过 50MB");
             var parsed = new ParsedTestWorkbook { FileName = req.FileName ?? "import.xlsx" };
             using (var ms = new MemoryStream(bytes))
@@ -391,31 +608,26 @@ namespace SupplierErpApp
             ws.Cell(r, 1).Value = "（仅供参考，不参与导入）";
         }
 
-        static List<string> PreviewModuleErrors(string moduleKey, List<Dictionary<string, string>> rows)
+        static TestDataModuleResult ImportModuleRows(string moduleKey, List<Dictionary<string, string>> rows, UserSession user, bool previewOnly = false, ExcelImportContext excelCtx = null)
         {
-            var result = ImportModuleRows(moduleKey, rows, null, true);
-            return (result.Errors ?? new string[0]).ToList();
-        }
-
-        static TestDataModuleResult ImportModuleRows(string moduleKey, List<Dictionary<string, string>> rows, UserSession user, bool previewOnly = false)
-        {
+            if (excelCtx == null) excelCtx = new ExcelImportContext();
             switch (moduleKey)
             {
-                case "suppliers": return ImportSuppliersTest(rows, user, previewOnly);
-                case "customers": return ImportCustomersTest(rows, user, previewOnly);
-                case "materials": return ImportMaterialsTest(rows, user, previewOnly);
-                case "boms": return ImportBomsTest(rows, user, previewOnly);
-                case "modelCosts": return ImportModelCostsTest(rows, user, previewOnly);
-                case "salesOrders": return ImportSalesOrdersTest(rows, user, previewOnly);
-                case "salesOutbounds": return ImportSalesOutboundsTest(rows, user, previewOnly);
-                case "purchaseOrders": return ImportPurchaseOrdersTest(rows, user, previewOnly);
-                case "purchaseInbounds": return ImportPurchaseInboundsTest(rows, user, previewOnly);
-                case "productionPicks": return ImportProductionPicksTest(rows, user, previewOnly);
-                case "finishedInbounds": return ImportFinishedInboundsTest(rows, user, previewOnly);
-                case "receivables": return ImportReceivablesTest(rows, user, previewOnly);
-                case "payables": return ImportPayablesTest(rows, user, previewOnly);
-                case "financeTransactions": return ImportFinanceTransactionsTest(rows, user, previewOnly);
-                case "financeOpening": return ImportFinanceOpeningTest(rows, user, previewOnly);
+                case "suppliers": return ImportSuppliersTest(rows, user, previewOnly, excelCtx);
+                case "customers": return ImportCustomersTest(rows, user, previewOnly, excelCtx);
+                case "materials": return ImportMaterialsTest(rows, user, previewOnly, excelCtx);
+                case "boms": return ImportBomsTest(rows, user, previewOnly, excelCtx);
+                case "modelCosts": return ImportModelCostsTest(rows, user, previewOnly, excelCtx);
+                case "salesOrders": return ImportSalesOrdersTest(rows, user, previewOnly, excelCtx);
+                case "salesOutbounds": return ImportSalesOutboundsTest(rows, user, previewOnly, excelCtx);
+                case "purchaseOrders": return ImportPurchaseOrdersTest(rows, user, previewOnly, excelCtx);
+                case "purchaseInbounds": return ImportPurchaseInboundsTest(rows, user, previewOnly, excelCtx);
+                case "productionPicks": return ImportProductionPicksTest(rows, user, previewOnly, excelCtx);
+                case "finishedInbounds": return ImportFinishedInboundsTest(rows, user, previewOnly, excelCtx);
+                case "receivables": return ImportReceivablesTest(rows, user, previewOnly, excelCtx);
+                case "payables": return ImportPayablesTest(rows, user, previewOnly, excelCtx);
+                case "financeTransactions": return ImportFinanceTransactionsTest(rows, user, previewOnly, excelCtx);
+                case "financeOpening": return ImportFinanceOpeningTest(rows, user, previewOnly, excelCtx);
                 default: return new TestDataModuleResult { ModuleKey = moduleKey, ModuleLabel = moduleKey, Skipped = rows.Count };
             }
         }
@@ -431,7 +643,7 @@ namespace SupplierErpApp
             if (errors.Count < 30) errors.Add("第" + rowNo + "行：" + msg);
         }
 
-        static TestDataModuleResult ImportSuppliersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportSuppliersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("suppliers");
             var errors = new List<string>();
@@ -477,7 +689,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportCustomersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportCustomersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("customers");
             var errors = new List<string>();
@@ -523,11 +735,10 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportMaterialsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportMaterialsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("materials");
             var errors = new List<string>();
-            var suppliers = LoadSuppliers();
             bool changed = false;
             int rowNo = 1;
             Action<List<Material>> importLoop = list =>
@@ -537,7 +748,7 @@ namespace SupplierErpApp
                 rowNo++;
                 string code = Cell(row, "物料编号"), supplier = Cell(row, "供应商"), name = Cell(row, "物料名称/规格", "物料名称");
                 if (Placeholder(name)) { res.Skipped++; continue; }
-                if (!string.IsNullOrWhiteSpace(supplier) && !suppliers.Any(x => string.Equals(x.Company, supplier, StringComparison.OrdinalIgnoreCase)))
+                if (!string.IsNullOrWhiteSpace(supplier) && !excelCtx.SupplierExists(supplier))
                 { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
                 if (Money(Cell(row, "含税价")) < 0 || Money(Cell(row, "不含税价")) < 0) { AddErr(res, errors, rowNo, "价格不能为负数"); continue; }
                 var existing = list.FirstOrDefault(x => (!Placeholder(code) && string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase)) || (string.Equals(x.NameSpec, name, StringComparison.OrdinalIgnoreCase) && (string.IsNullOrWhiteSpace(supplier) || string.Equals(x.Supplier, supplier, StringComparison.OrdinalIgnoreCase))));
@@ -573,12 +784,12 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportBomsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportBomsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("boms");
             var errors = new List<string>();
             var warnings = new List<string>();
-            var materials = LoadMaterials();
+            var materials = excelCtx.GetMergedMaterials();
             decimal taxRate = LoadSystemSettings().TaxRate;
             var groups = rows.GroupBy(r => BomConflictKey(Cell(r, "BOM编号"), Cell(r, "BOM版本"))).Where(g => !string.IsNullOrWhiteSpace(g.Key)).ToList();
             bool changed = false;
@@ -605,11 +816,10 @@ namespace SupplierErpApp
             res.Errors = errors.Concat(warnings).Take(30).ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportModelCostsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportModelCostsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("modelCosts");
             var errors = new List<string>();
-            var boms = LoadBom();
             bool changed = false;
             int rowNo = 1;
             Action<List<ModelCost>> importLoop = list =>
@@ -622,9 +832,11 @@ namespace SupplierErpApp
                 if (Money(Cell(row, "材料成本")) < 0 || Money(Cell(row, "总成本")) < 0) { AddErr(res, errors, rowNo, "成本不能为负数"); continue; }
                 var existing = list.FirstOrDefault(x => (!Placeholder(modelCode) && string.Equals(x.ModelCode, modelCode, StringComparison.OrdinalIgnoreCase)) || (!Placeholder(modelName) && string.Equals(x.ModelName, modelName, StringComparison.OrdinalIgnoreCase)));
                 if (existing != null) { res.Skipped++; continue; }
-                var bom = boms.FirstOrDefault(x => string.Equals(x.Code, bomCode, StringComparison.OrdinalIgnoreCase));
-                if (string.IsNullOrWhiteSpace(bomCode) || bom == null) { AddErr(res, errors, rowNo, "BOM不存在，请先在BOM表中创建"); continue; }
+                string bomVersion = Cell(row, "BOM版本");
+                if (string.IsNullOrWhiteSpace(bomCode) || !excelCtx.BomExists(bomCode, bomVersion)) { AddErr(res, errors, rowNo, "BOM不存在，请先在BOM表中创建"); continue; }
                 if (previewOnly) { res.Added++; continue; }
+                var bom = LoadBom().FirstOrDefault(x => string.Equals(x.Code, bomCode, StringComparison.OrdinalIgnoreCase));
+                if (bom == null) { AddErr(res, errors, rowNo, "BOM不存在，请先在BOM表中创建"); continue; }
                 var item = new ModelCost
                 {
                     Id = Guid.NewGuid().ToString("N"), ModelCode = modelCode, ModelName = modelName,
@@ -641,7 +853,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportSalesOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportSalesOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("salesOrders");
             var errors = new List<string>();
@@ -659,15 +871,16 @@ namespace SupplierErpApp
                     var item = new SalesOrder
                     {
                         CustomerCode = Cell(row, "客户编号"), CustomerName = Cell(row, "客户名称"),
-                        MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "数量")),
+                        MaterialCode = Cell(row, "物料编号"), MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "数量")),
                         TaxExcludedSalePrice = Money(Cell(row, "不含税销售单价", "销售单价", "单价")),
                         TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")),
                         OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
                     if (Placeholder(item.CustomerName) && Placeholder(item.CustomerCode)) { AddErr(res, errors, rowNo, "请选择客户"); continue; }
+                    if (!excelCtx.CustomerExists(item.CustomerCode, item.CustomerName)) { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
                     if (item.Quantity < 0) { AddErr(res, errors, rowNo, "数量不能为负数"); continue; }
-                    ApplySalesOrder(item);
                     if (previewOnly) { res.Added++; continue; }
+                    ApplySalesOrder(item);
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -681,7 +894,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportSalesOutboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportSalesOutboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("salesOutbounds");
             var errors = new List<string>();
@@ -698,6 +911,13 @@ namespace SupplierErpApp
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string orderNo = Cell(row, "销售订单号", "关联销售单号");
                     if (Placeholder(orderNo)) { AddErr(res, errors, rowNo, "请选择来源销售订单"); continue; }
+                    if (!excelCtx.SalesOrderExists(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
+                    if (previewOnly)
+                    {
+                        decimal qty = Money(Cell(row, "出库数量", "数量")), cost = Money(Cell(row, "成本单价", "单价"));
+                        if (qty < 0 || cost < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
+                        res.Added++; continue;
+                    }
                     var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
                     if (order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
                     var item = new SalesOutbound
@@ -709,7 +929,6 @@ namespace SupplierErpApp
                     };
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplySalesOutbound(item);
-                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -723,11 +942,10 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportPurchaseOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportPurchaseOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("purchaseOrders");
             var errors = new List<string>();
-            var suppliers = LoadSuppliers();
             bool changed = false;
             int rowNo = 1;
             Action<List<PurchaseOrder>> importLoop = list =>
@@ -740,7 +958,7 @@ namespace SupplierErpApp
                     string code = Cell(row, "采购编号", "采购单号");
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string supplierName = Cell(row, "供应商名称");
-                    if (!Placeholder(supplierName) && !suppliers.Any(x => string.Equals(x.Company, supplierName, StringComparison.OrdinalIgnoreCase)))
+                    if (!Placeholder(supplierName) && !excelCtx.SupplierExists(supplierName))
                     { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
                     var item = new PurchaseOrder
                     {
@@ -764,7 +982,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportPurchaseInboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportPurchaseInboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("purchaseInbounds");
             var errors = new List<string>();
@@ -781,6 +999,19 @@ namespace SupplierErpApp
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string poNo = Cell(row, "采购单号", "关联采购单号");
                     if (Placeholder(poNo)) { AddErr(res, errors, rowNo, "请选择来源采购单"); continue; }
+                    if (!excelCtx.PurchaseOrderExists(poNo)) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
+                    string supplierName = Cell(row, "供应商名称");
+                    if (!Placeholder(supplierName) && !excelCtx.SupplierExists(supplierName))
+                    { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
+                    string matCode = Cell(row, "物料编号"), matName = Cell(row, "物料名称");
+                    if (!Placeholder(matName) && !excelCtx.MaterialExists(matCode, matName))
+                    { AddErr(res, errors, rowNo, "物料不存在"); continue; }
+                    if (previewOnly)
+                    {
+                        decimal qty = Money(Cell(row, "入库数量", "数量")), price = Money(Cell(row, "入库单价", "单价"));
+                        if (qty < 0 || price < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
+                        res.Added++; continue;
+                    }
                     var po = LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase));
                     if (po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
                     var item = new PurchaseInbound
@@ -792,7 +1023,6 @@ namespace SupplierErpApp
                     };
                     if (item.Quantity < 0 || item.InboundPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplyPurchaseInbound(item);
-                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -806,7 +1036,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportProductionPicksTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportProductionPicksTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("productionPicks");
             var errors = new List<string>();
@@ -821,16 +1051,17 @@ namespace SupplierErpApp
                 {
                     string code = Cell(row, "领用编号");
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
-                    string matCode = Cell(row, "物料编号");
+                    string matCode = Cell(row, "物料编号"), matName = Cell(row, "物料名称");
                     var mat = LoadMaterials().FirstOrDefault(x => string.Equals(x.Code, matCode, StringComparison.OrdinalIgnoreCase));
                     var item = new ProductionPick
                     {
                         BomName = Cell(row, "BOM名称"), MaterialId = mat != null ? mat.Id : "", MaterialCode = matCode,
-                        MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "领用数量", "数量")),
+                        MaterialName = matName, Quantity = Money(Cell(row, "领用数量", "数量")),
                         CostPrice = Money(Cell(row, "成本单价", "单价")), PickDate = Cell(row, "领用日期"),
                         Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
-                    if (string.IsNullOrWhiteSpace(item.MaterialName) && mat == null) { AddErr(res, errors, rowNo, "物料不存在"); continue; }
+                    if (string.IsNullOrWhiteSpace(matName) && mat == null && !excelCtx.MaterialExists(matCode, ""))
+                    { AddErr(res, errors, rowNo, "物料不存在"); continue; }
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplyProductionPick(item);
                     if (previewOnly) { res.Added++; continue; }
@@ -847,7 +1078,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportFinishedInboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportFinishedInboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("finishedInbounds");
             var errors = new List<string>();
@@ -887,7 +1118,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportReceivablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportReceivablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("receivables");
             var errors = new List<string>();
@@ -904,17 +1135,22 @@ namespace SupplierErpApp
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string orderNo = Cell(row, "销售订单号");
                     if (Placeholder(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不能为空"); continue; }
+                    if (!excelCtx.SalesOrderExists(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
+                    string customerName = Cell(row, "客户名称");
+                    if (!Placeholder(customerName) && !excelCtx.CustomerExists("", customerName))
+                    { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
+                    decimal recvAmt = Money(Cell(row, "应收金额")), receivedAmt = Money(Cell(row, "已收金额"));
+                    if (recvAmt < 0 || receivedAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
+                    if (previewOnly) { res.Added++; continue; }
                     var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
                     if (order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
                     var item = new Receivable
                     {
                         SalesOrderId = order.Id, SalesOrderNo = order.Code, CustomerName = Cell(row, "客户名称", order.CustomerName),
-                        ReceivableAmount = Money(Cell(row, "应收金额")), ReceivedAmount = Money(Cell(row, "已收金额")),
+                        ReceivableAmount = recvAmt, ReceivedAmount = receivedAmt,
                         DueDate = Cell(row, "到期日期"), Note = Cell(row, "备注"), Code = code
                     };
-                    if (item.ReceivableAmount < 0 || item.ReceivedAmount < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
                     ApplyReceivable(item);
-                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(ReceivableSequenceFile, "AR", list.Select(x => x.Code), "YS");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -928,7 +1164,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportPayablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportPayablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("payables");
             var errors = new List<string>();
@@ -945,17 +1181,22 @@ namespace SupplierErpApp
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string poNo = Cell(row, "采购单号");
                     if (Placeholder(poNo)) { AddErr(res, errors, rowNo, "来源采购单不能为空"); continue; }
+                    if (!excelCtx.PurchaseOrderExists(poNo)) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
+                    string supplierName = Cell(row, "供应商名称");
+                    if (!Placeholder(supplierName) && !excelCtx.SupplierExists(supplierName))
+                    { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
+                    decimal payAmt = Money(Cell(row, "应付金额")), paidAmt = Money(Cell(row, "已付金额"));
+                    if (payAmt < 0 || paidAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
+                    if (previewOnly) { res.Added++; continue; }
                     var po = LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase));
                     if (po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
                     var item = new Payable
                     {
                         PurchaseOrderId = po.Id, PurchaseNo = po.Code, SupplierName = Cell(row, "供应商名称", po.SupplierName),
-                        PayableAmount = Money(Cell(row, "应付金额")), PaidAmount = Money(Cell(row, "已付金额")),
+                        PayableAmount = payAmt, PaidAmount = paidAmt,
                         DueDate = Cell(row, "到期日期"), Note = Cell(row, "备注"), Code = code
                     };
-                    if (item.PayableAmount < 0 || item.PaidAmount < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
                     ApplyPayable(item);
-                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PayableSequenceFile, "AP", list.Select(x => x.Code), "YF");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -969,7 +1210,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportFinanceTransactionsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportFinanceTransactionsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("financeTransactions");
             var errors = new List<string>();
@@ -1020,7 +1261,7 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
-        static TestDataModuleResult ImportFinanceOpeningTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly)
+        static TestDataModuleResult ImportFinanceOpeningTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("financeOpening");
             var errors = new List<string>();

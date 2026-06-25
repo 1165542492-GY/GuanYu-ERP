@@ -4,6 +4,9 @@
 .test-data-section{margin-top:18px}
 .test-data-section h4{margin:0 0 10px;font-size:15px}
 .test-data-errors{color:var(--red);white-space:pre-wrap;line-height:1.6;font-size:13px}
+.test-data-hint{margin:10px 0 0;line-height:1.7;font-size:13px;color:var(--muted)}
+.test-data-hint.warn{color:var(--red)}
+.test-data-hint.ok{color:#15803d}
 .test-data-summary{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
 .test-data-summary span{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px}
 .test-data-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef3ff;color:#2569ed}
@@ -21,11 +24,13 @@
 <button type="button" class="btn" id="testDataPickBtn">选择 Excel 文件</button>
 <button type="button" class="btn" id="testDataPreviewBtn" disabled>预检查</button>
 <button type="button" class="btn primary" id="testDataImportBtn" disabled>开始导入</button>
+<button type="button" class="btn" id="testDataCancelBtn" style="display:none">取消本次导入</button>
 </div>
 <div class="mini">当前文件：<b id="testDataFileName">未选择</b></div>
+<div id="testDataImportHint" class="test-data-hint">请先完成预检查，确认无错误后再正式导入</div>
 <div class="test-data-section" id="testDataPreviewSection" style="display:none">
 <h4>Sheet 识别与预检查结果</h4>
-<div class="tablewrap"><table><thead><tr><th>Sheet 名称</th><th>对应模块</th><th>数据条数</th><th>导入说明</th></tr></thead><tbody id="testDataSheetBody"></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Sheet 名称</th><th>对应模块</th><th>数据条数</th><th>预检查统计</th><th>导入说明</th></tr></thead><tbody id="testDataSheetBody"></tbody></table></div>
 <div id="testDataUnknownWrap" style="display:none;margin-top:10px" class="mini"></div>
 <div class="test-data-section"><h4>预检查错误</h4><div id="testDataPreviewErrors" class="test-data-errors">无</div></div>
 </div>
@@ -43,8 +48,90 @@ var panel=document.getElementById('systemSettingTestDataPanel');
 var detail=document.getElementById('systemSettingsDetail');
 var placeholder=document.getElementById('systemSettingPlaceholderPanel');
 if(panel&&detail){if(placeholder&&placeholder.parentNode)placeholder.parentNode.insertBefore(panel,placeholder);else detail.appendChild(panel);}
-var state={fileName:'',data:''};
-function resetTestDataView(){state.fileName='';state.data='';var fn=document.getElementById('testDataFileName');if(fn)fn.textContent='未选择';['testDataPreviewSection','testDataResultSection'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});['testDataPreviewBtn','testDataImportBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.disabled=true;});}
+var state={fileName:'',data:'',fileHash:'',previewPassed:false,totalFailed:0};
+var importTaskActive=false,_execMode=null;
+function isTestDataImportTaskActive(){return importTaskActive}
+function activateImportTask(){
+if(importTaskActive)return;
+importTaskActive=true;
+if(window.erpUiLock)window.erpUiLock.lockFlow('测试数据导入任务进行中，请先完成、取消或关闭当前任务。');
+updateFlowUi();
+}
+function finishImportTask(){
+if(!importTaskActive)return;
+importTaskActive=false;
+if(window.erpUiLock)window.erpUiLock.unlockFlow();
+updateFlowUi();
+}
+function updateFlowUi(){
+refreshTestDataButtons();
+}
+window.isTestDataImportTaskActive=isTestDataImportTaskActive;
+function cancelTestDataImportFlow(opts){
+opts=opts||{};
+if(_execMode){tip(window.erpUiLock?window.erpUiLock.LOCK_MSG:'当前操作尚未完成，请先完成、取消或关闭当前任务。');return false}
+if(!importTaskActive&&!state.data)return false;
+if(!opts.silent&&!confirm('确定取消本次导入？将清空已选文件和预检查结果。'))return false;
+resetTestDataView();
+if(opts.fromBack)tip('已取消本次导入');
+return true;
+}
+window.cancelTestDataImportFlow=cancelTestDataImportFlow;
+function setImportHint(mode){
+var hint=document.getElementById('testDataImportHint');
+if(!hint)return;
+if(mode==='ok'){hint.className='test-data-hint ok';hint.textContent='预检查已通过，可以正式导入';}
+else if(mode==='error'){hint.className='test-data-hint warn';hint.textContent='预检查存在错误，不能正式导入';}
+else{hint.className='test-data-hint';hint.textContent='请先完成预检查，确认无错误后再正式导入';}
+}
+function updateImportButton(){
+var importBtn=document.getElementById('testDataImportBtn');
+if(importBtn)importBtn.disabled=!(state.data&&state.previewPassed&&state.totalFailed===0);
+}
+function refreshTestDataButtons(){
+var busy=!!_execMode;
+var previewBtn=document.getElementById('testDataPreviewBtn');
+var importBtn=document.getElementById('testDataImportBtn');
+var pickBtn=document.getElementById('testDataPickBtn');
+var exportBtn=document.getElementById('testDataExportBtn');
+var cancelBtn=document.getElementById('testDataCancelBtn');
+if(exportBtn)exportBtn.disabled=busy;
+if(pickBtn)pickBtn.disabled=busy&&_execMode==='import';
+if(previewBtn)previewBtn.disabled=busy||!state.data;
+if(importBtn)importBtn.disabled=busy||!(state.data&&state.previewPassed&&state.totalFailed===0);
+if(cancelBtn){
+cancelBtn.style.display=importTaskActive?'inline-block':'none';
+cancelBtn.disabled=busy;
+}
+}
+function setTestDataBusy(busy,msg){
+if(busy)_execMode=msg&&msg.indexOf('导入')>=0?'import':'preview';
+else _execMode=null;
+refreshTestDataButtons();
+updateFlowUi();
+var hint=document.getElementById('testDataImportHint');
+if(busy&&msg&&hint){hint.className='test-data-hint';hint.textContent=msg;}
+}
+function clearPreviewResult(){
+state.previewPassed=false;state.fileHash='';state.totalFailed=0;
+var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='none';
+var body=document.getElementById('testDataSheetBody');if(body)body.innerHTML='';
+var unk=document.getElementById('testDataUnknownWrap');if(unk){unk.style.display='none';unk.innerHTML='';}
+var errBox=document.getElementById('testDataPreviewErrors');if(errBox)errBox.textContent='无';
+setImportHint('pending');refreshTestDataButtons();
+}
+function resetTestDataView(){
+state.fileName='';state.data='';state.fileHash='';state.previewPassed=false;state.totalFailed=0;
+_execMode=null;
+finishImportTask();
+var fn=document.getElementById('testDataFileName');if(fn)fn.textContent='未选择';
+var body=document.getElementById('testDataSheetBody');if(body)body.innerHTML='';
+var unk=document.getElementById('testDataUnknownWrap');if(unk){unk.style.display='none';unk.innerHTML='';}
+var errBox=document.getElementById('testDataPreviewErrors');if(errBox)errBox.textContent='无';
+['testDataPreviewSection','testDataResultSection'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display='none';});
+var previewBtn=document.getElementById('testDataPreviewBtn');if(previewBtn)previewBtn.disabled=true;
+setImportHint('pending');refreshTestDataButtons();updateFlowUi();
+}
 window.resetTestDataPanel=resetTestDataView;
 function renderPreview(res){
 var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='block';
@@ -52,9 +139,10 @@ var body=document.getElementById('testDataSheetBody');
 if(body){
 var rows=(res.Sheets||[]).map(function(s){
 var tag=s.ReferenceOnly?'<span class="test-data-tag ref">仅参考，不导入</span>':(s.Importable?'<span class="test-data-tag">将导入</span>':'<span class="test-data-tag skip">跳过</span>');
-return'<tr><td>'+safe(s.SheetName)+'</td><td>'+safe(s.ModuleLabel||'-')+'</td><td>'+(s.RowCount||0)+'</td><td>'+tag+'</td></tr>';
+var stats=s.ReferenceOnly?'-':('新增 '+(s.Added||0)+' · 更新 '+(s.Updated||0)+' · 跳过 '+(s.Skipped||0)+(s.Failed?(' · 失败 '+s.Failed):''));
+return'<tr><td>'+safe(s.SheetName)+'</td><td>'+safe(s.ModuleLabel||'-')+'</td><td>'+(s.RowCount||0)+'</td><td class="mini">'+stats+'</td><td>'+tag+'</td></tr>';
 }).join('');
-body.innerHTML=rows||'<tr><td colspan="4" class="empty">未识别到可导入 Sheet</td></tr>';
+body.innerHTML=rows||'<tr><td colspan="5" class="empty">未识别到可导入 Sheet</td></tr>';
 }
 var unk=document.getElementById('testDataUnknownWrap');
 if(unk){
@@ -68,6 +156,11 @@ var errs=[];
 (res.Sheets||[]).forEach(function(s){if(s.Errors&&s.Errors.length)s.Errors.forEach(function(e){errs.push('['+s.SheetName+'] '+e);});});
 errBox.textContent=errs.length?errs.join('\n'):'无';
 }
+state.fileHash=res.FileHash||'';
+state.totalFailed=typeof res.TotalFailed==='number'?res.TotalFailed:0;
+state.previewPassed=!!res.CanImport&&state.totalFailed===0;
+setImportHint(state.previewPassed?'ok':'error');
+refreshTestDataButtons();
 }
 function renderRun(res){
 var sec=document.getElementById('testDataResultSection');if(sec)sec.style.display='block';
@@ -80,40 +173,78 @@ var errs=(m.Errors&&m.Errors.length)?m.Errors.join('；'):'-';
 return'<tr><td>'+safe(m.ModuleLabel||m.ModuleKey)+'</td><td>'+(m.Added||0)+'</td><td>'+(m.Updated||0)+'</td><td>'+(m.Skipped||0)+'</td><td>'+(m.Failed||0)+'</td><td class="test-data-errors" style="white-space:normal">'+safe(errs)+'</td></tr>';
 }).join('')||'<tr><td colspan="6" class="empty">无导入结果</td></tr>';
 }
+finishImportTask();
+state.previewPassed=false;
+refreshTestDataButtons();
+setImportHint('pending');
 }
 function readSelectedFile(file,cb){
 var reader=new FileReader();
-reader.onload=function(){state.fileName=file.name;state.data=reader.result;var fn=document.getElementById('testDataFileName');if(fn)fn.textContent=file.name;['testDataPreviewBtn','testDataImportBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.disabled=false;});if(typeof cb==='function')cb();};
+reader.onload=function(){
+state.fileName=file.name;state.data=reader.result;
+clearPreviewResult();
+activateImportTask();
+var fn=document.getElementById('testDataFileName');if(fn)fn.textContent=file.name;
+refreshTestDataButtons();
+if(typeof cb==='function')cb();
+};
 reader.readAsDataURL(file);
 }
 var exportBtn=document.getElementById('testDataExportBtn');
-if(exportBtn)exportBtn.onclick=function(){
-if(!isAdminUser()){tip('仅管理员可操作');return;}
-if(typeof downloadBinaryExport==='function')downloadBinaryExport('/api/test-data/export-all',buildExportFileName('ERP测试数据总表','.xlsx'));
+if(exportBtn)exportBtn.onclick=async function(){
+if(!isAdminUser()){tip('仅管理员可操作');return}
+return runSubmitOnce(this,async function(){
+if(typeof downloadBinaryExport==='function')await downloadBinaryExport('/api/test-data/export-all',buildExportFileName('ERP测试数据总表','.xlsx'));
 else tip('导出功能未就绪');
+},'导出中...','正在导出测试总表，请稍候...');
 };
 var pickBtn=document.getElementById('testDataPickBtn');
-if(pickBtn)pickBtn.onclick=function(){if(!isAdminUser()){tip('仅管理员可操作');return}document.getElementById('testDataImportFile').click();};
+if(pickBtn)pickBtn.onclick=function(){if(!isAdminUser()){tip('仅管理员可操作');return}if(_execMode==='import'){tip(window.erpUiLock?window.erpUiLock.LOCK_MSG:'正在导入，请勿切换页面或关闭窗口...');return}document.getElementById('testDataImportFile').click();};
 var fileInput=document.getElementById('testDataImportFile');
-if(fileInput)fileInput.onchange=function(){var f=this.files[0];if(!f)return;if(!/\.xlsx$/i.test(f.name)){tip('请选择 .xlsx 文件');this.value='';return}readSelectedFile(f,function(){tip('已选择：'+f.name)});this.value='';};
+if(fileInput)fileInput.onchange=function(){var f=this.files[0];if(!f)return;if(!/\.xlsx$/i.test(f.name)){tip('请选择 .xlsx 文件');this.value='';return}readSelectedFile(f,function(){tip('已选择：'+f.name+'，请先执行预检查')});this.value='';};
 var previewBtn=document.getElementById('testDataPreviewBtn');
 if(previewBtn)previewBtn.onclick=async function(){
 if(!isAdminUser()){tip('仅管理员可操作');return}
 if(!state.data){tip('请先选择 Excel 文件');return}
+return runSubmitOnce(this,async function(){
+setTestDataBusy(true,'预检查中，请稍候...');
 try{
 var res=await api('/api/test-data/import-preview',{method:'POST',body:JSON.stringify({FileName:state.fileName,Data:state.data})});
-renderPreview(res);tip('预检查完成');
-}catch(e){tip(e.message||'预检查失败')}
+renderPreview(res);
+if(state.previewPassed)tip('预检查通过，可以正式导入');
+else tip('预检查存在错误，不能正式导入');
+}catch(e){
+state.previewPassed=false;state.totalFailed=0;state.fileHash='';
+setImportHint('error');refreshTestDataButtons();
+tip(e.message||'预检查失败');
+throw e;
+}finally{
+setTestDataBusy(false);
+}
+},'预检查中...','预检查中，请稍候...').catch(function(){});
 };
 var importBtn=document.getElementById('testDataImportBtn');
 if(importBtn)importBtn.onclick=async function(){
 if(!isAdminUser()){tip('仅管理员可操作');return}
 if(!state.data){tip('请先选择 Excel 文件');return}
-if(!confirm('确认导入测试数据总表？重复编号将跳过或更新，建议先备份。'))return;
+if(!state.previewPassed||state.totalFailed>0){tip('请先完成预检查，确认无错误后再正式导入');return}
+if(!confirm('确认导入测试数据总表？重复编号将跳过或更新，建议先备份。'))return
+return runSubmitOnce(this,async function(){
+setTestDataBusy(true,'正在导入，请勿切换页面或关闭窗口...');
 try{
 var res=await api('/api/test-data/import-run',{method:'POST',body:JSON.stringify({FileName:state.fileName,Data:state.data})});
 renderRun(res);tip('导入完成：新增 '+(res.TotalAdded||0)+'，更新 '+(res.TotalUpdated||0)+'，跳过 '+(res.TotalSkipped||0)+'，失败 '+(res.TotalFailed||0));
-}catch(e){tip(e.message||'导入失败')}
+}catch(e){
+tip(e.message||'导入失败');
+throw e;
+}finally{
+setTestDataBusy(false);
+}
+},'导入中...','正在导入，请勿切换页面或关闭窗口...').catch(function(){});
 };
+var cancelBtn=document.getElementById('testDataCancelBtn');
+if(cancelBtn)cancelBtn.onclick=function(){cancelTestDataImportFlow({fromBack:false})};
+setImportHint('pending');
+updateFlowUi();
 })();
 </script>

@@ -109,6 +109,10 @@ namespace SupplierErpApp
         public bool Importable { get; set; }
         public bool ReferenceOnly { get; set; }
         public int RowCount { get; set; }
+        public int Added { get; set; }
+        public int Updated { get; set; }
+        public int Skipped { get; set; }
+        public int Failed { get; set; }
         public string[] Errors { get; set; }
     }
     public class TestDataModuleResult
@@ -126,6 +130,9 @@ namespace SupplierErpApp
         public string FileName { get; set; }
         public TestDataSheetInfo[] Sheets { get; set; }
         public string[] UnknownSheets { get; set; }
+        public string FileHash { get; set; }
+        public int TotalFailed { get; set; }
+        public bool CanImport { get; set; }
     }
     public class TestDataRunResult
     {
