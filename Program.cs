@@ -2503,7 +2503,6 @@ namespace SupplierErpApp
             {
                 int imported = 0, skipped = 0, rowNo = 0;
                 var errors = new List<string>();
-                var batchKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var pending = new List<Material>();
                 foreach (var input in items)
                 {
@@ -2519,22 +2518,25 @@ namespace SupplierErpApp
                         {
                             skipped++; errors.Add("第" + rowNo + "行：供应商未建档"); continue;
                         }
-                        string key = input.Supplier + "\t" + input.NameSpec;
-                        if (batchKeys.Contains(key))
+                        if (!string.IsNullOrWhiteSpace(input.Code))
                         {
-                            skipped++; errors.Add("第" + rowNo + "行：本批次中重复物料"); continue;
+                            string code = input.Code.Trim();
+                            if (list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase)) ||
+                                pending.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                skipped++; errors.Add("第" + rowNo + "行：物料编号已存在"); continue;
+                            }
                         }
                         var item = new Material
                         {
                             Id = Guid.NewGuid().ToString("N"),
-                            Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "WL"),
+                            Code = !string.IsNullOrWhiteSpace(input.Code) ? input.Code.Trim() : NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "WL"),
                             Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
                             TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
                             Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
                             UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         NormalizeMaterialPriceFields(item);
-                        batchKeys.Add(key);
                         pending.Insert(0, item);
                         imported++;
                     }
@@ -2900,19 +2902,29 @@ namespace SupplierErpApp
             var rows=ReadImportRows(ctx);var suppliers=LoadSuppliers();int imported=0,skipped=0;var errors=new List<string>();int rowNo=1;
             MutateJsonList<Material, object>(MaterialFile, "materials", list =>
             {
+                var pending = new List<Material>();
                 foreach(var row in rows){
                     rowNo++;
                     try {
                         string supplier=Cell(row,"供应商"),name=Cell(row,"物料名称/规格");
                         if(Placeholder(name)){skipped++;continue;}
                         if(!suppliers.Any(x=>string.Equals(x.Company,supplier,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：供应商未建档");continue;}
-                        if(list.Any(x=>string.Equals(x.Supplier,supplier,StringComparison.OrdinalIgnoreCase)&&string.Equals(x.NameSpec,name,StringComparison.OrdinalIgnoreCase))){skipped++;errors.Add("第"+rowNo+"行：物料已存在");continue;}
+                        string importCode = (Cell(row, "物料编号") ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(importCode))
+                        {
+                            if (list.Any(x => string.Equals(x.Code, importCode, StringComparison.OrdinalIgnoreCase)) ||
+                                pending.Any(x => string.Equals(x.Code, importCode, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                skipped++; errors.Add("第" + rowNo + "行：物料编号已存在"); continue;
+                            }
+                        }
                         var item=BuildMaterialFromImportRow(row);
                         item.Supplier=supplier;item.NameSpec=name;
                         ValidateMaterial(item);
                         item.Id=Guid.NewGuid().ToString("N");
-                        item.Code=NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code), "WL");
+                        item.Code = !string.IsNullOrWhiteSpace(importCode) ? importCode : NextCode(MaterialSequenceFile,"MAT",list.Select(x=>x.Code).Concat(pending.Select(x=>x.Code)), "WL");
                         item.UpdatedAt=ProfileUpdatedAtNow();item.UpdatedBy=user.DisplayName;
+                        pending.Insert(0, item);
                         list.Insert(0,item);imported++;
                     } catch (Exception ex) { skipped++; errors.Add("第"+rowNo+"行："+ToUserMessage(ex)); }
                 }
