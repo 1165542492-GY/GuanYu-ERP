@@ -1,17 +1,41 @@
 <style>
-.oplog-tools{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:flex-end}
-.oplog-tools .field{margin:0;min-width:140px}
-.oplog-tools label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
-.oplog-detail{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:14px;line-height:1.7;font-size:13px;white-space:pre-wrap}
-.oplog-fail{color:var(--red)}
-.oplog-pager{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.oplog-notices{margin-bottom:calc(14px * var(--ui-scale,1))}
+.oplog-filter-panel{margin-bottom:calc(14px * var(--ui-scale,1))}
+.oplog-tools{display:flex;flex-wrap:wrap;gap:calc(10px * var(--ui-scale,1)) calc(12px * var(--ui-scale,1));align-items:flex-end;padding:calc(16px * var(--ui-scale,1)) calc(19px * var(--ui-scale,1))}
+.oplog-tools .field{margin:0;min-width:calc(130px * var(--ui-scale,1));flex:0 1 auto}
+.oplog-tools .field input,.oplog-tools .field select{width:100%;min-width:calc(120px * var(--ui-scale,1))}
+.oplog-tools label{font-size:calc(12px * var(--ui-scale,1));color:var(--muted);display:block;margin-bottom:4px}
+.oplog-tools .field-oplog-keyword{min-width:calc(180px * var(--ui-scale,1));flex:1 1 calc(180px * var(--ui-scale,1))}
+.oplog-tools .oplog-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:2px}
+.oplog-table{min-width:1380px!important}
+.oplog-table .col-time{min-width:150px}
+.oplog-table .col-user{min-width:140px}
+.oplog-table .col-ip{min-width:120px}
+.oplog-table .col-module{min-width:120px}
+.oplog-table .col-action{min-width:100px}
+.oplog-table .col-code{min-width:150px}
+.oplog-table .col-name{min-width:180px}
+.oplog-table .col-result{min-width:80px}
+.oplog-table .col-msg{min-width:260px;white-space:normal;max-width:360px}
+.oplog-table .col-op{min-width:80px}
+.oplog-fail{color:var(--red);font-weight:600}
+tr.oplog-row-fail td{color:var(--red)}
+.oplog-pager{display:flex;align-items:center;gap:10px;padding:0 calc(19px * var(--ui-scale,1)) calc(14px * var(--ui-scale,1));flex-wrap:wrap}
+.oplog-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
+.oplog-detail-block{padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#f8fafc;line-height:1.75;font-size:calc(13px * var(--ui-scale,1))}
+.oplog-detail-block.full{grid-column:1/-1}
+.oplog-detail-block .block-title{font-weight:700;margin:0 0 8px;color:var(--text);font-size:calc(13px * var(--ui-scale,1))}
+.oplog-detail-row{display:flex;gap:8px;margin:4px 0}
+.oplog-detail-row .k{flex:0 0 88px;color:var(--muted)}
+.oplog-detail-row .v{flex:1;word-break:break-all}
+@media(max-width:720px){.oplog-detail-grid{grid-template-columns:1fr}}
 </style>
 <div id="systemSettingOperationLogPanel" style="display:none">
-<div class="panel">
-<div class="form" style="padding:24px 28px">
-<div class="formtitle">操作记录</div>
-<div class="notice"><span>操作记录用于查看谁在什么时间新增、修改、删除或清空了数据。</span></div>
+<div class="oplog-notices">
+<div class="notice"><span>操作记录用于查看谁在什么时间新增、修改、删除、导入、导出或清空了数据。</span></div>
 <div class="notice page-tip-orange"><span>操作记录用于审计追溯，不建议随意清理。</span></div>
+</div>
+<div class="panel oplog-filter-panel">
 <div class="oplog-tools">
 <div class="field"><label>开始日期</label><input type="date" id="oplogFrom"></div>
 <div class="field"><label>结束日期</label><input type="date" id="oplogTo"></div>
@@ -19,23 +43,31 @@
 <div class="field"><label>模块</label><input id="oplogModule" placeholder="如：供应商管理"></div>
 <div class="field"><label>操作类型</label><input id="oplogAction" placeholder="如：新增"></div>
 <div class="field"><label>结果</label><select id="oplogResult"><option value="">全部</option><option value="Success">成功</option><option value="Failed">失败</option></select></div>
-<div class="field" style="min-width:180px"><label>关键字</label><input id="oplogKeyword" placeholder="编号/名称/摘要"></div>
+<div class="field field-oplog-keyword"><label>关键字</label><input id="oplogKeyword" placeholder="编号/名称/摘要"></div>
+<div class="oplog-actions">
 <button type="button" class="btn primary" id="oplogSearchBtn">查询</button>
 <button type="button" class="btn" id="oplogExportBtn">导出 CSV</button>
 <button type="button" class="btn" id="oplogResetBtn">重置</button>
 </div>
-<div class="dual-scroll"><div class="tablewrap"><table class="data-table"><thead><tr><th>时间</th><th>操作人</th><th>IP</th><th>模块</th><th>操作类型</th><th>业务编号</th><th>业务名称</th><th>结果</th><th>摘要</th><th>操作</th></tr></thead><tbody id="oplogListBody"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody></table></div></div>
-<div class="foot"><span id="oplogCountText">共 0 条</span></div>
-<div class="oplog-pager"><button type="button" class="btn" id="oplogPrevBtn">上一页</button><span id="oplogPageText">第 1 页</span><button type="button" class="btn" id="oplogNextBtn">下一页</button></div>
-<div id="oplogDetailWrap" style="display:none"><div class="formtitle" style="margin-top:18px">日志详情</div><div class="oplog-detail" id="oplogDetailBox"></div></div>
 </div>
 </div>
+<div class="panel">
+<div class="dual-scroll" id="oplogDualScroll"><div class="table-scroll-top" id="oplogScrollTop"><div class="table-scroll-inner" id="oplogScrollInner"></div></div><div class="tablewrap" id="oplogTableWrap"><table class="data-table oplog-table"><thead><tr><th class="col-time">时间</th><th class="col-user">操作人</th><th class="col-ip">IP</th><th class="col-module">模块</th><th class="col-action">操作类型</th><th class="col-code">业务编号</th><th class="col-name">业务名称</th><th class="col-result">结果</th><th class="col-msg">摘要</th><th class="col-op">操作</th></tr></thead><tbody id="oplogListBody"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody></table></div></div>
+<div class="foot"><span id="oplogCountText">共 0 条</span><span id="oplogPageSummary">第 1 页</span></div>
+<div class="oplog-pager"><button type="button" class="btn" id="oplogPrevBtn">上一页</button><span id="oplogPageText">第 1 / 1 页</span><button type="button" class="btn" id="oplogNextBtn">下一页</button></div>
 </div>
+</div>
+<div class="modal" id="oplogDetailModal"><div class="dialog" style="width:min(96vw,calc(680px * var(--ui-scale,1)))"><div class="dialoghead"><div class="dialogtitle">操作记录详情</div><button class="close" id="oplogDetailClose">×</button></div><div class="form" id="oplogDetailBox" style="padding-top:16px"></div><div class="dialogfoot"><button type="button" class="btn" id="oplogDetailOk">关闭</button></div></div></div>
 <script>
 (function(){
+var panel=document.getElementById('systemSettingOperationLogPanel');
+var detail=document.getElementById('systemSettingsDetail');
+var placeholder=document.getElementById('systemSettingPlaceholderPanel');
+if(panel&&detail){if(placeholder&&placeholder.parentNode)placeholder.parentNode.insertBefore(panel,placeholder);else detail.appendChild(panel);}
 var oplogPage=1,oplogPageSize=50,oplogTotal=0;
 function qs(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function dash(v){var s=v==null?'':String(v).trim();return s?s:'-'}
 function buildQuery(page){
   var p=new URLSearchParams();
   var from=qs('oplogFrom'),to=qs('oplogTo'),u=qs('oplogUsername'),m=qs('oplogModule'),a=qs('oplogAction'),r=qs('oplogResult'),k=qs('oplogKeyword');
@@ -54,9 +86,36 @@ function updatePager(page,total){
   oplogPage=page;oplogTotal=total||0;
   var pages=Math.max(1,Math.ceil(oplogTotal/oplogPageSize));
   if(qs('oplogPageText'))qs('oplogPageText').textContent='第 '+page+' / '+pages+' 页';
+  if(qs('oplogPageSummary'))qs('oplogPageSummary').textContent='第 '+page+' / '+pages+' 页 · 共 '+oplogTotal+' 条';
   if(qs('oplogPrevBtn'))qs('oplogPrevBtn').disabled=(page<=1);
   if(qs('oplogNextBtn'))qs('oplogNextBtn').disabled=(page>=pages);
 }
+function refreshOplogScroll(){if(typeof bindDualScroll==='function')setTimeout(function(){bindDualScroll('oplogDualScroll')},0)}
+function renderOplogDetail(d){
+  var box=qs('oplogDetailBox');if(!box)return;
+  var userLabel=esc(dash((d.DisplayName||'')+(d.Username?(' ('+d.Username+')'):'')));
+  var resultLabel=d.Result==='Failed'?'<span class="oplog-fail">失败</span>':esc(dash(d.Result==='Success'?'成功':d.Result));
+  box.innerHTML='<div class="oplog-detail-grid">'
+    +'<div class="oplog-detail-block"><div class="block-title">基础信息</div>'
+    +'<div class="oplog-detail-row"><span class="k">时间</span><span class="v">'+esc(dash(d.Time))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">操作人</span><span class="v">'+userLabel+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">IP</span><span class="v">'+esc(dash(d.Ip))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">模块</span><span class="v">'+esc(dash(d.Module))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">操作类型</span><span class="v">'+esc(dash(d.Action))+'</span></div></div>'
+    +'<div class="oplog-detail-block"><div class="block-title">业务信息</div>'
+    +'<div class="oplog-detail-row"><span class="k">EntityType</span><span class="v">'+esc(dash(d.EntityType))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">EntityId</span><span class="v">'+esc(dash(d.EntityId))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">业务编号</span><span class="v">'+esc(dash(d.EntityCode))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">业务名称</span><span class="v">'+esc(dash(d.EntityName))+'</span></div></div>'
+    +'<div class="oplog-detail-block full"><div class="block-title">结果信息</div>'
+    +'<div class="oplog-detail-row"><span class="k">结果</span><span class="v">'+resultLabel+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">摘要</span><span class="v">'+esc(dash(d.Message))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">失败原因</span><span class="v">'+esc(dash(d.Error))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">来源接口</span><span class="v">'+esc(dash(d.Api))+'</span></div>'
+    +'<div class="oplog-detail-row"><span class="k">备份路径</span><span class="v">'+esc(dash(d.BackupPath))+'</span></div></div></div>';
+}
+function openOplogDetailModal(){var m=qs('oplogDetailModal');if(m)m.classList.add('show')}
+function closeOplogDetailModal(){if(window.erpUiLock&&window.erpUiLock.guardClose&&window.erpUiLock.guardClose())return;var m=qs('oplogDetailModal');if(m)m.classList.remove('show')}
 async function loadLogs(page){
   var body=qs('oplogListBody');if(!body)return;
   body.innerHTML='<tr><td colspan="10" class="empty">加载中...</td></tr>';
@@ -65,10 +124,12 @@ async function loadLogs(page){
     var items=(data&&data.Items)||[];
     var total=(data&&data.Total)||0;
     updatePager(page,total);
-    if(!items.length){body.innerHTML='<tr><td colspan="10" class="empty">暂无操作记录</td></tr>';if(qs('oplogCountText'))qs('oplogCountText').textContent='共 0 条';return}
+    if(!items.length){body.innerHTML='<tr><td colspan="10" class="empty">暂无操作记录</td></tr>';if(qs('oplogCountText'))qs('oplogCountText').textContent='共 0 条';refreshOplogScroll();return}
     body.innerHTML=items.map(function(x){
-      var res=x.Result==='Failed'?'<span class="oplog-fail">失败</span>':'成功';
-      return '<tr><td>'+esc(x.Time)+'</td><td>'+esc((x.DisplayName||'')+'('+ (x.Username||'') +')')+'</td><td>'+esc(x.Ip)+'</td><td>'+esc(x.Module)+'</td><td>'+esc(x.Action)+'</td><td>'+esc(x.EntityCode)+'</td><td>'+esc(x.EntityName)+'</td><td>'+res+'</td><td>'+esc(x.Message)+'</td><td><button type="button" class="btn linkbtn oplog-detail-btn" data-id="'+esc(x.Id)+'">详情</button></td></tr>';
+      var failed=x.Result==='Failed';
+      var res=failed?'<span class="oplog-fail">失败</span>':'成功';
+      var rowCls=failed?' class="oplog-row-fail"':'';
+      return '<tr'+rowCls+'><td class="col-time">'+esc(x.Time)+'</td><td class="col-user">'+esc((x.DisplayName||'')+(x.Username?'('+x.Username+')':''))+'</td><td class="col-ip">'+esc(x.Ip)+'</td><td class="col-module">'+esc(x.Module)+'</td><td class="col-action">'+esc(x.Action)+'</td><td class="col-code">'+esc(x.EntityCode)+'</td><td class="col-name">'+esc(x.EntityName)+'</td><td class="col-result">'+res+'</td><td class="col-msg">'+esc(x.Message)+'</td><td class="col-op"><button type="button" class="btn linkbtn oplog-detail-btn" data-id="'+esc(x.Id)+'">详情</button></td></tr>';
     }).join('');
     if(qs('oplogCountText'))qs('oplogCountText').textContent='共 '+total+' 条';
     body.querySelectorAll('.oplog-detail-btn').forEach(function(btn){
@@ -76,20 +137,21 @@ async function loadLogs(page){
         var id=btn.getAttribute('data-id');if(!id)return;
         try{
           var d=await api('/api/operation-logs/'+encodeURIComponent(id));
-          var box=qs('oplogDetailBox'),wrap=qs('oplogDetailWrap');
-          if(!box||!wrap)return;
-          box.textContent=['时间：'+d.Time,'操作人：'+(d.DisplayName||'')+' ('+(d.Username||'')+')','IP：'+(d.Ip||'—'),'模块：'+(d.Module||'—'),'操作类型：'+(d.Action||'—'),'EntityType：'+(d.EntityType||'—'),'EntityId：'+(d.EntityId||'—'),'业务编号：'+(d.EntityCode||'—'),'业务名称：'+(d.EntityName||'—'),'结果：'+(d.Result||'—'),'摘要：'+(d.Message||'—'),'失败原因：'+(d.Error||'—'),'来源接口：'+(d.Api||'—'),'备份路径：'+(d.BackupPath||'—')].join('\n');
-          wrap.style.display='block';
+          renderOplogDetail(d||{});
+          openOplogDetailModal();
         }catch(e){tip(e.message||'加载详情失败')}
       };
     });
-  }catch(e){body.innerHTML='<tr><td colspan="10" class="empty">加载失败</td></tr>';tip(e.message||'加载失败')}
+    refreshOplogScroll();
+  }catch(e){body.innerHTML='<tr><td colspan="10" class="empty">加载失败</td></tr>';tip(e.message||'加载失败');refreshOplogScroll()}
 }
 window.loadOperationLogs=function(page){return loadLogs(page||1)};
 if(qs('oplogSearchBtn'))qs('oplogSearchBtn').onclick=function(){loadLogs(1)};
-if(qs('oplogResetBtn'))qs('oplogResetBtn').onclick=function(){['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';if(qs('oplogDetailWrap'))qs('oplogDetailWrap').style.display='none';loadLogs(1)};
+if(qs('oplogResetBtn'))qs('oplogResetBtn').onclick=function(){['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';closeOplogDetailModal();loadLogs(1)};
 if(qs('oplogExportBtn'))qs('oplogExportBtn').onclick=function(){window.open('/api/operation-logs/export?'+buildQuery(oplogPage),'_blank')};
 if(qs('oplogPrevBtn'))qs('oplogPrevBtn').onclick=function(){if(oplogPage>1)loadLogs(oplogPage-1)};
 if(qs('oplogNextBtn'))qs('oplogNextBtn').onclick=function(){var pages=Math.max(1,Math.ceil(oplogTotal/oplogPageSize));if(oplogPage<pages)loadLogs(oplogPage+1)};
+if(qs('oplogDetailClose'))qs('oplogDetailClose').onclick=closeOplogDetailModal;
+if(qs('oplogDetailOk'))qs('oplogDetailOk').onclick=closeOplogDetailModal;
 })();
 </script>
