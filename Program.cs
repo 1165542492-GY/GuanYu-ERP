@@ -740,6 +740,7 @@ namespace SupplierErpApp
             Directory.CreateDirectory(BackupDir);
             Directory.CreateDirectory(ExportsDir);
             Directory.CreateDirectory(ImportsDir);
+            EnsureOperationLogsFile();
         }
 
         static bool DataDirHasJsonFiles()
@@ -889,6 +890,7 @@ namespace SupplierErpApp
 
         static void Handle(HttpListenerContext ctx)
         {
+            BeginAuditContext(ctx);
             try
             {
                 AddSecurityHeaders(ctx.Response);
@@ -1031,6 +1033,10 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "payable.edit")) return; UpdatePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
+                if (path == "/api/admin/clear-all-business-data" && ctx.Request.HttpMethod == "POST") { ClearAllBusinessData(ctx, user); return; }
+                if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { ExportOperationLogsCsv(ctx, user); return; }
+                if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { ListOperationLogs(ctx, user); return; }
+                if (path.StartsWith("/api/operation-logs/") && ctx.Request.HttpMethod == "GET") { GetOperationLogDetail(ctx, user, path.Substring("/api/operation-logs/".Length)); return; }
                 if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user)) return; ExportTestDataAll(ctx, user); return; }
                 if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataPreview(ctx, user); return; }
                 if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
@@ -1038,16 +1044,17 @@ namespace SupplierErpApp
             }
             catch (BusinessException ex)
             {
-                try { WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
             }
             catch (EditConflictException ex)
             {
-                try { WriteJson(ctx, new { error = "conflict", message = ex.Message }, 409); } catch { }
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, 409); WriteJson(ctx, new { error = "conflict", message = ex.Message }, 409); } catch { }
             }
             catch (Exception ex)
             {
-                try { string msg = ToUserMessage(ex); WriteJson(ctx, new { error = msg, message = msg }, 500); } catch { }
+                try { string msg = ToUserMessage(ex); LogOperationFailure(ctx, Authenticate(ctx), msg, 500); WriteJson(ctx, new { error = msg, message = msg }, 500); } catch { }
             }
+            finally { EndAuditContext(); }
         }
 
         static string AppendHtmlBeforeLastBodyClose(string html, string fragment)
@@ -1096,6 +1103,10 @@ namespace SupplierErpApp
                 if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
             using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.Reconciliation.html"))
+            {
+                if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
+            }
+            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("SupplierErpApp.OperationLog.html"))
             {
                 if (s != null) using (var reader = new StreamReader(s, Encoding.UTF8)) html = AppendHtmlBeforeLastBodyClose(html, reader.ReadToEnd());
             }
@@ -5361,57 +5372,6 @@ namespace SupplierErpApp
             return BackupFilesToFolder(folder, specs);
         }
 
-        static void ClearTestData(HttpListenerContext ctx, UserSession user)
-        {
-            if (!IsAdminUser(user)) { WriteJson(ctx, new { error = "仅管理员可执行此操作" }, 403); return; }
-            var req = Json.Deserialize<ClearTestDataRequest>(ReadBody(ctx.Request));
-            string password = (req == null ? null : req.Password) ?? "";
-            string confirmText = (req == null ? null : req.ConfirmText) ?? "";
-            if (!string.Equals(confirmText.Trim(), "确认清空", StringComparison.Ordinal)) { WriteJson(ctx, new { message = "确认文字不正确，请准确输入“确认清空”", error = "确认文字不正确，请准确输入“确认清空”" }, 400); return; }
-            var settings = LoadSystemSettings();
-            if (!string.Equals(password, settings.ClearDataPassword ?? DefaultClearDataPassword, StringComparison.Ordinal))
-            {
-                WriteJson(ctx, new { error = "二次密码错误，禁止清空数据" }, 403);
-                return;
-            }
-            var backupSpecs = GetAllBackupFileSpecs();
-            var clearSpecs = GetClearTestDataFileSpecs();
-            string backupFolder = null;
-            try
-            {
-                lock (DataLock)
-                {
-                    Directory.CreateDirectory(BackupDir);
-                    backupFolder = BackupBeforeClearTestData(backupSpecs);
-                    foreach (var spec in clearSpecs)
-                        WriteAllTextAtomic(spec.Path, spec.EmptyContent);
-                }
-                EnsureClearedDataIntegrity();
-                Audit(user, "清空测试数据", "备份目录：" + Path.GetFileName(backupFolder));
-                WriteJson(ctx, new
-                {
-                    message = "测试数据已清空",
-                    backupFolder = Path.GetFileName(backupFolder),
-                    backupPath = backupFolder,
-                    backupFiles = backupSpecs.Select(x => x.FileName).ToArray(),
-                    clearedFiles = clearSpecs.Select(x => x.FileName).ToArray()
-                });
-            }
-            catch (Exception ex)
-            {
-                if (!string.IsNullOrWhiteSpace(backupFolder))
-                {
-                    try
-                    {
-                        lock (DataLock) RestoreFilesFromFolder(backupFolder, clearSpecs.Select(x => new BackupFileSpec { Path = x.Path, FileName = x.FileName }).ToArray());
-                    }
-                    catch { }
-                }
-                string msg = "清空失败，已尝试恢复原始数据：" + ToUserMessage(ex);
-                WriteJson(ctx, new { message = msg, error = msg }, 500);
-            }
-        }
-
         static string ManualBackup()
         {
             lock (DataLock)
@@ -5428,11 +5388,6 @@ namespace SupplierErpApp
         static void CleanBackups()
         {
             foreach (var f in new DirectoryInfo(BackupDir).GetFiles("*.json").OrderByDescending(x=>x.CreationTime).Skip(50)) try { f.Delete(); } catch { }
-        }
-
-        static void Audit(UserSession user, string action, string detail)
-        {
-            try { lock (DataLock) File.AppendAllText(LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (user == null ? "未登录" : user.Username + "/" + user.DisplayName) + "\t" + action + "\t" + detail.Replace("\r", " ").Replace("\n", " ") + Environment.NewLine, Encoding.UTF8); } catch { }
         }
 
         static string ReadBody(HttpListenerRequest req) { using (var sr = new StreamReader(req.InputStream, Encoding.UTF8)) return sr.ReadToEnd(); }

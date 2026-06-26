@@ -1,0 +1,83 @@
+<style>
+.oplog-tools{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:flex-end}
+.oplog-tools .field{margin:0;min-width:140px}
+.oplog-tools label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.oplog-detail{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:14px;line-height:1.7;font-size:13px;white-space:pre-wrap}
+.oplog-fail{color:var(--red)}
+</style>
+<div id="systemSettingOperationLogPanel" style="display:none">
+<div class="panel">
+<div class="form" style="padding:24px 28px">
+<div class="formtitle">操作记录</div>
+<p class="mini" style="margin:0 0 16px;line-height:1.7">查看系统关键操作日志，包括资料新增/修改/删除、单据录入、清测试数据、清空全部业务数据等。仅管理员可查看。</p>
+<div class="oplog-tools">
+<div class="field"><label>开始日期</label><input type="date" id="oplogFrom"></div>
+<div class="field"><label>结束日期</label><input type="date" id="oplogTo"></div>
+<div class="field"><label>操作人</label><input id="oplogUsername" placeholder="账号"></div>
+<div class="field"><label>模块</label><input id="oplogModule" placeholder="如：供应商管理"></div>
+<div class="field"><label>操作类型</label><input id="oplogAction" placeholder="如：新增"></div>
+<div class="field"><label>结果</label><select id="oplogResult"><option value="">全部</option><option value="Success">成功</option><option value="Failed">失败</option></select></div>
+<div class="field" style="min-width:180px"><label>关键字</label><input id="oplogKeyword" placeholder="编号/名称/摘要"></div>
+<button type="button" class="btn primary" id="oplogSearchBtn">查询</button>
+<button type="button" class="btn" id="oplogExportBtn">导出 CSV</button>
+<button type="button" class="btn" id="oplogResetBtn">重置</button>
+</div>
+<div class="dual-scroll"><div class="tablewrap"><table class="data-table"><thead><tr><th>时间</th><th>操作人</th><th>IP</th><th>模块</th><th>操作类型</th><th>业务编号</th><th>名称摘要</th><th>结果</th><th>摘要</th><th>操作</th></tr></thead><tbody id="oplogListBody"><tr><td colspan="10" class="empty">请点击查询加载操作记录</td></tr></tbody></table></div></div>
+<div class="foot"><span id="oplogCountText">共 0 条</span></div>
+<div id="oplogDetailWrap" style="display:none"><div class="formtitle" style="margin-top:18px">日志详情</div><div class="oplog-detail" id="oplogDetailBox"></div></div>
+</div>
+</div>
+</div>
+<script>
+(function(){
+function qs(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function buildQuery(page){
+  var p=new URLSearchParams();
+  var from=qs('oplogFrom'),to=qs('oplogTo'),u=qs('oplogUsername'),m=qs('oplogModule'),a=qs('oplogAction'),r=qs('oplogResult'),k=qs('oplogKeyword');
+  if(from&&from.value)p.set('from',from.value);
+  if(to&&to.value)p.set('to',to.value);
+  if(u&&u.value.trim())p.set('username',u.value.trim());
+  if(m&&m.value.trim())p.set('module',m.value.trim());
+  if(a&&a.value.trim())p.set('action',a.value.trim());
+  if(r&&r.value)p.set('result',r.value);
+  if(k&&k.value.trim())p.set('keyword',k.value.trim());
+  p.set('page',String(page||1));
+  p.set('pageSize','100');
+  return p.toString();
+}
+async function loadLogs(page){
+  var body=qs('oplogListBody');if(!body)return;
+  body.innerHTML='<tr><td colspan="10" class="empty">加载中...</td></tr>';
+  try{
+    var data=await api('/api/operation-logs?'+buildQuery(page));
+    var items=(data&&data.Items)||[];
+    if(!items.length){body.innerHTML='<tr><td colspan="10" class="empty">暂无符合条件的操作记录</td></tr>';if(qs('oplogCountText'))qs('oplogCountText').textContent='共 0 条';return}
+    body.innerHTML=items.map(function(x){
+      var res=x.Result==='Failed'?'<span class="oplog-fail">失败</span>':'成功';
+      return '<tr><td>'+esc(x.Time)+'</td><td>'+esc((x.DisplayName||'')+'('+ (x.Username||'') +')')+'</td><td>'+esc(x.Ip)+'</td><td>'+esc(x.Module)+'</td><td>'+esc(x.Action)+'</td><td>'+esc(x.EntityCode)+'</td><td>'+esc(x.EntityName)+'</td><td>'+res+'</td><td>'+esc(x.Message)+'</td><td><button type="button" class="btn linkbtn oplog-detail-btn" data-id="'+esc(x.Id)+'">详情</button></td></tr>';
+    }).join('');
+    if(qs('oplogCountText'))qs('oplogCountText').textContent='共 '+(data.Total||items.length)+' 条';
+    body.querySelectorAll('.oplog-detail-btn').forEach(function(btn){
+      btn.onclick=async function(){
+        var id=btn.getAttribute('data-id');if(!id)return;
+        try{
+          var d=await api('/api/operation-logs/'+encodeURIComponent(id));
+          var box=qs('oplogDetailBox'),wrap=qs('oplogDetailWrap');
+          if(!box||!wrap)return;
+          box.textContent=['时间：'+d.Time,'操作人：'+(d.DisplayName||'')+' ('+(d.Username||'')+')','IP：'+(d.Ip||'—'),'模块：'+(d.Module||'—'),'操作类型：'+(d.Action||'—'),'数据类型：'+(d.EntityType||'—'),'业务编号：'+(d.EntityCode||'—'),'名称摘要：'+(d.EntityName||'—'),'结果：'+(d.Result||'—'),'摘要：'+(d.Message||'—'),'失败原因：'+(d.Error||'—'),'来源接口：'+(d.Api||'—'),'备份路径：'+(d.BackupPath||'—')].join('\n');
+          wrap.style.display='block';
+        }catch(e){tip(e.message||'加载详情失败')}
+      };
+    });
+  }catch(e){body.innerHTML='<tr><td colspan="10" class="empty">加载失败</td></tr>';tip(e.message||'加载失败')}
+}
+window.loadOperationLogs=function(page){return loadLogs(page||1)};
+if(qs('oplogSearchBtn'))qs('oplogSearchBtn').onclick=function(){loadLogs(1)};
+if(qs('oplogResetBtn'))qs('oplogResetBtn').onclick=function(){['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';if(qs('oplogDetailWrap'))qs('oplogDetailWrap').style.display='none';loadLogs(1)};
+if(qs('oplogExportBtn'))qs('oplogExportBtn').onclick=function(){
+  var q=buildQuery(1);
+  window.open('/api/operation-logs/export?'+q,'_blank');
+};
+})();
+</script>
