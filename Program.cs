@@ -812,7 +812,7 @@ namespace SupplierErpApp
             menu.Items.Add("打开数据目录", null, delegate { Process.Start("explorer.exe", DataDir); });
             menu.Items.Add("立即备份", null, delegate { ManualBackup(); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出系统", null, delegate { Application.Exit(); });
+            menu.Items.Add("退出系统", null, delegate { ExitErpApplication(); });
             TrayIcon = new NotifyIcon();
             TrayIcon.Text = "智造ERP供应商管理（运行中）";
             TrayIcon.Icon = System.Drawing.SystemIcons.Application;
@@ -820,6 +820,31 @@ namespace SupplierErpApp
             TrayIcon.ContextMenuStrip = menu;
             TrayIcon.DoubleClick += delegate { OpenBrowser(); };
             TrayIcon.ShowBalloonTip(2500, "冠誉制造 ERP 已启动", "本机：http://127.0.0.1:" + Port + "\r\n局域网：http://" + GetLanIp() + ":" + Port, ToolTipIcon.Info);
+        }
+
+        static bool ConfirmExitErp()
+        {
+            string message =
+                "• 退出后 ERP 后台服务将停止运行。\r\n" +
+                "• 本机浏览器将无法继续访问系统。\r\n" +
+                "• 局域网其它电脑也将无法访问系统。\r\n" +
+                "• " + Port + " 端口服务将停止。\r\n" +
+                "• 当前未保存页面数据可能丢失。\r\n\r\n" +
+                "如果只是关闭网页，直接关闭浏览器即可，不要退出 ERP 服务。";
+            var result = MessageBox.Show(message, "退出冠誉制造 ERP？", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            return result == DialogResult.OK;
+        }
+
+        static void ExitErpApplication()
+        {
+            if (!ConfirmExitErp()) return;
+            if (TrayIcon != null)
+            {
+                TrayIcon.Visible = false;
+                TrayIcon.Dispose();
+                TrayIcon = null;
+            }
+            Application.Exit();
         }
 
         static void OpenBrowserOnStartup()
@@ -1042,7 +1067,13 @@ namespace SupplierErpApp
                 if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user)) return; ExportTestDataAll(ctx, user); return; }
                 if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataPreview(ctx, user); return; }
                 if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
+                if (path == "/api/operation-impact/preview" && ctx.Request.HttpMethod == "POST") { PreviewOperationImpact(ctx, user); return; }
+                if (path == "/api/operation-impact/log" && ctx.Request.HttpMethod == "POST") { LogOperationImpactCancel(ctx, user); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
+            }
+            catch (ImpactBusinessException ex)
+            {
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); WriteJson(ctx, new { message = ex.Message, error = ex.Message, blockingReasons = ex.BlockingReasons, impactItems = ex.ImpactItems }, ex.StatusCode); } catch { }
             }
             catch (BusinessException ex)
             {
@@ -1561,12 +1592,18 @@ namespace SupplierErpApp
         static void DeleteBom(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<BomItem>(BomFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("BOM 不存在", 404);
+                auditDetail = item.Code + " " + item.ModelName;
+            });
+            EnforceDeleteImpact("bom", id, user, ctx, auditDetail);
             MutateJsonList<BomItem, object>(BomFile, "bom", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("BOM 不存在", 404);
                 if (IsBomUsedByModelCost(id)) throw new BusinessException(FormatBomDeleteBlockedMessage(GetModelCostsUsingBom(id)), 409);
-                auditDetail = item.Code + " " + item.ModelName;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -1670,12 +1707,18 @@ namespace SupplierErpApp
         static void DeleteModelCost(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<ModelCost>(ModelCostFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("机型成本记录不存在", 404);
+                auditDetail = item.ModelCode + " " + item.ModelName;
+            });
+            EnforceDeleteImpact("modelCost", id, user, ctx, auditDetail);
             MutateJsonList<ModelCost, object>(ModelCostFile, "model_costs", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("机型成本记录不存在", 404);
                 if ((item.Status ?? "启用") == "启用") throw new BusinessException("该机型成本当前为启用状态，不能删除。请先停用后再删除。", 409);
-                auditDetail = item.ModelCode + " " + item.ModelName;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -1854,12 +1897,18 @@ namespace SupplierErpApp
         static void DeleteDictionaryOption(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<DictionaryOption>(DictionaryOptionsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("字典项不存在", 404);
+                auditDetail = item.Category + " " + item.Name;
+            });
+            EnforceDeleteImpact("dictionary", id, user, ctx, auditDetail);
             MutateJsonList<DictionaryOption, object>(DictionaryOptionsFile, "dictionary_options", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("字典项不存在", 404);
                 if (IsDictionaryOptionInUse(item)) throw new BusinessException("该字典项已被业务数据使用，不能删除。请改为停用。", 409);
-                auditDetail = item.Category + " " + item.Name;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -1964,6 +2013,7 @@ namespace SupplierErpApp
 
         static void DeleteUser(HttpListenerContext ctx, UserSession actor, string username)
         {
+            EnforceDeleteImpact("user", username, actor, ctx, username);
             if (IsAdminUsername(username)) { WriteJson(ctx, new { error = "不能删除主账号" }, 403); return; }
             string deletedUser = null;
             RunUnderDataLock(() =>
@@ -2057,6 +2107,14 @@ namespace SupplierErpApp
 
         static void DeleteSupplier(HttpListenerContext ctx, UserSession user, string id)
         {
+            string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<Supplier>(DataFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("供应商不存在", 404);
+                auditDetail = item.Company;
+            });
+            EnforceDeleteImpact("supplier", id, user, ctx, auditDetail);
             MutateJsonList<Supplier, object>(DataFile, "auto", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -2080,6 +2138,7 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            EnforceBatchDeleteImpact("supplier", ids, user, ctx);
             var deleted = MutateJsonList<Supplier, int>(DataFile, "auto", list =>
             {
                 var removed = list.Where(x => ids.Contains(x.Id)).ToList();
@@ -2341,12 +2400,18 @@ namespace SupplierErpApp
         static void DeleteCustomer(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<Customer>(CustomerFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("客户不存在", 404);
+                auditDetail = item.Code + " " + item.Company;
+            });
+            EnforceDeleteImpact("customer", id, user, ctx, auditDetail);
             MutateJsonList<Customer, object>(CustomerFile, "customers", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("客户不存在", 404);
                 EnsureCustomerReferenceLockForDelete(item);
-                auditDetail = item.Code + " " + item.Company;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -2359,6 +2424,7 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            EnforceBatchDeleteImpact("customer", ids, user, ctx);
             var deleted = MutateJsonList<Customer, int>(CustomerFile, "customers", list =>
             {
                 var removed = list.Where(x => ids.Contains(x.Id)).ToList();
@@ -2459,12 +2525,18 @@ namespace SupplierErpApp
         static void DeleteMaterial(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<Material>(MaterialFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("物料不存在", 404);
+                auditDetail = item.Code + " " + item.NameSpec;
+            });
+            EnforceDeleteImpact("material", id, user, ctx, auditDetail);
             MutateJsonList<Material, object>(MaterialFile, "materials", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("物料不存在", 404);
                 EnsureMaterialReferenceLockForDelete(item);
-                auditDetail = item.Code + " " + item.NameSpec;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -2477,6 +2549,7 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            EnforceBatchDeleteImpact("material", ids, user, ctx);
             var deleted = MutateJsonList<Material, int>(MaterialFile, "materials", list =>
             {
                 var removed = list.Where(x => ids.Contains(x.Id)).ToList();
@@ -3794,11 +3867,17 @@ namespace SupplierErpApp
         static void DeleteContractSetting(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<ContractSetting>(ContractSettingsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同资料不存在", 404);
+                auditDetail = item.Code + " " + item.Name;
+            });
+            EnforceDeleteImpact("contractSetting", id, user, ctx, auditDetail);
             MutateJsonList<ContractSetting, object>(ContractSettingsFile, "contract_settings", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("合同资料不存在", 404);
-                auditDetail = item.Code + " " + item.Name;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -3857,11 +3936,17 @@ namespace SupplierErpApp
         static void DeleteContract(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditDetail = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<ContractItem>(ContractsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("合同不存在", 404);
+                auditDetail = item.Code + " " + item.Name;
+            });
+            EnforceDeleteImpact("contract", id, user, ctx, auditDetail);
             MutateJsonList<ContractItem, object>(ContractsFile, "contracts", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("合同不存在", 404);
-                auditDetail = item.Code + " " + item.Name;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -4417,6 +4502,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("销售订单不存在", 404);
                 auditCode = item.Code;
             });
+            EnforceDeleteImpact("salesOrder", id, user, ctx, auditCode);
             PersistSalesOrderDelete(id, user);
             Audit(user, "删除销售订单", auditCode); WriteJson(ctx, new { ok = true });
         }
@@ -4481,12 +4567,17 @@ namespace SupplierErpApp
         static void DeleteSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<SalesOutbound>(SalesOutboundsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("销售出库不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("salesOutbound", id, user, ctx, auditCode);
             MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
-                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "销售出库");
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -4537,6 +4628,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("采购单不存在", 404);
                 auditCode = item.Code;
             });
+            EnforceDeleteImpact("purchaseOrder", id, user, ctx, auditCode);
             PersistPurchaseOrderDelete(id, user);
             Audit(user, "删除采购单", auditCode); WriteJson(ctx, new { ok = true });
         }
@@ -4601,12 +4693,17 @@ namespace SupplierErpApp
         static void DeletePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<PurchaseInbound>(PurchaseInboundsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("采购入库不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("purchaseInbound", id, user, ctx, auditCode);
             MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
-                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "采购入库");
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -4624,6 +4721,7 @@ namespace SupplierErpApp
             var ids = (req == null ? null : req.Ids) ?? new string[0];
             ids = ids.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
             if (ids.Length == 0) { WriteJson(ctx, new { error = "请先选择要删除的数据" }, 400); return; }
+            EnforceBatchDeleteImpact(AuditKeyToImpactModule(auditKey), ids, user, ctx);
             var deleted = MutateJsonList<T, int>(file, backupPrefix, list =>
             {
                 var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
@@ -4923,12 +5021,17 @@ namespace SupplierErpApp
         static void DeleteProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<ProductionPick>(ProductionPicksFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产领用不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("productionPick", id, user, ctx, auditCode);
             MutateJsonList<ProductionPick, object>(ProductionPicksFile, "production_picks", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
-                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "生产领用");
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -4992,12 +5095,17 @@ namespace SupplierErpApp
         static void DeleteFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<FinishedInbound>(FinishedInboundsFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("成品入库不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("finishedInbound", id, user, ctx, auditCode);
             MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
-                EnsureConfirmedInventoryDocDeleteBlocked(item.Status, "成品入库");
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5061,6 +5169,13 @@ namespace SupplierErpApp
         static void DeleteReceivable(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<Receivable>(ReceivablesFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应收款不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("receivable", id, user, ctx, auditCode);
             MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -5069,7 +5184,6 @@ namespace SupplierErpApp
                     BizFail("该应收款已有收款明细，请先删除收款明细后再删除应收款。", 409);
                 if (item.ReceivedAmount > 0)
                     BizFail("该应收款已有收款记录，请先删除收款明细后再删除应收款。", 409);
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5133,6 +5247,13 @@ namespace SupplierErpApp
         static void DeletePayable(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<Payable>(PayablesFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("应付款不存在", 404);
+                auditCode = item.Code;
+            });
+            EnforceDeleteImpact("payable", id, user, ctx, auditCode);
             MutateJsonList<Payable, object>(PayablesFile, "payables", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -5141,7 +5262,6 @@ namespace SupplierErpApp
                     BizFail("该应付款已有付款明细，请先删除付款明细后再删除应付款。", 409);
                 if (item.PaidAmount > 0)
                     BizFail("该应付款已有付款记录，请先删除付款明细后再删除应付款。", 409);
-                auditCode = item.Code;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5312,6 +5432,16 @@ namespace SupplierErpApp
                 File.Copy(spec.Path, Path.Combine(folder, spec.FileName), true);
             }
             return folder;
+        }
+
+        static void EnsureBackupSucceeded(string folder, BackupFileSpec[] specs)
+        {
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                throw new BusinessException("备份失败，禁止继续清空数据", 409);
+            int expected = specs.Count(s => File.Exists(s.Path));
+            int copied = Directory.Exists(folder) ? Directory.GetFiles(folder).Length : 0;
+            if (expected > 0 && copied == 0)
+                throw new BusinessException("备份失败，未生成备份文件，禁止继续清空数据", 409);
         }
 
         static void RestoreFilesFromFolder(string folder, BackupFileSpec[] specs)

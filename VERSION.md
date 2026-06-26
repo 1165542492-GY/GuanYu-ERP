@@ -1,5 +1,18 @@
 # 版本记录
 
+## Ver2.8-rc3.5
+
+当前代码版本：**冠誉ERP管理系统 Ver2.8-rc3.5**（操作影响预检 / 影响范围提示）。
+
+### 操作影响预检 / 影响范围提示
+
+- 新增统一后端服务 `OperationImpactService`，提供 `POST /api/operation-impact/preview` 与 `POST /api/operation-impact/log`
+- 前端统一方法：`previewOperationImpact`、`confirmOperationImpact`、`runWithOperationImpactCheck`
+- 沿用 rc3.4 统一确认弹窗（`confirmAction` + `#erpConfirmModal`），展示操作对象、影响等级、影响范围、阻止原因与风险提示
+- 关键删除、确认、编辑、清空、恢复等操作在后端再次校验；不可继续时返回 409/400 及 `blockingReasons`、`impactItems`
+- 覆盖：销售/采购/库存单据、应收应付、BOM、机型成本、物料、客户、供应商、合同、子账号、字典、税率、数据清空与备份恢复
+- 操作记录继续写入：预检拦截、用户取消、高风险继续等事件
+
 ## Ver2.8
 
 当前代码版本：冠誉ERP管理系统 Ver2.8。

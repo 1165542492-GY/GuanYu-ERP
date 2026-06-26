@@ -198,6 +198,7 @@ namespace SupplierErpApp
                 {
                     Directory.CreateDirectory(BackupDir);
                     backupFolder = BackupBeforeClearTestData(GetAutoTestClearBackupSpecs());
+                    EnsureBackupSucceeded(backupFolder, GetAutoTestClearBackupSpecs());
                     var result = PurgeAutoTestBusinessData();
                     if (result.TotalRemoved == 0)
                     {
@@ -255,6 +256,7 @@ namespace SupplierErpApp
                 {
                     Directory.CreateDirectory(BackupDir);
                     backupFolder = BackupBeforeClearTestData(backupSpecs);
+                    EnsureBackupSucceeded(backupFolder, backupSpecs);
                     foreach (var spec in clearSpecs)
                         WriteAllTextAtomic(spec.Path, spec.EmptyContent);
                 }

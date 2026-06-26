@@ -41,6 +41,8 @@ if(isEdit&&st.editing){var orig=(bizEnsureState(cfg.view).data||[]).find(functio
 return prev!=='已确认';
 }
 var BIZ_DELETE_LINK_VIEWS=['salesOrderView','salesOutboundView','purchaseOrderView','purchaseInboundView','productionPickView','finishedInboundView'];
+var BIZ_IMPACT_MODULE={'salesOrderView':'salesOrder','salesOutboundView':'salesOutbound','purchaseOrderView':'purchaseOrder','purchaseInboundView':'purchaseInbound','productionPickView':'productionPick','finishedInboundView':'finishedInbound','receivableView':'receivable','payableView':'payable'};
+function bizImpactModule(cfg){return cfg&&BIZ_IMPACT_MODULE[cfg.view]?BIZ_IMPACT_MODULE[cfg.view]:'';}
 var BIZ_PAGE_TIPS={
 'salesOrderView':{blue:'销售订单用于记录客户订货信息，保存后会自动生成应收款。',orange:'订单已出库或已收款后，关键内容不能随意修改或删除。'},
 'salesOutboundView':{blue:'销售出库会扣减库存，请确认物料、数量和来源订单无误。',orange:'库存不足时不能出库；已确认出库单不能随意删除。'},
@@ -333,7 +335,18 @@ if(cfg.view==='salesOutboundView'){
 if(!bizStr(body.SalesOrderId)){tip('请选择来源销售订单');return}
 }
 if(bizNeedsConfirmStatus(cfg,body,isEdit,st)){
-if(!window.confirm('当前单据保存为「已确认」后，可能会影响库存、应收或应付数据。确定继续保存吗？'))return;
+var mod=bizImpactModule(cfg);
+if(mod){
+var payload={};Object.keys(body).forEach(function(k){payload[k]=body[k];});
+if(!(await runWithOperationImpactCheck(mod,'confirm',isEdit?st.editing:'',payload,{actionLabel:'确认',objectLabel:(body.Code||'')},async function(){return true})))return;
+}else if(!window.confirm('当前单据保存为「已确认」后，可能会影响库存、应收或应付数据。确定继续保存吗？'))return;
+}
+if(isEdit){
+var modEdit=bizImpactModule(cfg);
+if(modEdit){
+var payloadEdit={};Object.keys(body).forEach(function(k){payloadEdit[k]=body[k];});
+if(!(await runWithOperationImpactCheck(modEdit,'edit',st.editing,payloadEdit,{actionLabel:'保存',objectLabel:(body.Code||'')},async function(){return true})))return;
+}
 }
 if(isEdit&&bizHasEditConflictView(cfg.view))body.UpdatedAt=st.editingUpdatedAt||'';
 try{await erpSaveSubmit(form,async function(){await api(isEdit?cfg.api+'/'+st.editing:cfg.api,{method:isEdit?'PUT':'POST',body:JSON.stringify(body)});closeBizModal(cfg);if(searchEl)searchEl.value='';await bizLoad(cfg);await bizLoadRefs();tip(isEdit?'已更新':'已新增')})}catch(err){if(bizHasEditConflictView(cfg.view)&&await handleEditConflict(err,function(){closeBizModal(cfg)},function(){return bizLoad(cfg)}))return;tip(err.message||'保存失败')}
@@ -482,7 +495,7 @@ try{var st=bizEnsureState(cfg.view);st.data=await api(cfg.api)||[];st.editing=nu
 function bizFindCfgByView(view){for(var k in bizModules){if(bizModules[k].view===view)return bizModules[k]}return null}
 window.bizLoadPage=function(page){if(page==='production-purchase-inbound')page='purchase-inbound';var cfg=bizModules[page];if(cfg)bizLoad(cfg);if(page==='warehouse-stock')loadStockPage();};
 window.bizEdit=function(view,id){var cfg=bizFindCfgByView(view);if(!cfg)return;var item=(bizEnsureState(view).data||[]).find(function(x){return x.Id===id});if(item)openBizModal(cfg,item);};
-window.bizDelete=async function(view,id){return runActionOnce('biz-del-'+view+'-'+id,async function(){var cfg=bizFindCfgByView(view);if(!cfg||!bizCan(cfg,'delete')){tip('无权限操作');return}var x=(bizEnsureState(view).data||[]).find(function(v){return v.Id===id});if(!await deleteConfirm(bizBuildDeleteConfirm(cfg,x)))return;try{await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')}catch(err){tip(err.message||'删除失败')}},'删除中...')};
+window.bizDelete=async function(view,id){return runActionOnce('biz-del-'+view+'-'+id,async function(){var cfg=bizFindCfgByView(view);if(!cfg||!bizCan(cfg,'delete')){tip('无权限操作');return}var x=(bizEnsureState(view).data||[]).find(function(v){return v.Id===id});var mod=bizImpactModule(cfg);if(mod){await runWithOperationImpactCheck(mod,'delete',id,null,{actionLabel:'删除',objectLabel:(x&&x.Code)||''},async function(){await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')});return}if(!await deleteConfirm(bizBuildDeleteConfirm(cfg,x)))return;try{await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')}catch(err){tip(err.message||'删除失败')}},'删除中...')};
 function openBizModal(cfg,item){
 if(item&&!bizCan(cfg,'edit')){tip('无权限操作');return}
 if(!item&&!bizCan(cfg,'add')){tip('无权限操作');return}
