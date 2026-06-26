@@ -196,6 +196,7 @@ namespace SupplierErpApp
 
     public class TaxRateRequest { public decimal TaxRate { get; set; } public string UpdatedAt { get; set; } }
     public class ClearTestDataRequest { public string Password { get; set; } public string ConfirmText { get; set; } }
+    public class ChangeClearDataPasswordRequest { public string OldPassword { get; set; } public string NewPassword { get; set; } public string ConfirmPassword { get; set; } }
 
     public class BomDetail
     {
@@ -1034,6 +1035,7 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
                 if (path == "/api/admin/clear-all-business-data" && ctx.Request.HttpMethod == "POST") { ClearAllBusinessData(ctx, user); return; }
+                if (path == "/api/admin/clear-data-password" && ctx.Request.HttpMethod == "POST") { ChangeClearDataPassword(ctx, user); return; }
                 if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { ExportOperationLogsCsv(ctx, user); return; }
                 if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { ListOperationLogs(ctx, user); return; }
                 if (path.StartsWith("/api/operation-logs/") && ctx.Request.HttpMethod == "GET") { GetOperationLogDetail(ctx, user, path.Substring("/api/operation-logs/".Length)); return; }

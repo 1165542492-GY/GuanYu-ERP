@@ -281,5 +281,29 @@ namespace SupplierErpApp
                 WriteJson(ctx, new { message = msg, error = msg }, 500);
             }
         }
+
+        static void ChangeClearDataPassword(HttpListenerContext ctx, UserSession user)
+        {
+            if (!IsAdminUser(user)) { LogOperationFailure(ctx, user, "非管理员修改二次密码", 403); WriteJson(ctx, new { error = "仅管理员可执行此操作" }, 403); return; }
+            var req = Json.Deserialize<ChangeClearDataPasswordRequest>(ReadBody(ctx.Request));
+            string oldPwd = (req == null ? null : req.OldPassword) ?? "";
+            string newPwd = (req == null ? null : req.NewPassword) ?? "";
+            string confirmPwd = (req == null ? null : req.ConfirmPassword) ?? "";
+            if (string.IsNullOrWhiteSpace(oldPwd)) { WriteJson(ctx, new { error = "请输入当前二次密码" }, 400); return; }
+            if (string.IsNullOrWhiteSpace(newPwd)) { WriteJson(ctx, new { error = "新二次密码不能为空" }, 400); return; }
+            if (!string.Equals(newPwd, confirmPwd, StringComparison.Ordinal)) { WriteJson(ctx, new { error = "新密码和确认密码不一致" }, 400); return; }
+            SystemSettings settings;
+            if (!ValidateClearDataPassword(oldPwd, out settings))
+            {
+                LogOperationFailure(ctx, user, "修改二次密码失败：当前密码错误", 403);
+                WriteJson(ctx, new { error = "当前二次密码错误" }, 403);
+                return;
+            }
+            settings.ClearDataPassword = newPwd;
+            settings.UpdatedAt = ProfileUpdatedAtNow();
+            SaveSystemSettingsFile(settings);
+            Audit(user, "修改危险操作二次密码", "已成功修改");
+            WriteJson(ctx, new { message = "二次密码已修改", ok = true });
+        }
     }
 }
