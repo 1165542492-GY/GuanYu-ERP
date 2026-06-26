@@ -196,6 +196,32 @@ namespace SupplierErpApp
 
     public class TaxRateRequest { public decimal TaxRate { get; set; } public string UpdatedAt { get; set; } }
     public class ClearTestDataRequest { public string Password { get; set; } public string ConfirmText { get; set; } }
+    public class DeepInitializeRequest
+    {
+        public string Password { get; set; }
+        public string ConfirmText { get; set; }
+        public bool KeepFinalBackup { get; set; } = true;
+        public bool ClearOldBackupFiles { get; set; } = true;
+        public bool ClearOperationLogs { get; set; } = true;
+        public bool ClearBackupRecords { get; set; } = true;
+        public bool ClearTestArtifacts { get; set; } = true;
+    }
+    public class DeepInitializeResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; }
+        public string BackupName { get; set; }
+        public DeepInitializeClearedSummary Cleared { get; set; }
+        public string[] Preserved { get; set; }
+    }
+    public class DeepInitializeClearedSummary
+    {
+        public int BusinessFiles { get; set; }
+        public bool OperationLogs { get; set; }
+        public bool BackupRecords { get; set; }
+        public int OldBackupFiles { get; set; }
+        public bool TestArtifacts { get; set; }
+    }
     public class ChangeClearDataPasswordRequest { public string OldPassword { get; set; } public string NewPassword { get; set; } public string ConfirmPassword { get; set; } }
 
     public class BomDetail
@@ -1060,6 +1086,7 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/payables/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "payable.delete")) return; DeletePayable(ctx, user, path.Substring("/api/payables/".Length)); return; }
                 if (path == "/api/admin/clear-test-data" && ctx.Request.HttpMethod == "POST") { ClearTestData(ctx, user); return; }
                 if (path == "/api/admin/clear-all-business-data" && ctx.Request.HttpMethod == "POST") { ClearAllBusinessData(ctx, user); return; }
+                if (path == "/api/admin/deep-initialize" && ctx.Request.HttpMethod == "POST") { DeepInitializeEmptyDatabase(ctx, user); return; }
                 if (path == "/api/admin/clear-data-password" && ctx.Request.HttpMethod == "POST") { ChangeClearDataPassword(ctx, user); return; }
                 if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { ExportOperationLogsCsv(ctx, user); return; }
                 if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { ListOperationLogs(ctx, user); return; }
@@ -5005,6 +5032,8 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                if (IsConfirmedStatus(item.Status) && IsConfirmedStatus(input.Status))
+                    BizFail("该生产领用已确认，不能重复确认。", 409);
                 EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "生产领用");
                 if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
@@ -5184,6 +5213,8 @@ namespace SupplierErpApp
                     BizFail("该应收款已有收款明细，请先删除收款明细后再删除应收款。", 409);
                 if (item.ReceivedAmount > 0)
                     BizFail("该应收款已有收款记录，请先删除收款明细后再删除应收款。", 409);
+                if (IsAutoSource(item.SourceType) || !string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                    BizFail("该应收款由销售订单自动生成或关联销售订单，不能删除。请先处理来源销售订单。", 409);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5262,6 +5293,8 @@ namespace SupplierErpApp
                     BizFail("该应付款已有付款明细，请先删除付款明细后再删除应付款。", 409);
                 if (item.PaidAmount > 0)
                     BizFail("该应付款已有付款记录，请先删除付款明细后再删除应付款。", 409);
+                if (IsAutoSource(item.SourceType) || !string.IsNullOrWhiteSpace(item.PurchaseOrderId) || !string.IsNullOrWhiteSpace(item.PurchaseNo))
+                    BizFail("该应付款由采购单自动生成或关联采购单，不能删除。请先处理来源采购单。", 409);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5476,6 +5509,7 @@ namespace SupplierErpApp
                 new ClearDataFileSpec { Path = BomFile, FileName = "bom.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = BomSequenceFile, FileName = "bom_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = ModelCostFile, FileName = "model_costs.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = ModelCostSequenceFile, FileName = "model_cost_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = ContractsFile, FileName = "contracts.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = ContractSequenceFile, FileName = "contract_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = SalesOrdersFile, FileName = "sales_orders.json", EmptyContent = "[]" },

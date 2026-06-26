@@ -2,6 +2,15 @@
 .codex/
 .vs/
 
+# Regression / publish staging (do not commit)
+.regression-temp/
+_publish_staging/
+
+# Local backup patches from hardfix sessions
+App.html.bak_login_hardfix
+_backup_before_login_hardfix.patch
+*.patch
+
 # Build output
 bin/
 bin/package-staging/

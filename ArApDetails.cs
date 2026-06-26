@@ -220,6 +220,8 @@ namespace SupplierErpApp
                 var detail = item.ReceiptDetails.FirstOrDefault(x => x.Id == detailId);
                 if (detail == null) throw new BusinessException("收款明细不存在", 404);
                 item.ReceiptDetails.Remove(detail);
+                if (item.ReceiptDetails.Count == 0)
+                    item.ReceivedAmount = 0;
             }, "删除收款明细");
             WriteJson(ctx, saved);
         }
@@ -264,6 +266,8 @@ namespace SupplierErpApp
                 var detail = item.PaymentDetails.FirstOrDefault(x => x.Id == detailId);
                 if (detail == null) throw new BusinessException("付款明细不存在", 404);
                 item.PaymentDetails.Remove(detail);
+                if (item.PaymentDetails.Count == 0)
+                    item.PaidAmount = 0;
             }, "删除付款明细");
             WriteJson(ctx, saved);
         }

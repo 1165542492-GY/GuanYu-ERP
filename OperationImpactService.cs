@@ -151,6 +151,7 @@ namespace SupplierErpApp
                 case "taxrate": return ImpactTaxRate(operation, id, payload);
                 case "cleartestdata": return ImpactClearTestData(operation, id, payload);
                 case "clearallbusinessdata": return ImpactClearAllBusinessData(operation, id, payload);
+                case "deepinitialize": return ImpactDeepInitialize(operation, id, payload);
                 case "backuprestore": return ImpactBackupRestore(operation, id, payload);
                 default: return NewImpact("操作影响预检");
             }
@@ -448,10 +449,15 @@ namespace SupplierErpApp
                     blocking.Add("该应收款已有收款明细或已收金额大于 0，不能删除。");
                     AddImpact(items, "receipt", "收款明细", item.ReceiptDetails != null ? item.ReceiptDetails.Count : 0, "删除会导致账款不一致");
                 }
-                else if (!string.IsNullOrWhiteSpace(item.SalesOrderId))
+                else if (IsAutoSource(item.SourceType) || !string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                {
+                    blocking.Add("该应收款由销售订单自动生成或关联销售订单，不能删除。请先处理来源销售订单。");
+                    AddImpact(items, "salesOrder", "来源销售订单", 1, string.IsNullOrWhiteSpace(item.SalesOrderNo) ? item.SalesOrderId : item.SalesOrderNo);
+                }
+                else
                 {
                     r.Level = "danger";
-                    warnings.Add("该应收款关联销售订单，删除后可能影响订单收款状态。");
+                    warnings.Add("删除手工应收款将无法恢复，请确认无业务引用。");
                 }
             }
             else if (operation == "edit")
@@ -485,10 +491,15 @@ namespace SupplierErpApp
                     blocking.Add("该应付款已有付款明细或已付金额大于 0，不能删除。");
                     AddImpact(items, "payment", "付款明细", item.PaymentDetails != null ? item.PaymentDetails.Count : 0, "删除会导致账款不一致");
                 }
-                else if (!string.IsNullOrWhiteSpace(item.PurchaseOrderId))
+                else if (IsAutoSource(item.SourceType) || !string.IsNullOrWhiteSpace(item.PurchaseOrderId) || !string.IsNullOrWhiteSpace(item.PurchaseNo))
+                {
+                    blocking.Add("该应付款由采购单自动生成或关联采购单，不能删除。请先处理来源采购单。");
+                    AddImpact(items, "purchaseOrder", "来源采购单", 1, string.IsNullOrWhiteSpace(item.PurchaseNo) ? item.PurchaseOrderId : item.PurchaseNo);
+                }
+                else
                 {
                     r.Level = "danger";
-                    warnings.Add("该应付款关联采购单，删除后可能影响采购单付款状态。");
+                    warnings.Add("删除手工应付款将无法恢复，请确认无业务引用。");
                 }
             }
             else if (operation == "edit")
@@ -820,6 +831,29 @@ namespace SupplierErpApp
             AddImpact(items, "retain", "保留项", 1, "admin、系统配置、权限、字典、合同范本、操作记录将保留");
             AddImpact(items, "backup", "自动备份", 1, "清空前系统将自动备份；备份失败则禁止继续");
             var warnings = new List<string> { "此操作会清空全部业务数据，系统会先自动备份。备份失败将禁止继续清空。" };
+            FinalizeImpact(r, items, new List<string>(), warnings);
+            return r;
+        }
+
+        static OperationImpactResultDto ImpactDeepInitialize(string operation, string id, JsonObject payload)
+        {
+            var r = NewImpact("深度初始化空库影响预检");
+            r.Level = "danger";
+            var items = new List<OperationImpactItemDto>();
+            string[] modules = { "供应商", "客户", "物料", "BOM", "机型成本", "销售订单", "销售出库", "采购单", "采购入库", "生产领用", "成品入库", "库存", "应收款", "应付款", "合同业务", "财务收支", "财务期初余额" };
+            foreach (var m in modules) AddImpact(items, "module", m, 1, "将被清空");
+            AddImpact(items, "operationLogs", "操作记录", 1, "将被清空，仅保留一条初始化记录");
+            AddImpact(items, "backupRecords", "备份恢复记录", 1, "将被清空");
+            AddImpact(items, "oldBackups", "历史备份文件夹", 1, "默认清理，保留本次最终备份");
+            AddImpact(items, "testArtifacts", "测试与导入导出痕迹", 1, "将被清理");
+            AddImpact(items, "retain", "保留项", 1, "admin、用户、权限、系统设置、二次密码、字典、税率、编号规则、合同模板将保留");
+            AddImpact(items, "backup", "最终备份", 1, "执行前自动创建 backup_before_deep_initialize_*；备份失败则禁止继续");
+            var warnings = new List<string>
+            {
+                "此操作会清空全部业务数据、操作记录、备份恢复记录、测试痕迹和历史备份记录。",
+                "系统会先自动创建最终备份；备份失败将禁止继续初始化。",
+                "不会清空 admin、用户账号、权限、系统设置、二次密码、字典、税率、编号规则、合同模板。"
+            };
             FinalizeImpact(r, items, new List<string>(), warnings);
             return r;
         }

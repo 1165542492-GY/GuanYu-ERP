@@ -2,10 +2,17 @@
 
 冠誉ERP管理系统是一套面向中小型制造企业的 Windows 局域网 ERP 管理程序。程序以 Windows 托盘应用运行，通过内置 HTTP 服务向同一局域网内的电脑提供浏览器管理界面。
 
-- 当前版本：**Ver2.8-rc3.5**（操作影响预检 / 影响范围提示）
+- 当前版本：**Ver2.8-rc3.6**（rc3.5 复杂回归问题修复稳定节点）
 - 运行平台：Windows
 - 服务端口：`8787`
 - 技术结构：C#/.NET 8、WinForms、`HttpListener`、原生 HTML/CSS/JavaScript
+
+## Ver2.8-rc3.6 新增
+
+- **应付款/应收款删除保护**：自动/关联单据生成的应收应付禁止直接删除；有收付款明细或已收/已付金额时后端 409 拦截
+- **收付款明细删除重算**：删除最后一条收款/付款明细后，已收/已付金额归零并重算状态
+- **生产领用确认**：已确认领用不能重复确认；库存不足确认 409 拦截
+- 修复来源于 rc3.6-dev 定点复测，rc3.6 定点复测 10/10 PASS
 
 ## Ver2.8-rc3.5 新增
 
@@ -139,6 +146,42 @@ Ver2.8 已实现销售、采购、生产领用/成品入库、库存汇总、应
 - **会清空**：客户、供应商、物料、BOM、机型成本、合同、财务收支/期初、Ver2.8 全部业务 JSON
 - **不会清空**：users.json、system_settings.json（含二次密码）、dictionary_options.json、contract_settings.json（合同模板/基础资料）
 - 子账号无入口；调用 `POST /api/admin/clear-test-data` 非 admin 返回 403
+
+### 清空全部业务数据（仅 admin）
+
+路径：设置 → 系统设置 → **数据维护**
+
+- 清空供应商、客户、物料、订单、库存、应收、应付、BOM、机型成本、合同业务、财务等业务 JSON
+- 清空前自动备份到 `backups/backup_before_clear_yyyyMMdd_HHmmss/`
+- 须输入二次密码 + 确认文字「确认清空全部业务数据」
+- **保留**：admin、用户、权限、系统设置、二次密码、字典、税率、编号规则、合同模板、**操作记录**、**历史备份**
+- 接口：`POST /api/admin/clear-all-business-data`
+
+### 深度初始化空库（仅 admin）
+
+路径：设置 → 系统设置 → **数据维护**
+
+- 用于交付前、测试环境重置、准备干净空库
+- 在「清空全部业务数据」基础上， additionally 清空：**操作记录**（保留一条初始化记录）、**备份恢复记录**、**历史备份文件夹**（默认保留本次最终备份）、**测试与导入导出痕迹**
+- 执行前自动创建最终备份 `backups/backup_before_deep_initialize_yyyyMMdd_HHmmss/`；**备份失败禁止继续**
+- 须输入二次密码 + 确认文字「我确认深度初始化空库」；点击后还有一次确认弹窗；接入操作影响预检
+- **保留**：admin、用户账号、权限、系统设置、二次密码、字典、税率、编号规则、合同模板、数据/备份目录配置
+- **不会**重置 admin、不会删除用户与权限配置
+- 接口：`POST /api/admin/deep-initialize`
+
+请求体示例：
+
+```json
+{
+  "password": "二次密码",
+  "confirmText": "我确认深度初始化空库",
+  "keepFinalBackup": true,
+  "clearOldBackupFiles": true,
+  "clearOperationLogs": true,
+  "clearBackupRecords": true,
+  "clearTestArtifacts": true
+}
+```
 
 ### 测试数据导入导出（长期保留，仅 admin）
 

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Text;
 
 namespace SupplierErpApp
 {
@@ -12,6 +13,8 @@ namespace SupplierErpApp
         const string AutoTestMarker = "AUTO_TEST";
         const string ClearTestDataConfirmText = "确认清理测试数据";
         const string ClearAllBusinessConfirmText = "确认清空全部业务数据";
+        const string DeepInitializeConfirmText = "我确认深度初始化空库";
+        static readonly string[] DeepInitializePreservedKeys = { "admin", "users", "permissions", "settings", "clearDataPassword", "dictionaries", "tax", "numbering", "contractTemplates", "finalBackup" };
 
         public class ClearAutoTestResult
         {
@@ -306,6 +309,170 @@ namespace SupplierErpApp
             SaveSystemSettingsFile(settings);
             Audit(user, "修改危险操作二次密码", "已成功修改");
             WriteJson(ctx, new { message = "二次密码已修改", ok = true });
+        }
+
+        static BackupFileSpec[] GetDeepInitializeBackupSpecs()
+        {
+            var list = GetAllBackupFileSpecs().ToList();
+            list.Add(new BackupFileSpec { Path = OperationLogsFilePath, FileName = "operation_logs.json" });
+            list.Add(new BackupFileSpec { Path = OperationLogSequenceFilePath, FileName = "operation_log_sequence.json" });
+            return list.ToArray();
+        }
+
+        static ClearDataFileSpec[] GetDeepInitializeRuntimeClearSpecs()
+        {
+            return new[]
+            {
+                new ClearDataFileSpec { Path = OperationLogsFilePath, FileName = "operation_logs.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = OperationLogSequenceFilePath, FileName = "operation_log_sequence.json", EmptyContent = "0" }
+            };
+        }
+
+        static string BackupBeforeDeepInitialize(BackupFileSpec[] specs)
+        {
+            string folderName = "backup_before_deep_initialize_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string folder = Path.Combine(BackupDir, folderName);
+            return BackupFilesToFolder(folder, specs);
+        }
+
+        static bool IsPathUnderDirectory(string path, string rootDir)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(rootDir)) return false;
+            try
+            {
+                var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var fullRoot = Path.GetFullPath(rootDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                return fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) || string.Equals(fullPath, fullRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        static int ClearOldBackupFoldersExcept(string keepFolderPath, bool enabled)
+        {
+            if (!enabled) return 0;
+            if (string.IsNullOrWhiteSpace(BackupDir) || !Directory.Exists(BackupDir)) return 0;
+            string keepName = string.IsNullOrWhiteSpace(keepFolderPath) ? "" : Path.GetFileName(keepFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string backupRoot = Path.GetFullPath(BackupDir);
+            int removed = 0;
+            foreach (var dir in Directory.GetDirectories(backupRoot))
+            {
+                if (!IsPathUnderDirectory(dir, backupRoot)) continue;
+                string name = Path.GetFileName(dir);
+                if (!string.IsNullOrWhiteSpace(keepName) && string.Equals(name, keepName, StringComparison.OrdinalIgnoreCase)) continue;
+                try { Directory.Delete(dir, true); removed++; } catch { }
+            }
+            foreach (var file in Directory.GetFiles(backupRoot, "*.json"))
+            {
+                if (!IsPathUnderDirectory(file, backupRoot)) continue;
+                try { File.Delete(file); removed++; } catch { }
+            }
+            return removed;
+        }
+
+        static void ClearOperationLogPlainTextFile()
+        {
+            try
+            {
+                Directory.CreateDirectory(DataDir);
+                File.WriteAllText(LogFile, "", new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        static void WriteDeepInitializeInitializationLog(UserSession user, HttpListenerContext ctx, string backupFolder, DeepInitializeClearedSummary cleared)
+        {
+            string backupName = string.IsNullOrWhiteSpace(backupFolder) ? "" : Path.GetFileName(backupFolder);
+            string scope = "业务文件 " + cleared.BusinessFiles + " 个"
+                + (cleared.OperationLogs ? "；操作记录已清空" : "")
+                + (cleared.BackupRecords ? "；备份恢复记录已清空" : "")
+                + (cleared.OldBackupFiles > 0 ? "；历史备份 " + cleared.OldBackupFiles + " 项" : "")
+                + (cleared.TestArtifacts ? "；测试痕迹已清理" : "");
+            WriteStructuredOperationLog(user, ctx, "深度初始化空库", "系统已执行深度初始化空库；" + scope + "；最终备份：" + backupName, "Success", null, backupFolder, "POST /api/admin/deep-initialize");
+        }
+
+        static void DeepInitializeEmptyDatabase(HttpListenerContext ctx, UserSession user)
+        {
+            if (!IsAdminUser(user)) { LogOperationFailure(ctx, user, "非管理员深度初始化空库", 403); WriteJson(ctx, new { error = "仅管理员可执行此操作" }, 403); return; }
+            var req = Json.Deserialize<DeepInitializeRequest>(ReadBody(ctx.Request)) ?? new DeepInitializeRequest();
+            string password = req.Password ?? "";
+            string confirmText = req.ConfirmText ?? "";
+            if (!string.Equals(confirmText.Trim(), DeepInitializeConfirmText, StringComparison.Ordinal))
+            {
+                LogOperationFailure(ctx, user, "深度初始化空库确认文字不正确", 400);
+                WriteJson(ctx, new { message = "确认文字不正确，请准确输入「" + DeepInitializeConfirmText + "」", error = "确认文字不正确" }, 400);
+                return;
+            }
+            SystemSettings settings;
+            if (!ValidateClearDataPassword(password, out settings))
+            {
+                LogOperationFailure(ctx, user, "深度初始化空库二次密码错误", 403);
+                WriteJson(ctx, new { error = "二次密码错误，禁止深度初始化" }, 403);
+                return;
+            }
+            var backupSpecs = GetDeepInitializeBackupSpecs();
+            var businessSpecs = GetClearAllBusinessDataFileSpecs();
+            var runtimeSpecs = GetDeepInitializeRuntimeClearSpecs();
+            string backupFolder = null;
+            var cleared = new DeepInitializeClearedSummary();
+            try
+            {
+                lock (DataLock)
+                {
+                    Directory.CreateDirectory(BackupDir);
+                    backupFolder = BackupBeforeDeepInitialize(backupSpecs);
+                    EnsureBackupSucceeded(backupFolder, backupSpecs);
+
+                    foreach (var spec in businessSpecs)
+                        WriteAllTextAtomic(spec.Path, spec.EmptyContent);
+                    cleared.BusinessFiles = businessSpecs.Length;
+
+                    if (req.ClearOperationLogs)
+                    {
+                        foreach (var spec in runtimeSpecs)
+                            WriteAllTextAtomic(spec.Path, spec.EmptyContent);
+                        ClearOperationLogPlainTextFile();
+                        cleared.OperationLogs = true;
+                    }
+
+                    if (req.ClearTestArtifacts)
+                    {
+                        try { PurgeAutoTestBusinessData(); } catch { }
+                        cleared.TestArtifacts = true;
+                    }
+
+                    if (req.ClearBackupRecords || req.ClearOldBackupFiles)
+                    {
+                        string keepPath = req.KeepFinalBackup ? backupFolder : null;
+                        cleared.OldBackupFiles = ClearOldBackupFoldersExcept(keepPath, req.ClearOldBackupFiles || req.ClearBackupRecords);
+                        cleared.BackupRecords = req.ClearBackupRecords;
+                    }
+                }
+                EnsureClearedDataIntegrity();
+                if (req.ClearOperationLogs)
+                    WriteDeepInitializeInitializationLog(user, ctx, backupFolder, cleared);
+                else
+                    AuditWithBackup(user, "深度初始化空库", "系统已执行深度初始化空库；最终备份：" + Path.GetFileName(backupFolder), backupFolder);
+
+                string backupName = Path.GetFileName(backupFolder);
+                var preserved = DeepInitializePreservedKeys.ToList();
+                if (!req.KeepFinalBackup) preserved.Remove("finalBackup");
+                WriteJson(ctx, new DeepInitializeResult
+                {
+                    Success = true,
+                    Message = "深度初始化空库完成",
+                    BackupName = backupName,
+                    Cleared = cleared,
+                    Preserved = preserved.ToArray()
+                });
+            }
+            catch (Exception ex)
+            {
+                LogOperationFailure(ctx, user, "深度初始化空库失败：" + ex.Message, 500);
+                string msg = "深度初始化失败：" + ToUserMessage(ex);
+                if (!string.IsNullOrWhiteSpace(backupFolder))
+                    msg += "。最终备份已保留：" + Path.GetFileName(backupFolder);
+                WriteJson(ctx, new { success = false, message = msg, error = msg, backupName = string.IsNullOrWhiteSpace(backupFolder) ? null : Path.GetFileName(backupFolder) }, 500);
+            }
         }
     }
 }
