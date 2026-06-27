@@ -43,11 +43,39 @@ namespace SupplierErpApp
             }
         }
 
+        static decimal GetFinishedProductAvailableQty(string modelCostId, string bomId, string productName, StockMapOptions options = null)
+        {
+            var map = BuildStockMap(options);
+            string pid = GetFinishedProductStockId(modelCostId, bomId);
+            if (string.IsNullOrWhiteSpace(pid)) return 0;
+            string key = StockKey("成品", pid, productName ?? "");
+            StockAgg agg;
+            return map.TryGetValue(key, out agg) ? agg.Quantity : 0;
+        }
+
+        static void EnsureFinishedProductStockAvailable(decimal requiredQty, string modelCostId, string bomId, string productName, StockMapOptions options = null)
+        {
+            if (requiredQty <= 0) return;
+            decimal available = GetFinishedProductAvailableQty(modelCostId, bomId, productName, options);
+            if (available + 0.0001m < requiredQty)
+            {
+                string display = !string.IsNullOrWhiteSpace(productName) ? productName : "成品";
+                if (available <= 0.0001m)
+                    BizFail(string.Format("该成品「{0}」当前库存为 0，不能出库", display), 409);
+                BizFail(string.Format("成品「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty)), 409);
+            }
+        }
+
         static void ValidateStockForConfirmedOutbound(SalesOutbound item, string excludeId = null)
         {
             if (item == null || !IsConfirmedStatus(item.Status)) return;
-            EnsureMaterialStockAvailable(item.Quantity, item.MaterialId, item.MaterialCode, item.MaterialName,
-                new StockMapOptions { ExcludeSalesOutboundId = excludeId });
+            var options = new StockMapOptions { ExcludeSalesOutboundId = excludeId };
+            if (IsFinishedProductOutbound(item))
+            {
+                EnsureFinishedProductStockAvailable(item.Quantity, item.ModelCostId, item.BomId, item.MaterialName, options);
+                return;
+            }
+            EnsureMaterialStockAvailable(item.Quantity, item.MaterialId, item.MaterialCode, item.MaterialName, options);
         }
 
         static void ValidateStockForConfirmedPick(ProductionPick item, string excludeId = null)
@@ -189,6 +217,7 @@ namespace SupplierErpApp
                 EnsureSalesOrderReferenceLockForEdit(item, input, outbounds, receivables);
                 item.CustomerId = input.CustomerId; item.CustomerCode = input.CustomerCode; item.CustomerName = input.CustomerName;
                 item.CustomerContact = input.CustomerContact; item.CustomerPhone = input.CustomerPhone; item.CustomerAddress = input.CustomerAddress;
+                item.ItemType = input.ItemType; item.ModelCostId = input.ModelCostId; item.BomId = input.BomId;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.TaxExcludedSalePrice = input.TaxExcludedSalePrice; item.TaxIncludedSalePrice = input.TaxIncludedSalePrice;

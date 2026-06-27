@@ -435,6 +435,9 @@ namespace SupplierErpApp
         public string CustomerContact { get; set; }
         public string CustomerPhone { get; set; }
         public string CustomerAddress { get; set; }
+        public string ItemType { get; set; }
+        public string ModelCostId { get; set; }
+        public string BomId { get; set; }
         public string MaterialId { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
@@ -459,6 +462,10 @@ namespace SupplierErpApp
         public string SalesOrderId { get; set; }
         public string SalesOrderNo { get; set; }
         public string CustomerName { get; set; }
+        public string ItemType { get; set; }
+        public string ModelCostId { get; set; }
+        public string BomId { get; set; }
+        public string BomCode { get; set; }
         public string MaterialId { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
@@ -1330,6 +1337,19 @@ namespace SupplierErpApp
             return Math.Round(quantity * unitPrice, 2);
         }
 
+        static decimal GetBomLineCostUnitPrice(BomDetail line)
+        {
+            if (line == null) return 0;
+            if (line.NoTaxPrice > 0) return line.NoTaxPrice;
+            if (line.OriginalPrice <= 0) return 0;
+            if (NormalizePriceType(line.PriceType) == "含税")
+            {
+                decimal rate = line.TaxRate > 0 ? line.TaxRate : LoadSystemSettings().TaxRate;
+                return CalcNoTaxUnitPrice(line.OriginalPrice, rate);
+            }
+            return line.OriginalPrice;
+        }
+
         static void RecalcBomLines(BomItem item, decimal defaultTaxRate)
         {
             if (item.Items == null) item.Items = new List<BomDetail>();
@@ -1340,7 +1360,9 @@ namespace SupplierErpApp
                 if (line.TaxRate <= 0) line.TaxRate = defaultTaxRate;
                 if (line.OriginalPrice <= 0 && line.NoTaxPrice > 0 && line.PriceType == "不含税")
                     line.OriginalPrice = line.NoTaxPrice;
-                line.Amount = CalcLineAmount(line.Quantity, line.OriginalPrice);
+                if (line.NoTaxPrice <= 0 && line.OriginalPrice > 0)
+                    line.NoTaxPrice = GetBomLineCostUnitPrice(line);
+                line.Amount = CalcLineAmount(line.Quantity, GetBomLineCostUnitPrice(line));
                 total += line.Amount;
             }
             item.TotalMaterialCost = Math.Round(total, 2);
@@ -1531,11 +1553,19 @@ namespace SupplierErpApp
                     line.MaterialName = material.NameSpec;
                     line.Unit = string.IsNullOrWhiteSpace(material.QuantityUnit) ? line.Unit : material.QuantityUnit;
                     line.PriceType = price.PriceType;
-                    line.OriginalPrice = price.UnitPrice;
-                    line.NoTaxPrice = material.NoTaxPrice;
                     line.TaxRate = taxRate;
                     line.PriceSourceTime = material.UpdatedAt;
                     line.PriceMissing = price.UnitPrice <= 0;
+                    if (price.PriceType == "含税")
+                    {
+                        line.OriginalPrice = price.UnitPrice;
+                        line.NoTaxPrice = CalcNoTaxUnitPrice(price.UnitPrice, taxRate);
+                    }
+                    else
+                    {
+                        line.OriginalPrice = price.UnitPrice;
+                        line.NoTaxPrice = price.UnitPrice;
+                    }
                 }
                 else
                 {
@@ -1548,7 +1578,9 @@ namespace SupplierErpApp
                     line.OriginalPrice = line.NoTaxPrice;
                     line.PriceType = "不含税";
                 }
-                line.Amount = CalcLineAmount(line.Quantity, line.OriginalPrice);
+                if (line.NoTaxPrice <= 0 && line.OriginalPrice > 0)
+                    line.NoTaxPrice = GetBomLineCostUnitPrice(line);
+                line.Amount = CalcLineAmount(line.Quantity, GetBomLineCostUnitPrice(line));
                 total += line.Amount;
             }
             item.TotalMaterialCost = Math.Round(total, 2);
@@ -1648,13 +1680,18 @@ namespace SupplierErpApp
         static List<ModelCost> LoadModelCostsWithCurrentPrices()
         {
             var list = LoadModelCosts();
-            var boms = LoadBomWithCurrentPrices();
+            var boms = LoadBom();
             foreach (var item in list)
             {
                 var bom = boms.FirstOrDefault(x => x.Id == item.BomId);
                 if (bom == null) continue;
-                item.MaterialCost = bom.TotalMaterialCost; item.TotalCost = item.MaterialCost;
-                item.PriceMissing = bom.PriceMissing; item.MissingPriceMaterials = bom.MissingPriceMaterials;
+                item.PriceMissing = bom.PriceMissing;
+                item.MissingPriceMaterials = bom.MissingPriceMaterials;
+                if (item.MaterialCost <= 0 && bom.TotalMaterialCost > 0)
+                {
+                    item.MaterialCost = bom.TotalMaterialCost;
+                    item.TotalCost = item.MaterialCost;
+                }
             }
             return list;
         }
@@ -1664,12 +1701,12 @@ namespace SupplierErpApp
             lock (DataLock) WriteJsonListCore(ModelCostFile, "model_costs", items);
         }
 
-        static void FillModelCostFromBom(ModelCost item, bool allowDisabledBom = false)
+        static void FillModelCostFromBom(ModelCost item, bool allowDisabledBom = false, bool refreshPrices = false)
         {
             var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
             if (bom == null) throw new Exception("所选 BOM 不存在");
             if (!allowDisabledBom && (bom.Status ?? "启用") != "启用") throw new Exception("所选 BOM 已停用，不能新建或更换为该 BOM");
-            ApplyCurrentMaterialPrices(bom);
+            if (refreshPrices) ApplyCurrentMaterialPrices(bom);
             item.ModelCode = bom.ModelCode;
             item.ModelName = bom.ModelName;
             item.ProductName = bom.ProductName;
@@ -1685,7 +1722,7 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<ModelCost>(ReadBody(ctx.Request));
             ValidateModelCost(item);
-            FillModelCostFromBom(item, false);
+            FillModelCostFromBom(item, false, false);
             ValidateModelCostFilled(item);
             string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "启用";
@@ -1709,7 +1746,12 @@ namespace SupplierErpApp
             var existing = listSnapshot.FirstOrDefault(x => x.Id == id);
             if (existing == null) { WriteJson(ctx, new { error = "机型成本记录不存在" }, 404); return; }
             bool sameBom = string.Equals(existing.BomId, input.BomId, StringComparison.OrdinalIgnoreCase);
-            FillModelCostFromBom(input, sameBom);
+            FillModelCostFromBom(input, sameBom, !sameBom);
+            if (sameBom)
+            {
+                input.MaterialCost = existing.MaterialCost;
+                input.TotalCost = existing.TotalCost;
+            }
             ValidateModelCostFilled(input);
             input.Status = string.IsNullOrWhiteSpace(input.Status) ? (existing.Status ?? "启用") : input.Status.Trim();
             if (input.Status != "启用" && input.Status != "停用") { WriteJson(ctx, new { error = "状态只能是启用或停用" }, 400); return; }
@@ -4344,10 +4386,55 @@ namespace SupplierErpApp
             item.SalesOrderId = order.Id;
             item.SalesOrderNo = order.Code ?? "";
             item.CustomerName = order.CustomerName ?? "";
-            item.MaterialId = order.MaterialId ?? "";
-            item.MaterialCode = order.MaterialCode ?? "";
-            item.MaterialName = order.MaterialName ?? "";
+            item.ItemType = NormalizeSalesItemType(order.ItemType);
+            item.ModelCostId = order.ModelCostId ?? "";
+            item.BomId = order.BomId ?? "";
+            if (item.ItemType == "FinishedProduct")
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
+                if (mc != null)
+                {
+                    item.BomId = mc.BomId ?? item.BomId;
+                    item.BomCode = mc.BomCode ?? "";
+                    item.MaterialCode = mc.ModelCode ?? "";
+                    item.MaterialName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : mc.ModelName;
+                }
+                else
+                {
+                    item.MaterialCode = order.MaterialCode ?? "";
+                    item.MaterialName = order.MaterialName ?? "";
+                }
+                item.MaterialId = "";
+            }
+            else
+            {
+                item.MaterialId = order.MaterialId ?? "";
+                item.MaterialCode = order.MaterialCode ?? "";
+                item.MaterialName = order.MaterialName ?? "";
+            }
             if (item.Quantity <= 0) item.Quantity = order.Quantity;
+        }
+
+        static void ApplySalesOutboundItemFields(SalesOutbound item)
+        {
+            item.ItemType = NormalizeSalesItemType(item.ItemType);
+            item.ModelCostId = (item.ModelCostId ?? "").Trim();
+            item.BomId = (item.BomId ?? "").Trim();
+            item.BomCode = (item.BomCode ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(item.ModelCostId)) item.ItemType = "FinishedProduct";
+            if (item.ItemType == "FinishedProduct" && !string.IsNullOrWhiteSpace(item.ModelCostId))
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
+                if (mc != null)
+                {
+                    item.BomId = mc.BomId ?? item.BomId;
+                    item.BomCode = mc.BomCode ?? item.BomCode;
+                    if (string.IsNullOrWhiteSpace(item.MaterialName))
+                        item.MaterialName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : mc.ModelName;
+                    if (string.IsNullOrWhiteSpace(item.MaterialCode)) item.MaterialCode = mc.ModelCode ?? "";
+                }
+                item.MaterialId = "";
+            }
         }
 
         static void ResolvePurchaseOrderLink(PurchaseInbound item)
@@ -4487,14 +4574,57 @@ namespace SupplierErpApp
             item.CustomerAddress = matched.Address ?? "";
         }
 
+        static string NormalizeSalesItemType(string itemType)
+        {
+            return string.Equals(itemType ?? "", "FinishedProduct", StringComparison.OrdinalIgnoreCase) ? "FinishedProduct" : "Material";
+        }
+
+        static bool IsFinishedProductOutbound(SalesOutbound item)
+        {
+            if (item == null) return false;
+            if (string.Equals(NormalizeSalesItemType(item.ItemType), "FinishedProduct", StringComparison.OrdinalIgnoreCase)) return true;
+            return !string.IsNullOrWhiteSpace(item.ModelCostId);
+        }
+
+        static string GetFinishedProductStockId(string modelCostId, string bomId)
+        {
+            if (!string.IsNullOrWhiteSpace(modelCostId)) return modelCostId.Trim();
+            return (bomId ?? "").Trim();
+        }
+
+        static void ResolveSalesOrderProductFields(SalesOrder item)
+        {
+            item.ItemType = NormalizeSalesItemType(item.ItemType);
+            item.ModelCostId = (item.ModelCostId ?? "").Trim();
+            item.BomId = (item.BomId ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(item.ModelCostId)) item.ItemType = "FinishedProduct";
+            if (item.ItemType != "FinishedProduct") return;
+            if (string.IsNullOrWhiteSpace(item.ModelCostId)) BizFail("销售成品时必须选择机型成本");
+            var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
+            if (mc == null) BizFail("所选机型成本不存在");
+            if ((mc.Status ?? "启用") != "启用") BizFail("所选机型成本已停用，不能用于销售");
+            item.BomId = mc.BomId ?? "";
+            item.MaterialCode = mc.ModelCode ?? "";
+            item.MaterialName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : mc.ModelName;
+            item.MaterialId = "";
+        }
+
         static void ApplySalesOrder(SalesOrder item)
         {
             if (item == null) BizFail("数据不能为空");
             ResolveCustomerFields(item);
-            string mid, mcode, mname, mspec, munit;
-            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
-            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            ResolveSalesOrderProductFields(item);
+            if (item.ItemType == "FinishedProduct")
+            {
+                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写产品名称");
+            }
+            else
+            {
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            }
             if (item.Quantity <= 0) BizFail("数量必须大于 0");
             if (item.TaxExcludedSalePrice <= 0 && item.TaxIncludedSalePrice <= 0 && item.UnitPrice > 0)
                 item.TaxExcludedSalePrice = item.UnitPrice;
@@ -4545,11 +4675,20 @@ namespace SupplierErpApp
         {
             if (item == null) BizFail("数据不能为空");
             ResolveSalesOrderLink(item);
+            ApplySalesOutboundItemFields(item);
             item.CustomerName = (item.CustomerName ?? "").Trim();
-            string mid, mcode, mname, mspec, munit;
-            ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
-            item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
+            if (IsFinishedProductOutbound(item))
+            {
+                if (string.IsNullOrWhiteSpace(item.ModelCostId)) BizFail("销售成品出库必须关联机型成本");
+                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少产品信息");
+            }
+            else
+            {
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
+            }
             if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
             if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
@@ -4583,10 +4722,16 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "销售出库");
-                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity
+                    || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(NormalizeSalesItemType(item.ItemType), NormalizeSalesItemType(input.ItemType), StringComparison.OrdinalIgnoreCase)))
                     BizFail(ReferenceLockMessage, 409);
                 item.SalesOrderId = input.SalesOrderId; item.SalesOrderNo = input.SalesOrderNo;
-                item.CustomerName = input.CustomerName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
+                item.CustomerName = input.CustomerName;
+                item.ItemType = input.ItemType; item.ModelCostId = input.ModelCostId;
+                item.BomId = input.BomId; item.BomCode = input.BomCode;
+                item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
                 item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
@@ -5372,7 +5517,15 @@ namespace SupplierErpApp
                 StockAdd(map, "成品", pid, x.BomCode, x.ProductName, "", "", x.Quantity, x.UnitCost);
             }
             foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeSalesOutboundId))
-                StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
+            {
+                if (IsFinishedProductOutbound(x))
+                {
+                    string pid = GetFinishedProductStockId(x.ModelCostId, x.BomId);
+                    StockAdd(map, "成品", pid, x.BomCode ?? "", x.MaterialName ?? "", "", "", -x.Quantity, x.CostPrice);
+                }
+                else
+                    StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
+            }
             foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeProductionPickId))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
             return map;

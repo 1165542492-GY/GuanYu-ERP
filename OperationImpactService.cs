@@ -241,8 +241,8 @@ namespace SupplierErpApp
                 if (IsConfirmedStatus(doc.Status))
                 {
                     r.Level = "danger";
-                    AddImpact(items, "stock", "库存", 1, "删除已确认出库后，库存将回滚增加");
-                    warnings.Add("删除已确认的销售出库后，相关物料库存将回滚。");
+                    AddImpact(items, "stock", "库存", 1, IsFinishedProductOutbound(doc) ? "删除已确认出库后，成品库存将回滚增加" : "删除已确认出库后，库存将回滚增加");
+                    warnings.Add(IsFinishedProductOutbound(doc) ? "删除已确认的销售出库后，相关成品库存将回滚。" : "删除已确认的销售出库后，相关物料库存将回滚。");
                     if (!string.IsNullOrWhiteSpace(doc.SalesOrderId))
                         warnings.Add("删除后将影响来源销售订单的已出库数量统计。");
                 }
@@ -251,13 +251,20 @@ namespace SupplierErpApp
             else if (operation == "confirm")
             {
                 decimal qty = payload != null && payload["Quantity"] != null ? payload["Quantity"].GetValue<decimal>() : (doc != null ? doc.Quantity : 0);
+                string itemType = payload != null && payload["ItemType"] != null ? payload["ItemType"].GetValue<string>() : (doc != null ? doc.ItemType : "");
+                string modelCostId = payload != null && payload["ModelCostId"] != null ? payload["ModelCostId"].GetValue<string>() : (doc != null ? doc.ModelCostId : "");
+                string bomId = payload != null && payload["BomId"] != null ? payload["BomId"].GetValue<string>() : (doc != null ? doc.BomId : "");
                 string mid = payload != null && payload["MaterialId"] != null ? payload["MaterialId"].GetValue<string>() : (doc != null ? doc.MaterialId : "");
                 string mcode = payload != null && payload["MaterialCode"] != null ? payload["MaterialCode"].GetValue<string>() : (doc != null ? doc.MaterialCode : "");
                 string mname = payload != null && payload["MaterialName"] != null ? payload["MaterialName"].GetValue<string>() : (doc != null ? doc.MaterialName : "");
-                decimal available = GetMaterialAvailableQty(mid, mcode, mname, new StockMapOptions { ExcludeSalesOutboundId = id });
+                bool isFinished = string.Equals(NormalizeSalesItemType(itemType), "FinishedProduct", StringComparison.OrdinalIgnoreCase)
+                    || !string.IsNullOrWhiteSpace(modelCostId);
+                decimal available = isFinished
+                    ? GetFinishedProductAvailableQty(modelCostId, bomId, mname, new StockMapOptions { ExcludeSalesOutboundId = id })
+                    : GetMaterialAvailableQty(mid, mcode, mname, new StockMapOptions { ExcludeSalesOutboundId = id });
                 if (qty > 0 && available + 0.0001m < qty)
                 {
-                    blocking.Add(string.Format("物料库存不足，当前可用 {0}，需要 {1}，不能确认出库。", RoundMoney(available), RoundMoney(qty)));
+                    blocking.Add(string.Format("{0}库存不足，当前可用 {1}，需要 {2}，不能确认出库。", isFinished ? "成品" : "物料", RoundMoney(available), RoundMoney(qty)));
                     AddImpact(items, "stock", "库存", 1, "库存不足，禁止确认");
                 }
                 else
