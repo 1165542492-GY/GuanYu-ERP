@@ -970,6 +970,7 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "DELETE") { if (!RequireAdmin(ctx, user)) return; DeleteUser(ctx, user, path.Substring("/api/users/".Length)); return; }
                 if (path == "/api/info") { WriteJson(ctx, new { ip = GetLanIp(), port = Port, dataDir = DataDir }); return; }
                 if (path == "/api/dashboard/business" && ctx.Request.HttpMethod == "GET") { GetBusinessDashboard(ctx, user); return; }
+                if (path == "/api/dashboard/owner-summary" && ctx.Request.HttpMethod == "GET") { GetOwnerDashboardSummary(ctx, user); return; }
                 if (path == "/api/suppliers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "supplier.view")) return; WriteJson(ctx, LoadSuppliers()); return; }
                 if (path == "/api/suppliers" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "supplier.add")) return; AddSupplier(ctx, user); return; }
                 if (path.StartsWith("/api/suppliers/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "supplier.edit")) return; UpdateSupplier(ctx, user, path.Substring("/api/suppliers/".Length)); return; }
