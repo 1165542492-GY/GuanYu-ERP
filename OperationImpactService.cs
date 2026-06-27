@@ -138,6 +138,7 @@ namespace SupplierErpApp
                 case "productionpick": return ImpactProductionPick(operation, id, payload);
                 case "finishedinbound": return ImpactFinishedInbound(operation, id, payload);
                 case "receivable": return ImpactReceivable(operation, id, payload);
+                case "receivablereceipt": return ImpactReceivableReceipt(operation, id, payload);
                 case "payable": return ImpactPayable(operation, id, payload);
                 case "customer": return ImpactCustomer(operation, id, payload);
                 case "supplier": return ImpactSupplier(operation, id, payload);
@@ -470,6 +471,45 @@ namespace SupplierErpApp
                     warnings.Add("修改应收金额将影响客户应收余额。");
                 }
             }
+            FinalizeImpact(r, items, blocking, warnings);
+            return r;
+        }
+
+        static OperationImpactResultDto ImpactReceivableReceipt(string operation, string id, JsonObject payload)
+        {
+            var receivableId = (payload?["receivableId"]?.GetValue<string>() ?? "").Trim();
+            var detailId = (payload?["detailId"]?.GetValue<string>() ?? id ?? "").Trim();
+            Receivable receivable = null;
+            ReceiptDetail detail = null;
+            if (!string.IsNullOrWhiteSpace(receivableId))
+            {
+                receivable = LoadReceivables().FirstOrDefault(x => x.Id == receivableId);
+                if (receivable != null && !string.IsNullOrWhiteSpace(detailId))
+                    detail = (receivable.ReceiptDetails ?? new List<ReceiptDetail>()).FirstOrDefault(x => x.Id == detailId);
+            }
+            var label = receivable != null ? receivable.Code : receivableId;
+            var r = NewImpact("收款明细影响预检", label);
+            var items = new List<OperationImpactItemDto>();
+            var blocking = new List<string>();
+            var warnings = new List<string>();
+            r.Level = "warning";
+            if (operation == "delete")
+            {
+                warnings.Add("删除收款明细将同步删除关联的财务收支收入记录。");
+                AddImpact(items, "finance", "财务收支", 1, "自动联动生成的收入流水将被删除");
+            }
+            else if (operation == "edit")
+            {
+                warnings.Add("修改收款明细将同步更新关联的财务收支收入记录。");
+                AddImpact(items, "finance", "财务收支", 1, "金额、日期、账户类型将同步更新");
+            }
+            else
+            {
+                warnings.Add("新增收款明细将自动写入一条财务收支收入记录。");
+                AddImpact(items, "finance", "财务收支", 1, "按销售订单含税状态或所选账户类型入账");
+            }
+            if (detail != null && !string.IsNullOrWhiteSpace(detail.FinanceTransactionId))
+                AddImpact(items, "financeLink", "已关联财务流水", 1, detail.FinanceTransactionId);
             FinalizeImpact(r, items, blocking, warnings);
             return r;
         }

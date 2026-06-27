@@ -294,7 +294,8 @@ function buildBizView(page,cfg){
 var v=cfg.view,p=cfg.prefix;
 var tblCls=BIZ_SCROLL_PAGES.indexOf(page)>=0?'data-table biz-table':'data-table';
 var html=bizPageTipsHtml(cfg.view);
-if(cfg.view==='receivableView'||cfg.view==='payableView')html+='<div class="arap-main-notice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>';
+if(cfg.view==='receivableView')html+='<div class="arap-main-notice" role="note">说明：登记收款明细时会自动写入“财务收支”收入记录。含税销售默认公户，不含税默认公司私户，可在明细中选择财务账户类型。</div>';
+else if(cfg.view==='payableView')html+='<div class="arap-main-notice" role="note">说明：付款明细只用于更新应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>';
 html+='<div class="cards"><div class="card"><span class="dot">总</span><div class="card-label">记录总数</div><div class="card-value" id="'+p+'Total">0</div></div>';
 html+='<div class="card"><span class="dot">确</span><div class="card-label">已确认</div><div class="card-value" id="'+p+'Confirmed">0</div></div>';
 html+='<div class="card"><span class="dot">草</span><div class="card-label">草稿</div><div class="card-value" id="'+p+'Draft">0</div></div>';
@@ -545,6 +546,7 @@ if(document.getElementById('stockSearch'))document.getElementById('stockSearch')
 if(document.getElementById('stockReset'))document.getElementById('stockReset').onclick=function(){document.getElementById('stockSearch').value='';renderStockList();};
 
 var ARAP_ACCOUNTS=['现金','银行','微信','支付宝','其他'];
+var RECEIPT_FINANCE_ACCOUNTS=['自动（按订单含税状态）','公户','公司私户','个人私户'];
 var arapDetailState={type:'',parentId:'',parentUpdatedAt:'',editingDetailId:null,item:null,cfg:null};
 
 function ensureArapDetailModals(){
@@ -552,23 +554,26 @@ var root=ensureBizModalRoot();
 if(document.getElementById('arapDetailModal'))return;
 root.insertAdjacentHTML('beforeend',
 '<div class="modal biz-modal" id="arapDetailModal" aria-hidden="true"><div class="dialog" style="max-width:920px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailTitle">收款明细</div><button type="button" class="close" id="arapDetailClose" aria-label="关闭">×</button></div>'+
-'<div class="arap-detail-notice" id="arapDetailNotice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>'+
+'<div class="arap-detail-notice" id="arapDetailNotice" role="note">说明：登记收款明细时会自动写入“财务收支”收入记录。</div>'+
 '<div style="padding:0 23px 16px"><div class="arap-detail-summary" id="arapDetailSummary"></div>'+
 '<div class="tools" style="margin-bottom:10px"><button type="button" class="btn primary" id="arapDetailAddBtn">＋ 新增明细</button></div>'+
 '<div class="arap-detail-tablewrap"><table class="arap-detail-table"><thead><tr><th>日期</th><th>金额</th><th>账户</th><th>方式</th><th>经办人</th><th>备注</th><th>操作</th></tr></thead><tbody id="arapDetailBody"></tbody></table></div></div>'+
 '<div class="dialogfoot"><button type="button" class="btn" id="arapDetailDone">关闭</button></div></div></div>'+
 '<div class="modal biz-modal" id="arapDetailEditModal" aria-hidden="true"><div class="dialog" style="max-width:640px"><div class="dialoghead"><div class="dialogtitle" id="arapDetailEditTitle">新增收款</div><button type="button" class="close" id="arapDetailEditClose" aria-label="关闭">×</button></div>'+
-'<div class="arap-detail-notice" role="note">说明：收款/付款明细只用于更新应收应付状态，不会自动写入“财务收支”。如需记录银行或现金流水，请到“财务管理 → 财务收支”中单独登记。</div>'+
+'<div class="arap-detail-notice" id="arapDetailEditNotice" role="note">说明：登记收款明细时会自动写入“财务收支”收入记录。</div>'+
 '<form id="arapDetailEditForm"><div class="form arap-detail-form"><div class="grid">'+
 '<div class="field"><label class="req">日期</label><input id="arapDetailDate" type="date"></div>'+
 '<div class="field"><label class="req">金额</label><input id="arapDetailAmount" type="number" step="0.01" min="0.01"></div>'+
 '<div class="field"><label class="req">账户</label><select id="arapDetailAccount"></select></div>'+
+'<div class="field" id="arapDetailFinanceAccountWrap" style="display:none"><label>财务账户类型</label><select id="arapDetailFinanceAccount"></select></div>'+
 '<div class="field"><label>方式</label><input id="arapDetailMethod" maxlength="100" placeholder="如：转账、刷卡"></div>'+
 '<div class="field"><label>经办人</label><input id="arapDetailHandler" maxlength="100"></div>'+
 '<div class="field full"><label>备注</label><input id="arapDetailNote" maxlength="200"></div>'+
 '</div></div><div class="dialogfoot"><button type="button" class="btn" id="arapDetailEditCancel">取消</button><button type="submit" class="btn primary">保存</button></div></form></div></div>');
 var accSel=document.getElementById('arapDetailAccount');
 accSel.innerHTML=ARAP_ACCOUNTS.map(function(a){return'<option>'+safe(a)+'</option>'}).join('');
+var finAccSel=document.getElementById('arapDetailFinanceAccount');
+if(finAccSel)finAccSel.innerHTML=RECEIPT_FINANCE_ACCOUNTS.map(function(a){return'<option value="'+safe(a.indexOf('自动')===0?'':a)+'">'+safe(a)+'</option>'}).join('');
 document.getElementById('arapDetailClose').onclick=closeArapDetailModal;
 document.getElementById('arapDetailDone').onclick=closeArapDetailModal;
 document.getElementById('arapDetailAddBtn').onclick=function(){openArapDetailEdit(null);};
@@ -585,6 +590,8 @@ function arapDetailCan(type,act){return type==='receipt'?can('receivable.receipt
 function renderArapDetailModal(){
 var st=arapDetailState,item=st.item,type=st.type,isReceipt=type==='receipt';
 document.getElementById('arapDetailTitle').textContent=(isReceipt?'收款明细 · ':'付款明细 · ')+(item.Code||'');
+var notice=document.getElementById('arapDetailNotice');
+if(notice)notice.textContent=isReceipt?'说明：登记收款明细时会自动写入“财务收支”收入记录。':'说明：付款明细只用于更新应付状态，不会自动写入“财务收支”。';
 var sumHtml='<span>应收/应付：<b>'+money(isReceipt?item.ReceivableAmount:item.PayableAmount)+'</b></span>';
 sumHtml+='<span>已收/已付：<b>'+money(isReceipt?item.ReceivedAmount:item.PaidAmount)+'</b></span>';
 sumHtml+='<span>未收/未付：<b>'+money(isReceipt?item.UnreceivedAmount:item.UnpaidAmount)+'</b></span>';
@@ -641,9 +648,14 @@ var isReceipt=type==='receipt',detail=null;
 if(detailId){detail=arapDetailList(st.item,st.type).find(function(x){return x.Id===detailId});if(!detail)return;}
 st.editingDetailId=detailId;
 document.getElementById('arapDetailEditTitle').textContent=detail?(isReceipt?'编辑收款':'编辑付款'):(isReceipt?'新增收款':'新增付款');
+var editNotice=document.getElementById('arapDetailEditNotice');
+if(editNotice)editNotice.textContent=isReceipt?'说明：登记收款明细时会自动写入“财务收支”收入记录。':'说明：付款明细只用于更新应付状态，不会自动写入“财务收支”。';
+var finWrap=document.getElementById('arapDetailFinanceAccountWrap');
+if(finWrap)finWrap.style.display=isReceipt?'':'none';
 document.getElementById('arapDetailDate').value=detail?(detail[arapDetailDateKey(st.type)]||'').slice(0,10):bizToday();
 document.getElementById('arapDetailAmount').value=detail?bizMoney2(detail.Amount):'';
 document.getElementById('arapDetailAccount').value=detail&&detail.Account?detail.Account:ARAP_ACCOUNTS[0];
+if(isReceipt&&document.getElementById('arapDetailFinanceAccount'))document.getElementById('arapDetailFinanceAccount').value='';
 document.getElementById('arapDetailMethod').value=detail?(detail.PaymentMethod||''):'';
 document.getElementById('arapDetailHandler').value=detail?(detail.Handler||''):'';
 document.getElementById('arapDetailNote').value=detail?(detail.Note||''):'';
@@ -669,15 +681,24 @@ Handler:document.getElementById('arapDetailHandler').value.trim(),
 Note:document.getElementById('arapDetailNote').value.trim()
 };
 if(isReceipt)body.ReceiptDate=document.getElementById('arapDetailDate').value;else body.PaymentDate=document.getElementById('arapDetailDate').value;
+if(isReceipt){var fat=document.getElementById('arapDetailFinanceAccount');if(fat&&fat.value)body.FinanceAccountType=fat.value;}
 var base=cfg.api+'/'+st.parentId+'/'+(isReceipt?'receipts':'payments');
 var url=st.editingDetailId?base+'/'+st.editingDetailId:base;
 var formEl=document.getElementById('arapDetailEditForm');
-try{
-await erpSaveSubmit(formEl,async function(){
+var impactPayload={receivableId:st.parentId,detailId:st.editingDetailId||''};
+var impactOp=st.editingDetailId?'edit':'add';
+var doSave=async function(){
 await api(url,{method:st.editingDetailId?'PUT':'POST',body:JSON.stringify(body)});
 closeArapDetailEditModal();
 await refreshArapDetailParent();
 tip(st.editingDetailId?'已更新':'已新增');
+};
+try{
+await erpSaveSubmit(formEl,async function(){
+if(isReceipt){
+if(!(await runWithOperationImpactCheck('receivableReceipt',impactOp,st.editingDetailId||st.parentId,impactPayload,{actionLabel:st.editingDetailId?'保存':'新增',objectLabel:st.item.Code||''},async function(){return true})))return;
+}
+await doSave();
 });
 }catch(err){
 if(await handleEditConflict(err,function(){closeArapDetailEditModal();closeArapDetailModal();},function(){return refreshArapDetailParent();}))return;
@@ -693,10 +714,16 @@ if(!arapDetailCan(arapDetailState.type,'delete')){tip('无权限操作');return;
 if(!await deleteConfirm('确定删除这条明细吗？'))return;
 var st=arapDetailState,cfg=st.cfg,isReceipt=st.type==='receipt';
 var url=cfg.api+'/'+st.parentId+'/'+(isReceipt?'receipts':'payments')+'/'+detailId;
-try{
+var doDelete=async function(){
 await api(url,{method:'DELETE',body:JSON.stringify({UpdatedAt:st.parentUpdatedAt})});
 await refreshArapDetailParent();
 tip('已删除');
+};
+try{
+if(isReceipt){
+if(!(await runWithOperationImpactCheck('receivableReceipt','delete',detailId,{receivableId:st.parentId,detailId:detailId},{actionLabel:'删除',objectLabel:st.item.Code||''},async function(){return true})))return;
+}
+await doDelete();
 }catch(err){
 if(await handleEditConflict(err,closeArapDetailModal,function(){return refreshArapDetailParent();}))return;
 tip(err.message||'删除失败');

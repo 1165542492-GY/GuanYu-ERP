@@ -18,6 +18,7 @@ namespace SupplierErpApp
             public string PaymentMethod { get; set; }
             public string Handler { get; set; }
             public string Note { get; set; }
+            public string FinanceAccountType { get; set; }
         }
 
         class PaymentDetailMutationRequest
@@ -180,10 +181,115 @@ namespace SupplierErpApp
             return Json.Deserialize<PaymentDetailMutationRequest>(body) ?? new PaymentDetailMutationRequest();
         }
 
+        static readonly string FinanceReceiptLinkPrefix = "AR-LINK|";
+        static readonly string[] ReceiptFinanceAccountTypes = { "公户", "公司私户", "个人私户" };
+
+        static bool IsFinanceReceiptLinked(FinanceTransaction item)
+        {
+            return item != null && (item.Note ?? "").StartsWith(FinanceReceiptLinkPrefix, StringComparison.Ordinal);
+        }
+
+        static string BuildFinanceReceiptLinkNote(string receivableId, string detailId, string receivableCode, string salesOrderNo)
+        {
+            return FinanceReceiptLinkPrefix + receivableId + "|" + detailId + "|" + (receivableCode ?? "") + "|" + (salesOrderNo ?? "");
+        }
+
+        static string ResolveReceiptFinanceAccountType(Receivable receivable, string overrideType)
+        {
+            overrideType = (overrideType ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(overrideType))
+            {
+                var match = ReceiptFinanceAccountTypes.FirstOrDefault(x => string.Equals(x, overrideType, StringComparison.OrdinalIgnoreCase));
+                if (match == null) BizFail("财务账户类型无效，请选择：公户、公司私户、个人私户");
+                return match;
+            }
+            if (receivable != null && !string.IsNullOrWhiteSpace(receivable.SalesOrderId))
+            {
+                var order = LoadSalesOrders().FirstOrDefault(x => x.Id == receivable.SalesOrderId);
+                if (order != null)
+                {
+                    if (order.TaxExcludedSaleAmount > 0) return "公司私户";
+                    if (order.TaxIncludedSaleAmount > 0) return "公户";
+                }
+            }
+            return "公户";
+        }
+
+        static FinanceTransaction BuildLinkedFinanceIncome(Receivable receivable, ReceiptDetail detail, string financeAccountType, UserSession user)
+        {
+            var finance = new FinanceTransaction
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Date = detail.ReceiptDate,
+                AccountType = financeAccountType,
+                Receipt = detail.Amount,
+                Payment = 0,
+                PaymentMethod = detail.PaymentMethod,
+                Purpose = "应收收款",
+                Counterparty = (receivable.CustomerName ?? "").Trim(),
+                Note = BuildFinanceReceiptLinkNote(receivable.Id, detail.Id, receivable.Code, receivable.SalesOrderNo),
+                UpdatedAt = ProfileUpdatedAtNow(),
+                UpdatedBy = user.DisplayName
+            };
+            ValidateFinance(finance);
+            return finance;
+        }
+
+        static FinanceTransaction FindLinkedFinance(List<FinanceTransaction> financeList, ReceiptDetail detail)
+        {
+            if (detail == null) return null;
+            if (!string.IsNullOrWhiteSpace(detail.FinanceTransactionId))
+            {
+                var byId = financeList.FirstOrDefault(x => x.Id == detail.FinanceTransactionId);
+                if (byId != null) return byId;
+            }
+            return financeList.FirstOrDefault(x => IsFinanceReceiptLinked(x) && (x.Note ?? "").IndexOf("|" + detail.Id + "|", StringComparison.Ordinal) >= 0);
+        }
+
+        static void ApplyLinkedFinanceFields(FinanceTransaction finance, Receivable receivable, ReceiptDetail detail, string financeAccountType, UserSession user)
+        {
+            if (finance == null || detail == null || receivable == null) BizFail("联动财务收支失败");
+            finance.Date = detail.ReceiptDate;
+            finance.AccountType = financeAccountType;
+            finance.Receipt = detail.Amount;
+            finance.Payment = 0;
+            finance.PaymentMethod = detail.PaymentMethod;
+            finance.Purpose = "应收收款";
+            finance.Counterparty = (receivable.CustomerName ?? "").Trim();
+            finance.Note = BuildFinanceReceiptLinkNote(receivable.Id, detail.Id, receivable.Code, receivable.SalesOrderNo);
+            finance.UpdatedAt = ProfileUpdatedAtNow();
+            finance.UpdatedBy = user.DisplayName;
+            ValidateFinance(finance);
+        }
+
+        static Receivable PersistReceivableReceiptWithFinance(string receivableId, string clientUpdatedAt, UserSession user, Action<Receivable, List<FinanceTransaction>> mutate, string auditAction)
+        {
+            Receivable saved = null;
+            RunUnderDataLock(() =>
+            {
+                var receivables = ReadJsonListCore<Receivable>(ReceivablesFile);
+                var finance = ReadJsonListCore<FinanceTransaction>(FinanceFile);
+                var item = receivables.FirstOrDefault(x => x.Id == receivableId);
+                if (item == null) throw new BusinessException("应收款不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, clientUpdatedAt);
+                if (item.ReceiptDetails == null) item.ReceiptDetails = new List<ReceiptDetail>();
+                mutate(item, finance);
+                SyncReceivableAmountsFromDetails(item);
+                ValidateReceivableTotals(item);
+                item.UpdatedAt = BizUpdatedAtNow();
+                item.UpdatedBy = user.DisplayName;
+                saved = item;
+                WriteJsonListCore(ReceivablesFile, "receivables", receivables);
+                WriteJsonListCore(FinanceFile, "finance", finance);
+            });
+            Audit(user, auditAction, saved.Code);
+            return saved;
+        }
+
         static void AddReceivableReceipt(HttpListenerContext ctx, UserSession user, string receivableId)
         {
             var input = ReadReceiptDetailMutationRequest(ctx.Request);
-            var saved = PersistReceivableDetailMutation(receivableId, input == null ? "" : input.UpdatedAt, user, item =>
+            var saved = PersistReceivableReceiptWithFinance(receivableId, input == null ? "" : input.UpdatedAt, user, (item, finance) =>
             {
                 EnsureReceivableDetailTotal(item, input.Amount);
                 var detail = new ReceiptDetail
@@ -193,6 +299,13 @@ namespace SupplierErpApp
                     UpdatedAt = BizUpdatedAtNow()
                 };
                 ApplyReceiptDetailFields(detail, input);
+                var financeAccountType = ResolveReceiptFinanceAccountType(item, input.FinanceAccountType);
+                var linkNote = BuildFinanceReceiptLinkNote(item.Id, detail.Id, item.Code, item.SalesOrderNo);
+                if (finance.Any(x => string.Equals(x.Note, linkNote, StringComparison.Ordinal)))
+                    BizFail("财务流水已存在，请勿重复提交", 409);
+                var fin = BuildLinkedFinanceIncome(item, detail, financeAccountType, user);
+                finance.Insert(0, fin);
+                detail.FinanceTransactionId = fin.Id;
                 item.ReceiptDetails.Insert(0, detail);
             }, "新增收款明细");
             WriteJson(ctx, saved, 201);
@@ -201,13 +314,19 @@ namespace SupplierErpApp
         static void UpdateReceivableReceipt(HttpListenerContext ctx, UserSession user, string receivableId, string detailId)
         {
             var input = ReadReceiptDetailMutationRequest(ctx.Request);
-            var saved = PersistReceivableDetailMutation(receivableId, input == null ? "" : input.UpdatedAt, user, item =>
+            var saved = PersistReceivableReceiptWithFinance(receivableId, input == null ? "" : input.UpdatedAt, user, (item, finance) =>
             {
                 var detail = item.ReceiptDetails.FirstOrDefault(x => x.Id == detailId);
                 if (detail == null) throw new BusinessException("收款明细不存在", 404);
                 EnsureReceivableDetailTotal(item, input.Amount, detailId);
                 ApplyReceiptDetailFields(detail, input);
                 detail.UpdatedAt = BizUpdatedAtNow();
+                var linked = FindLinkedFinance(finance, detail);
+                if (linked != null)
+                {
+                    var financeAccountType = ResolveReceiptFinanceAccountType(item, input.FinanceAccountType);
+                    ApplyLinkedFinanceFields(linked, item, detail, financeAccountType, user);
+                }
             }, "修改收款明细");
             WriteJson(ctx, saved);
         }
@@ -215,10 +334,12 @@ namespace SupplierErpApp
         static void DeleteReceivableReceipt(HttpListenerContext ctx, UserSession user, string receivableId, string detailId)
         {
             var input = ReadReceiptDetailMutationRequest(ctx.Request);
-            var saved = PersistReceivableDetailMutation(receivableId, input == null ? "" : input.UpdatedAt, user, item =>
+            var saved = PersistReceivableReceiptWithFinance(receivableId, input == null ? "" : input.UpdatedAt, user, (item, finance) =>
             {
                 var detail = item.ReceiptDetails.FirstOrDefault(x => x.Id == detailId);
                 if (detail == null) throw new BusinessException("收款明细不存在", 404);
+                var linked = FindLinkedFinance(finance, detail);
+                if (linked != null) finance.Remove(linked);
                 item.ReceiptDetails.Remove(detail);
                 if (item.ReceiptDetails.Count == 0)
                     item.ReceivedAmount = 0;

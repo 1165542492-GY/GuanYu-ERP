@@ -447,5 +447,60 @@ namespace SupplierErpApp
                 WriteJson(ctx, new { error = msg, message = msg }, 500);
             }
         }
+
+        static void GetCustomerReconciliationStatement(HttpListenerContext ctx, UserSession user)
+        {
+            if (!RequirePermission(ctx, user, "reconciliation.customer_view")) return;
+            string customerId = ctx.Request.QueryString["customerId"];
+            string month = ctx.Request.QueryString["month"];
+            DateTime monthStart, monthEnd;
+            string monthError;
+            if (!TryParseReconciliationMonth(month, out monthStart, out monthEnd, out monthError))
+            {
+                WriteJson(ctx, new { error = monthError, message = monthError }, 400);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(customerId))
+            {
+                WriteJson(ctx, new { error = "请选择客户", message = "请选择客户" }, 400);
+                return;
+            }
+            var customer = LoadCustomers().FirstOrDefault(x => x.Id == customerId);
+            if (customer == null)
+            {
+                WriteJson(ctx, new { error = "客户不存在", message = "客户不存在" }, 404);
+                return;
+            }
+            try
+            {
+                var stmt = BuildCustomerReconciliationStatement(customer, monthStart, monthEnd);
+                var detailRows = stmt.Details.Select(d => new
+                {
+                    date = d.IsReceiptRow ? (d.ReceiptDate ?? "") : (d.OrderDate ?? ""),
+                    type = d.IsReceiptRow ? "收款" : "应收",
+                    docNo = d.DocNo ?? "",
+                    description = d.IsReceiptRow ? (d.Note ?? "") : ((d.ProductSpec ?? "") + (string.IsNullOrWhiteSpace(d.Note) ? "" : " / " + d.Note)).Trim(' ', '/'),
+                    receivableAmount = d.IsReceiptRow ? 0m : d.Amount,
+                    receivedAmount = d.IsReceiptRow ? d.ReceiptAmount : 0m,
+                    balance = d.Remaining
+                }).ToArray();
+                WriteJson(ctx, new
+                {
+                    customerId = customer.Id,
+                    customerName = customer.Company ?? customer.Code,
+                    month = monthStart.ToString("yyyy-MM"),
+                    openingReceivable = stmt.OpeningBalance,
+                    currentReceivable = stmt.PeriodNewReceivable,
+                    currentReceived = stmt.PeriodReceipts,
+                    endingReceivable = stmt.ClosingUnreceived,
+                    detailRows
+                });
+            }
+            catch (Exception ex)
+            {
+                string msg = "查询客户对账单失败：" + ToUserMessage(ex);
+                WriteJson(ctx, new { error = msg, message = msg }, 500);
+            }
+        }
     }
 }

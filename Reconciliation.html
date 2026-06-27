@@ -63,7 +63,7 @@
             </tr>
           </thead>
           <tbody id="crDetailBody">
-            <tr><td colspan="7" class="empty">请选择客户和月份后点击「导出 Excel」。</td></tr>
+            <tr><td colspan="7" class="empty">请选择客户和月份后点击「刷新」。</td></tr>
           </tbody>
         </table>
       </div>
@@ -96,6 +96,35 @@ function crRefreshDualScroll(){
     if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('customer-reconciliation');
   },0);
 }
+async function loadCustomerReconciliationStatement(){
+  if(!can('reconciliation.customer_view')){tip('无权限访问');return}
+  var cid=document.getElementById('crCustomer')?document.getElementById('crCustomer').value:'';
+  var month=document.getElementById('crMonth')?document.getElementById('crMonth').value:'';
+  if(!cid||!month){
+    document.getElementById('crOpening').textContent='—';
+    document.getElementById('crNew').textContent='—';
+    document.getElementById('crReceipt').textContent='—';
+    document.getElementById('crClosing').textContent='—';
+    document.getElementById('crDetailBody').innerHTML='<tr><td colspan="7" class="empty">请选择客户和月份后点击「刷新」。</td></tr>';
+    crRefreshDualScroll();
+    return;
+  }
+  try{
+    var data=await api('/api/reconciliation/customer/statement?customerId='+encodeURIComponent(cid)+'&month='+encodeURIComponent(month));
+    document.getElementById('crOpening').textContent=money(data.openingReceivable);
+    document.getElementById('crNew').textContent=money(data.currentReceivable);
+    document.getElementById('crReceipt').textContent=money(data.currentReceived);
+    document.getElementById('crClosing').textContent=money(data.endingReceivable);
+    var rows=data.detailRows||[];
+    var body=document.getElementById('crDetailBody');
+    body.innerHTML=rows.length?rows.map(function(r){
+      return'<tr><td>'+safe((r.date||'').slice(0,10))+'</td><td>'+safe(r.type||'-')+'</td><td>'+safe(r.docNo||'-')+'</td><td>'+safe(r.description||'-')+'</td><td>'+(r.receivableAmount?money(r.receivableAmount):'-')+'</td><td>'+(r.receivedAmount?money(r.receivedAmount):'-')+'</td><td>'+money(r.balance)+'</td></tr>';
+    }).join(''):'<tr><td colspan="7" class="empty">本期暂无明细数据</td></tr>';
+  }catch(e){
+    tip(e.message||'加载对账单失败');
+  }
+  crRefreshDualScroll();
+}
 async function loadCustomerReconciliationPage(){
   mountCustomerReconciliationView();
   if(!can('reconciliation.customer_view')){tip('无权限访问');return}
@@ -108,7 +137,7 @@ async function loadCustomerReconciliationPage(){
     sel.innerHTML='<option value="">请选择客户</option>'+list.map(function(x){return'<option value="'+safe(x.Id)+'">'+safe(x.Company||x.Code||'-')+'</option>'}).join('');
     if(cur)sel.value=cur;
   }catch(e){tip(e.message||'加载客户列表失败')}
-  crRefreshDualScroll();
+  await loadCustomerReconciliationStatement();
 }
 async function exportCustomerReconciliation(btn){
   if(!can('reconciliation.customer_export')){tip('无权限操作');return}
@@ -132,7 +161,11 @@ document.addEventListener('DOMContentLoaded',function(){
   var exportBtn=document.getElementById('crExportBtn');
   if(exportBtn)exportBtn.onclick=function(){return exportCustomerReconciliation(this)};
   var refreshBtn=document.getElementById('crRefreshBtn');
-  if(refreshBtn)refreshBtn.onclick=function(){return loadCustomerReconciliationPage()};
+  if(refreshBtn)refreshBtn.onclick=function(){return loadCustomerReconciliationStatement()};
+  var monthEl=document.getElementById('crMonth');
+  if(monthEl)monthEl.onchange=function(){return loadCustomerReconciliationStatement()};
+  var custEl=document.getElementById('crCustomer');
+  if(custEl)custEl.onchange=function(){return loadCustomerReconciliationStatement()};
 });
 })();
 </script>

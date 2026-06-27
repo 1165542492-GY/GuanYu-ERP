@@ -556,6 +556,7 @@ namespace SupplierErpApp
         public string PaymentMethod { get; set; }
         public string Handler { get; set; }
         public string Note { get; set; }
+        public string FinanceTransactionId { get; set; }
         public string CreatedAt { get; set; }
         public string UpdatedAt { get; set; }
     }
@@ -1075,6 +1076,7 @@ namespace SupplierErpApp
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
                 if (path == "/api/reconciliation/customers" && ctx.Request.HttpMethod == "GET") { ListReconciliationCustomers(ctx, user); return; }
                 if (path == "/api/reconciliation/customer/export" && ctx.Request.HttpMethod == "GET") { ExportCustomerReconciliation(ctx, user); return; }
+                if (path == "/api/reconciliation/customer/statement" && ctx.Request.HttpMethod == "GET") { GetCustomerReconciliationStatement(ctx, user); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "receivable.add")) return; AddReceivable(ctx, user); return; }
                 if (TryHandleReceivableReceiptRoutes(ctx, user, path)) return;
                 if (path.StartsWith("/api/receivables/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "receivable.edit")) return; UpdateReceivable(ctx, user, path.Substring("/api/receivables/".Length)); return; }
@@ -2725,6 +2727,7 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("收支记录不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                if (IsFinanceReceiptLinked(item)) BizFail("该收支由应收收款自动联动生成，请先在应收款中修改或删除对应收款明细。", 409);
                 item.Date = input.Date; item.AccountType = input.AccountType; item.Receipt = input.Receipt; item.Payment = input.Payment; item.PaymentMethod = input.PaymentMethod; item.Purpose = input.Purpose; item.Counterparty = input.Counterparty; item.Note = input.Note; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<FinanceTransaction>(item, true);
             });
@@ -2738,6 +2741,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("收支记录不存在", 404);
+                if (IsFinanceReceiptLinked(item)) BizFail("该收支由应收收款自动联动生成，请先在应收款中修改或删除对应收款明细。", 409);
                 auditDetail = item.Date + " " + item.AccountType + " " + item.Purpose;
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
