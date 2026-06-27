@@ -483,12 +483,15 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string SupplierId { get; set; }
+        public string SupplierCode { get; set; }
         public string SupplierName { get; set; }
         public string MaterialId { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
+        public string PriceType { get; set; }
         public decimal Amount { get; set; }
         public string OrderDate { get; set; }
         public string Status { get; set; }
@@ -4342,12 +4345,14 @@ namespace SupplierErpApp
             var materials = LoadMaterials();
             if (!string.IsNullOrWhiteSpace(materialId))
             {
-                return materials.FirstOrDefault(x => x.Id == materialId);
+                var byId = materials.FirstOrDefault(x => x.Id == materialId);
+                if (byId != null) return byId;
             }
             if (!string.IsNullOrWhiteSpace(materialName))
             {
-                return materials.FirstOrDefault(x =>
-                    string.Equals(x.Code, materialName, StringComparison.OrdinalIgnoreCase));
+                var byCode = materials.FirstOrDefault(x => string.Equals(x.Code, materialName, StringComparison.OrdinalIgnoreCase));
+                if (byCode != null) return byCode;
+                return materials.FirstOrDefault(x => string.Equals(x.NameSpec, materialName, StringComparison.OrdinalIgnoreCase));
             }
             return null;
         }
@@ -4440,14 +4445,17 @@ namespace SupplierErpApp
 
         static void ResolvePurchaseOrderLink(PurchaseInbound item)
         {
-            if (string.IsNullOrWhiteSpace(item.PurchaseOrderId)) return;
+            item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.PurchaseOrderId))
+                BizFail("请选择来源采购单");
             var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
-            if (order == null) return;
-            item.PurchaseNo = order.Code;
-            if (string.IsNullOrWhiteSpace(item.SupplierName)) item.SupplierName = order.SupplierName;
-            if (string.IsNullOrWhiteSpace(item.MaterialId)) item.MaterialId = order.MaterialId;
-            if (string.IsNullOrWhiteSpace(item.MaterialCode)) item.MaterialCode = order.MaterialCode;
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) item.MaterialName = order.MaterialName;
+            if (order == null) BizFail("来源采购单不存在，请先在采购单中创建");
+            item.PurchaseNo = order.Code ?? "";
+            item.SupplierName = order.SupplierName ?? "";
+            item.MaterialId = order.MaterialId ?? "";
+            item.MaterialCode = order.MaterialCode ?? "";
+            item.MaterialName = order.MaterialName ?? "";
+            if (item.InboundPrice <= 0) item.InboundPrice = order.UnitPrice;
         }
 
         static void ResolveBomLinkForPick(ProductionPick item)
@@ -4691,6 +4699,8 @@ namespace SupplierErpApp
                 if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
             }
             if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
+            ValidateSalesOutboundRemainingQty(item);
+            AutoResolveSalesOutboundCost(item);
             if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.OutboundDate = string.IsNullOrWhiteSpace(item.OutboundDate) ? TodayText() : item.OutboundDate.Trim();
@@ -4716,6 +4726,7 @@ namespace SupplierErpApp
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
+            ValidateSalesOutboundRemainingQty(input, id);
             ValidateStockForConfirmedOutbound(input, id);
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
             {
@@ -4767,12 +4778,13 @@ namespace SupplierErpApp
         static void ApplyPurchaseOrder(PurchaseOrder item)
         {
             if (item == null) BizFail("数据不能为空");
-            item.SupplierName = (item.SupplierName ?? "").Trim();
+            ResolveSupplierFields(item);
             string mid, mcode, mname, mspec, munit;
             ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
             item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
-            if (string.IsNullOrWhiteSpace(item.SupplierName)) BizFail("请填写供应商名称");
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
+            ApplyMaterialDefaultPriceToPurchaseOrder(item);
+            item.PriceType = NormalizePriceType(item.PriceType);
             if (item.Quantity <= 0) BizFail("数量必须大于 0");
             if (item.UnitPrice < 0) BizFail("采购单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.UnitPrice);
@@ -4823,8 +4835,9 @@ namespace SupplierErpApp
             item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源采购单缺少物料信息");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
+            ValidatePurchaseInboundRemainingQty(item);
             if (item.InboundPrice < 0) BizFail("入库单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.InboundPrice);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
@@ -4849,6 +4862,7 @@ namespace SupplierErpApp
         static void UpdatePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input);
+            ValidatePurchaseInboundRemainingQty(input, id);
             var saved = MutateJsonList<PurchaseInbound, PurchaseInbound>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -4952,7 +4966,7 @@ namespace SupplierErpApp
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplySalesOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try { ApplySalesOutbound(input); ValidateSalesOutboundRemainingQty(input); ValidateStockForConfirmedOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
@@ -5006,7 +5020,7 @@ namespace SupplierErpApp
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplyPurchaseInbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try { ApplyPurchaseInbound(input); ValidatePurchaseInboundRemainingQty(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
@@ -5149,8 +5163,9 @@ namespace SupplierErpApp
             item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
             item.BomId = (item.BomId ?? "").Trim();
             item.BomName = (item.BomName ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请填写物料名称");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
             if (item.Quantity <= 0) BizFail("领用数量必须大于 0");
+            AutoResolveProductionPickCost(item);
             if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.PickDate = string.IsNullOrWhiteSpace(item.PickDate) ? TodayText() : item.PickDate.Trim();
@@ -5230,6 +5245,7 @@ namespace SupplierErpApp
             item.ModelCostId = (item.ModelCostId ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.ProductName)) BizFail("请填写产品名称");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
+            AutoResolveFinishedInboundUnitCost(item);
             if (item.UnitCost < 0) BizFail("单台成本不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.UnitCost);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
