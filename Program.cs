@@ -557,6 +557,46 @@ namespace SupplierErpApp
         public string UpdatedBy { get; set; }
     }
 
+    public class ProductionWorkOrder
+    {
+        public string Id { get; set; }
+        public string WorkOrderNo { get; set; }
+        public string WorkOrderDate { get; set; }
+        public string SourceType { get; set; }
+        public string SalesOrderId { get; set; }
+        public string SalesOrderNo { get; set; }
+        public string CustomerId { get; set; }
+        public string CustomerName { get; set; }
+        public string ProductName { get; set; }
+        public string Spec { get; set; }
+        public decimal Quantity { get; set; }
+        public string Unit { get; set; }
+        public string BomId { get; set; }
+        public string BomName { get; set; }
+        public string ModelCostId { get; set; }
+        public decimal UnitCost { get; set; }
+        public string PlannedStartDate { get; set; }
+        public string PlannedFinishDate { get; set; }
+        public string ActualStartDate { get; set; }
+        public string ActualFinishDate { get; set; }
+        public decimal ProducedQuantity { get; set; }
+        public decimal UnproducedQuantity { get; set; }
+        public decimal PickedMaterialAmount { get; set; }
+        public decimal FinishedInboundAmount { get; set; }
+        public string Status { get; set; }
+        public string Remark { get; set; }
+        public string CreatedAt { get; set; }
+        public string UpdatedAt { get; set; }
+        public string CreatedBy { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
+    public class ProductionWorkOrderFinishRequest
+    {
+        public decimal FinishQuantity { get; set; }
+        public string UpdatedAt { get; set; }
+    }
+
     public class ReceiptDetail
     {
         public string Id { get; set; }
@@ -702,6 +742,7 @@ namespace SupplierErpApp
         static readonly string ProductionPickSequenceFile = Path.Combine(DataDir, "production_pick_sequence.json");
         static readonly string FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
         static readonly string FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
+        static readonly string ProductionWorkOrdersFile = Path.Combine(DataDir, "production-work-orders.json");
         static readonly string ReceivablesFile = Path.Combine(DataDir, "receivables.json");
         static readonly string ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
         static readonly string PayablesFile = Path.Combine(DataDir, "payables.json");
@@ -1078,6 +1119,14 @@ namespace SupplierErpApp
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionPick(ctx, user); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
+                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; WriteJson(ctx, LoadProductionWorkOrders()); return; }
+                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionWorkOrder(ctx, user); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/start") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; StartProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/start".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/finish") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; FinishProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/finish".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; CancelProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/cancel".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; GetProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finished_inbound.view")) return; WriteJson(ctx, LoadFinishedInbounds()); return; }
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finished_inbound.add")) return; AddFinishedInbound(ctx, user); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finished_inbound.edit")) return; UpdateFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
@@ -4302,6 +4351,7 @@ namespace SupplierErpApp
             EnsureJsonFile(ProductionPickSequenceFile, "0");
             EnsureJsonFile(FinishedInboundsFile);
             EnsureJsonFile(FinishedInboundSequenceFile, "0");
+            EnsureJsonFile(ProductionWorkOrdersFile);
             EnsureJsonFile(ReceivablesFile);
             EnsureJsonFile(ReceivableSequenceFile, "0");
             EnsureJsonFile(PayablesFile);
@@ -5230,6 +5280,344 @@ namespace SupplierErpApp
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
             Audit(user, "删除生产领用", auditCode); WriteJson(ctx, new { ok = true });
+        }
+
+        static List<ProductionWorkOrder> LoadProductionWorkOrders() { return LoadJsonList<ProductionWorkOrder>(ProductionWorkOrdersFile); }
+
+        static string NextProductionWorkOrderNo(IEnumerable<ProductionWorkOrder> list)
+        {
+            string datePart = DateTime.Now.ToString("yyyyMMdd");
+            string prefix = "WO" + datePart;
+            int max = 0;
+            foreach (var x in list ?? Enumerable.Empty<ProductionWorkOrder>())
+            {
+                var code = x.WorkOrderNo ?? "";
+                if (!code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                int seq;
+                if (code.Length > prefix.Length && int.TryParse(code.Substring(prefix.Length), out seq))
+                    max = Math.Max(max, seq);
+            }
+            return prefix + (max + 1).ToString("D3");
+        }
+
+        static string NormalizeProductionWorkOrderStatus(string status)
+        {
+            status = (status ?? "").Trim();
+            if (status == "草稿" || status == "待生产" || status == "生产中" || status == "部分完工" || status == "已完成" || status == "已取消") return status;
+            return "草稿";
+        }
+
+        static bool CanEditProductionWorkOrder(string status)
+        {
+            status = NormalizeProductionWorkOrderStatus(status);
+            return status == "草稿" || status == "待生产" || status == "生产中" || status == "部分完工";
+        }
+
+        static bool CanDeleteProductionWorkOrder(string status)
+        {
+            status = NormalizeProductionWorkOrderStatus(status);
+            return status == "草稿" || status == "已取消";
+        }
+
+        static void SyncProductionWorkOrderQuantities(ProductionWorkOrder item)
+        {
+            if (item == null) return;
+            item.ProducedQuantity = Math.Max(0, item.ProducedQuantity);
+            if (item.ProducedQuantity > item.Quantity) BizFail("已完工数量不能大于计划数量");
+            item.UnproducedQuantity = item.Quantity - item.ProducedQuantity;
+        }
+
+        static void SyncProductionWorkOrderFinishStatus(ProductionWorkOrder item)
+        {
+            if (item == null) return;
+            if (item.Status == "已取消" || item.Status == "草稿" || item.Status == "待生产") return;
+            if (item.ProducedQuantity >= item.Quantity)
+            {
+                item.Status = "已完成";
+                if (string.IsNullOrWhiteSpace(item.ActualFinishDate)) item.ActualFinishDate = TodayText();
+            }
+            else if (item.ProducedQuantity > 0)
+                item.Status = "部分完工";
+        }
+
+        static void ResolveProductionWorkOrderSalesOrder(ProductionWorkOrder item)
+        {
+            item.SalesOrderId = (item.SalesOrderId ?? "").Trim();
+            item.SalesOrderNo = (item.SalesOrderNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.SalesOrderId) && string.IsNullOrWhiteSpace(item.SalesOrderNo)) return;
+            var orders = LoadSalesOrders();
+            SalesOrder order = null;
+            if (!string.IsNullOrWhiteSpace(item.SalesOrderId))
+                order = orders.FirstOrDefault(x => x.Id == item.SalesOrderId);
+            if (order == null && !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                order = orders.FirstOrDefault(x => string.Equals(x.Code, item.SalesOrderNo, StringComparison.OrdinalIgnoreCase));
+            if (order == null) BizFail("来源销售订单不存在");
+            item.SalesOrderId = order.Id;
+            item.SalesOrderNo = order.Code ?? "";
+            item.CustomerId = order.CustomerId ?? "";
+            item.CustomerName = order.CustomerName ?? "";
+            item.ProductName = order.MaterialName ?? "";
+            if (order.Quantity > 0) item.Quantity = order.Quantity;
+            item.Unit = "台";
+            if (!string.IsNullOrWhiteSpace(order.BomId)) item.BomId = order.BomId;
+            if (!string.IsNullOrWhiteSpace(order.ModelCostId)) item.ModelCostId = order.ModelCostId;
+            item.SourceType = "销售订单";
+        }
+
+        static void ResolveProductionWorkOrderCustomer(ProductionWorkOrder item, bool fromSalesOrder)
+        {
+            item.CustomerId = (item.CustomerId ?? "").Trim();
+            item.CustomerName = (item.CustomerName ?? "").Trim();
+            if (fromSalesOrder) return;
+            if (!string.IsNullOrWhiteSpace(item.CustomerId))
+            {
+                var byId = LoadCustomers().FirstOrDefault(x => x.Id == item.CustomerId);
+                if (byId != null)
+                {
+                    item.CustomerId = byId.Id;
+                    item.CustomerName = byId.Company ?? "";
+                    return;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(item.CustomerName))
+            {
+                var byName = LoadCustomers().FirstOrDefault(x => string.Equals(x.Company, item.CustomerName, StringComparison.OrdinalIgnoreCase));
+                if (byName != null)
+                {
+                    item.CustomerId = byName.Id;
+                    item.CustomerName = byName.Company ?? "";
+                    return;
+                }
+            }
+            if (string.Equals(item.SourceType ?? "", "手工", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(item.SalesOrderId))
+                BizFail("请选择客户");
+        }
+
+        static void ResolveProductionWorkOrderBom(ProductionWorkOrder item)
+        {
+            item.BomId = (item.BomId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.BomId)) return;
+            var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
+            if (bom == null) BizFail("来源 BOM 不存在");
+            item.BomName = !string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ModelName : (bom.ProductName ?? "");
+            item.ProductName = !string.IsNullOrWhiteSpace(bom.ProductName) ? bom.ProductName : (bom.ModelName ?? "");
+            item.Spec = bom.ModelCode ?? "";
+        }
+
+        static void ResolveProductionWorkOrderModelCost(ProductionWorkOrder item)
+        {
+            item.ModelCostId = (item.ModelCostId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.ModelCostId)) return;
+            var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
+            if (mc == null) BizFail("机型成本不存在");
+            item.UnitCost = mc.TotalCost > 0 ? mc.TotalCost : mc.MaterialCost;
+            if (string.IsNullOrWhiteSpace(item.BomId) && !string.IsNullOrWhiteSpace(mc.BomId))
+                item.BomId = mc.BomId;
+            if (string.IsNullOrWhiteSpace(item.BomId))
+            {
+                item.ProductName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : (mc.ModelName ?? "");
+                item.Spec = mc.ModelCode ?? "";
+            }
+        }
+
+        static void ApplyProductionWorkOrder(ProductionWorkOrder item, bool preserveProgressFields)
+        {
+            if (item == null) BizFail("数据不能为空");
+            item.SourceType = string.IsNullOrWhiteSpace(item.SourceType) ? "手工" : item.SourceType.Trim();
+            bool fromSalesOrder = string.Equals(item.SourceType, "销售订单", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo);
+            if (string.Equals(item.SourceType, "销售订单", StringComparison.OrdinalIgnoreCase))
+                ResolveProductionWorkOrderSalesOrder(item);
+            else if (!string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                ResolveProductionWorkOrderSalesOrder(item);
+            ResolveProductionWorkOrderCustomer(item, fromSalesOrder && !string.IsNullOrWhiteSpace(item.SalesOrderId));
+            ResolveProductionWorkOrderModelCost(item);
+            ResolveProductionWorkOrderBom(item);
+            if (string.IsNullOrWhiteSpace(item.ProductName)) BizFail("请填写产品/机型名称");
+            if (item.Quantity <= 0) BizFail("计划生产数量必须大于 0");
+            if (string.IsNullOrWhiteSpace(item.Unit)) item.Unit = "台";
+            item.WorkOrderDate = string.IsNullOrWhiteSpace(item.WorkOrderDate) ? TodayText() : item.WorkOrderDate.Trim();
+            item.PlannedStartDate = (item.PlannedStartDate ?? "").Trim();
+            item.PlannedFinishDate = (item.PlannedFinishDate ?? "").Trim();
+            item.Remark = (item.Remark ?? "").Trim();
+            if (!preserveProgressFields)
+            {
+                item.ProducedQuantity = 0;
+                item.UnproducedQuantity = item.Quantity;
+                item.PickedMaterialAmount = 0;
+                item.FinishedInboundAmount = 0;
+            }
+            SyncProductionWorkOrderQuantities(item);
+            item.Status = NormalizeProductionWorkOrderStatus(item.Status);
+            if (string.IsNullOrWhiteSpace(item.Status)) item.Status = "草稿";
+        }
+
+        static void CopyProductionWorkOrderEditableFields(ProductionWorkOrder target, ProductionWorkOrder input, bool coreEditable)
+        {
+            target.WorkOrderDate = input.WorkOrderDate;
+            target.SourceType = input.SourceType;
+            target.SalesOrderId = input.SalesOrderId;
+            target.SalesOrderNo = input.SalesOrderNo;
+            target.CustomerId = input.CustomerId;
+            target.CustomerName = input.CustomerName;
+            if (coreEditable)
+            {
+                target.ProductName = input.ProductName;
+                target.Spec = input.Spec;
+                target.Quantity = input.Quantity;
+                target.Unit = input.Unit;
+                target.BomId = input.BomId;
+                target.BomName = input.BomName;
+                target.ModelCostId = input.ModelCostId;
+                target.UnitCost = input.UnitCost;
+            }
+            target.PlannedStartDate = input.PlannedStartDate;
+            target.PlannedFinishDate = input.PlannedFinishDate;
+            target.Remark = input.Remark;
+            if (coreEditable && (target.Status == "草稿" || target.Status == "待生产"))
+                target.Status = NormalizeProductionWorkOrderStatus(input.Status);
+        }
+
+        static void GetProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var item = LoadProductionWorkOrders().FirstOrDefault(x => x.Id == id);
+            if (item == null) throw new BusinessException("生产工单不存在", 404);
+            WriteJson(ctx, item);
+        }
+
+        static void AddProductionWorkOrder(HttpListenerContext ctx, UserSession user)
+        {
+            var item = Json.Deserialize<ProductionWorkOrder>(ReadBody(ctx.Request));
+            ApplyProductionWorkOrder(item, false);
+            string now = BizUpdatedAtNow();
+            var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                item.Id = Guid.NewGuid().ToString("N");
+                item.WorkOrderNo = NextProductionWorkOrderNo(list);
+                item.CreatedAt = now;
+                item.UpdatedAt = now;
+                item.CreatedBy = user.DisplayName;
+                item.UpdatedBy = user.DisplayName;
+                list.Insert(0, item);
+                return new JsonMutationResult<ProductionWorkOrder>(item, true);
+            });
+            Audit(user, "新增生产工单", saved.WorkOrderNo);
+            WriteJson(ctx, saved, 201);
+        }
+
+        static void UpdateProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var input = Json.Deserialize<ProductionWorkOrder>(ReadBody(ctx.Request));
+            var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                if (!CanEditProductionWorkOrder(item.Status)) BizFail("当前状态不允许编辑", 409);
+                bool coreEditable = item.Status == "草稿" || item.Status == "待生产";
+                var produced = item.ProducedQuantity;
+                var picked = item.PickedMaterialAmount;
+                var finishedAmt = item.FinishedInboundAmount;
+                var actualStart = item.ActualStartDate;
+                var actualFinish = item.ActualFinishDate;
+                var status = item.Status;
+                ApplyProductionWorkOrder(input, true);
+                CopyProductionWorkOrderEditableFields(item, input, coreEditable);
+                item.ProducedQuantity = produced;
+                item.PickedMaterialAmount = picked;
+                item.FinishedInboundAmount = finishedAmt;
+                item.ActualStartDate = actualStart;
+                item.ActualFinishDate = actualFinish;
+                if (!coreEditable) item.Status = status;
+                SyncProductionWorkOrderQuantities(item);
+                SyncProductionWorkOrderFinishStatus(item);
+                item.UpdatedAt = BizUpdatedAtNow();
+                item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<ProductionWorkOrder>(item, true);
+            });
+            Audit(user, "修改生产工单", saved.WorkOrderNo);
+            WriteJson(ctx, saved);
+        }
+
+        static void DeleteProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            string auditCode = null;
+            RunUnderDataLock(() =>
+            {
+                var item = ReadJsonListCore<ProductionWorkOrder>(ProductionWorkOrdersFile).FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                if (!CanDeleteProductionWorkOrder(item.Status)) throw new BusinessException("仅草稿或已取消的工单可以删除", 409);
+                auditCode = item.WorkOrderNo;
+            });
+            MutateJsonList<ProductionWorkOrder, object>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                if (!CanDeleteProductionWorkOrder(item.Status)) throw new BusinessException("仅草稿或已取消的工单可以删除", 409);
+                list.Remove(item);
+                return new JsonMutationResult<object>(new { ok = true }, true);
+            });
+            Audit(user, "删除生产工单", auditCode);
+            WriteJson(ctx, new { ok = true });
+        }
+
+        static void StartProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                var status = NormalizeProductionWorkOrderStatus(item.Status);
+                if (status != "草稿" && status != "待生产") BizFail("仅草稿或待生产工单可以开始生产", 409);
+                item.Status = "生产中";
+                if (string.IsNullOrWhiteSpace(item.ActualStartDate)) item.ActualStartDate = TodayText();
+                item.UpdatedAt = BizUpdatedAtNow();
+                item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<ProductionWorkOrder>(item, true);
+            });
+            Audit(user, "开始生产", saved.WorkOrderNo);
+            WriteJson(ctx, saved);
+        }
+
+        static void FinishProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var req = Json.Deserialize<ProductionWorkOrderFinishRequest>(ReadBody(ctx.Request));
+            if (req == null || req.FinishQuantity <= 0) BizFail("本次完工数量必须大于 0");
+            var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                EnsureEditVersionMatch(item.UpdatedAt, req.UpdatedAt);
+                var status = NormalizeProductionWorkOrderStatus(item.Status);
+                if (status != "生产中" && status != "部分完工") BizFail("仅生产中或部分完工工单可以登记完工", 409);
+                var remaining = item.Quantity - item.ProducedQuantity;
+                if (req.FinishQuantity > remaining + 0.0001m) BizFail("本次完工数量不能超过未完工数量 " + remaining.ToString("0.##"), 409);
+                item.ProducedQuantity += req.FinishQuantity;
+                SyncProductionWorkOrderQuantities(item);
+                SyncProductionWorkOrderFinishStatus(item);
+                item.UpdatedAt = BizUpdatedAtNow();
+                item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<ProductionWorkOrder>(item, true);
+            });
+            Audit(user, "工单完工登记", saved.WorkOrderNo + " +" + req.FinishQuantity.ToString("0.##"));
+            WriteJson(ctx, saved);
+        }
+
+        static void CancelProductionWorkOrder(HttpListenerContext ctx, UserSession user, string id)
+        {
+            var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var item = list.FirstOrDefault(x => x.Id == id);
+                if (item == null) throw new BusinessException("生产工单不存在", 404);
+                if (NormalizeProductionWorkOrderStatus(item.Status) == "已完成") BizFail("已完成的工单不能取消", 409);
+                item.Status = "已取消";
+                item.UpdatedAt = BizUpdatedAtNow();
+                item.UpdatedBy = user.DisplayName;
+                return new JsonMutationResult<ProductionWorkOrder>(item, true);
+            });
+            Audit(user, "取消生产工单", saved.WorkOrderNo);
+            WriteJson(ctx, saved);
         }
 
         static List<FinishedInbound> LoadFinishedInbounds() { return LoadJsonList<FinishedInbound>(FinishedInboundsFile); }

@@ -1,6 +1,7 @@
 # ERP Ver2.9 执行台账
 
-> 自动任务工作台每轮执行后追加记录。时间格式：`yyyy-MM-dd HH:mm:ss`。
+> 自动任务工作台每轮执行后追加记录。时间格式：`yyyy-MM-dd HH:mm:ss`。  
+> **全系统统一设计原则**：[`ERP-Ver2.9-系统设计原则.md`](ERP-Ver2.9-系统设计原则.md)
 
 | 时间 | 阶段 | 任务文件 | 执行工具 | 修改文件 | 执行动作 | build结果 | 接口检查 | 浏览器验收 | 风险等级 | 是否提交 | 备注 |
 |------|------|----------|----------|----------|----------|-----------|----------|------------|----------|----------|------|
@@ -16,3 +17,7 @@
 | 2026-06-27 23:10:51 | Ver2.9-rc6 | 007_Ver29_rc6_next_action_buttons.md | run_task_loop | — | 执行前安全检查 | 失败 | — | — | R2 — 前端路由跳转与单据来源传递；如需轻量接口仅做参数预填，不改核心业务逻辑。 | 否 | 失败 → C:\Users\Administrator\Documents\ERP\docs\worklog\reports\task_failed_20260627_231051.md |
 | 2026-06-27 23:11:05 | Ver2.9 | 008_Ver29_regression_plan_and_scripts.md | run_task_loop | — | 执行前安全检查 | 失败 | — | — | R0/R2 — 文档整理、只读检查脚本与测试数据方案；脚本只造测试数据，不清正式数据。 | 否 | 失败 → C:\Users\Administrator\Documents\ERP\docs\worklog\reports\task_failed_20260627_231105.md |
 | 2026-06-27 23:17:33 | Ver2.9-rc3 | 004_Ver29_rc3_table_display_optimization.md | run_task_loop | — | 任务循环 | 0 错误 | 通过 | 待人工 | R1/R2 — 列表 UI 与前端展示逻辑；不改库存、应收应付、数据结构。 | 否 | CLI exit 0; 报告: ver29_safe_check_20260627_231733.md |
+| 2026-06-28 00:17:41 | Ver2.9-rc4 | 005_Ver29_rc4_production_work_order_design.md | Cursor Agent | Program.cs、Business.html、App.html | 生产工单基础模块（模型/API/页面/状态流转） | 0 错误 0 警告 | 通过 | 待人工 | R3 — 新增生产工单数据与页面；不联动库存/领用/入库。 | 否 | 报告: ver29_rc4_production_work_order_20260628_001741.md；未 commit/push/tag |
+| 2026-06-28 00:37:10 | Ver2.9-rc4 | 005_Ver29_rc4_production_work_order_design.md | Cursor Agent | Program.cs、Business.html | 业务边界说明、客户下拉、页面易用性补充 | 0 错误 0 警告 | 通过 | 待人工 | R3 — 只补充边界与表单；不联动库存/领用/入库/维修。 | 否 | 报告: ver29_rc4_production_work_order_fix_20260628_003710.md；未 commit/push/tag |
+| 2026-06-28 | Ver2.9 | — | Cursor Agent | docs/worklog/ERP-Ver2.9-系统设计原则.md 等 | 补充 Ver2.9 全系统统一设计原则文档 | — | — | — | R0 — 仅文档，不改代码/数据/正式 App。 | 否 | 005 报告与任务总表/台账已引用；未 commit/push/tag |
+| 2026-06-28 00:48:31 | Ver2.9-rc4 | 005_Ver29_rc4_production_work_order_design.md | Cursor Agent | Program.cs、Business.html | 来源字段锁定 + 后端保存兜底 | 0 错误 0 警告 | 通过 | 待人工 | R3 — 只修表单一致性与保存校验；不联动库存。 | 否 | 报告: ver29_rc4_production_work_order_source_lock_20260628_004831.md；未 commit/push/tag |
