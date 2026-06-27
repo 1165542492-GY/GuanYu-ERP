@@ -1,6 +1,13 @@
 <!-- Ver2.8 销售/采购/生产/库存/应收应付基础模块 -->
 <style>
-.biz-table{min-width:2400px!important}
+.biz-table{min-width:1080px!important}
+.cell-ellipsis{display:inline-block;max-width:var(--cell-ellipsis-w,160px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+html[data-size="large"]{--cell-ellipsis-w:200px}
+html[data-size="xlarge"]{--cell-ellipsis-w:240px}
+.biz-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:8px}
+.biz-detail-item label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.biz-detail-item div{word-break:break-word;line-height:1.5}
+.biz-detail-item.full{grid-column:1/-1}
 .arap-detail-notice,.arap-main-notice{margin:0 0 14px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #ea580c;color:#9a3412;font-size:14px;line-height:1.65;border-radius:0 8px 8px 0}
 .arap-main-notice{margin-bottom:16px}
 .stock-row-negative td{background:#fff5f5}
@@ -158,6 +165,16 @@ function bizHasEditConflictView(v){return v==='salesOrderView'||v==='salesOutbou
 function bizId(cfg,k){return cfg.prefix+'_'+k}
 function bizToday(){var d=new Date(),p=function(n){return n<10?'0'+n:''+n};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
 function bizMoney2(v){return Math.round(numVal(v)*100)/100}
+function formatDateTime(v){if(v===undefined||v===null||v==='')return '-';var s=String(v).replace('T',' ').trim();if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s))return s.slice(0,16);if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s.slice(0,10)+' 00:00';return s.slice(0,16)}
+function cellEllipsis(text,wcls){var t=(text===undefined||text===null||text==='')?'-':String(text);if(t==='-')return '-';var cls='cell-ellipsis'+(wcls?' '+wcls:'');return '<span class="'+cls+'" title="'+safe(t)+'">'+safe(t)+'</span>'}
+function bizIsLongNameField(f){if(!f)return false;var k=f.key||'',l=f.label||'';return /Name|Company|Supplier|Material|Product|Note|Address|Goods|Spec|Bom|Party/i.test(k)||/名称|供应商|客户|物料|产品|备注|地址|规格|BOM|甲方/.test(l)}
+function bizListFields(cfg){
+var keepKeys={'sales-order':['CustomerName','ItemType','MaterialName','Quantity','TaxIncludedSaleAmount','OrderDate','Status'],'sales-outbound':['SalesOrderNo','CustomerName','MaterialName','Quantity','OutboundDate','Status'],'purchase-order':['SupplierName','MaterialName','Quantity','Amount','OrderDate','Status'],'purchase-inbound':['PurchaseNo','SupplierName','MaterialName','Quantity','Amount','InboundDate','Status'],'production-pick':['BomName','MaterialName','Quantity','PickDate','Status'],'finished-inbound':['ProductName','Quantity','Amount','InboundDate','Status'],'receivable':['SalesOrderNo','CustomerName','ReceivableAmount','ReceivedAmount','UnreceivedAmount','DueDate','Status'],'payable':['PurchaseNo','SupplierName','PayableAmount','PaidAmount','UnpaidAmount','DueDate','Status']};
+var page=null;for(var pk in bizModules){if(bizModules[pk]===cfg){page=pk;break}}
+var keys=keepKeys[page];
+if(keys)return cfg.fields.filter(function(f){return keys.indexOf(f.key)>=0});
+return cfg.fields.filter(function(f){if(f.uiOnly||f.costHidden||f.key==='Note'||f.section==='internal')return false;if(f.autoTag)return false;return true})}
+function bizDetailFields(cfg){return cfg.fields}
 function bizRecStatus(rec,recv){recv=numVal(recv);rec=numVal(rec);if(recv<=0)return'未收款';if(recv>=rec)return'已收清';return'部分收款'}
 function bizPayStatus(pay,paid){paid=numVal(paid);pay=numVal(pay);if(paid<=0)return'未付款';if(paid>=pay)return'已付清';return'部分付款'}
 function bizStr(v){return v===undefined||v===null?'':String(v).trim();}
@@ -205,13 +222,17 @@ if(row.MaterialCode!=null)row.MaterialCode=bizStr(row.MaterialCode);
 if(row.MaterialName!=null)row.MaterialName=bizStr(row.MaterialName);
 return row;
 }
-function bizFormatCell(f,v){
+function bizFormatCell(f,v,forList){
 if(v===undefined||v===null||v==='')return'-';
-if(f.key==='ItemType')return v==='FinishedProduct'?'成品':(v==='Material'?'物料':safe(v));
-if(f.key==='PriceType')return v==='含税'||v==='不含税'?safe(v):safe(v);
-if(f.type==='select'&&f.optionLabels&&f.options){var i=f.options.indexOf(v);if(i>=0&&f.optionLabels[i])return safe(f.optionLabels[i]);}
-if(f.type==='number'||f.readonly||(typeof v==='number'))return bizIsMoneyField(f)?money(v):String(bizMoney2(v));
-return safe(v);
+if(f.type==='date'||/Date$/i.test(f.key)||f.key==='UpdatedAt')return formatDateTime(v);
+var out;
+if(f.key==='ItemType')out=v==='FinishedProduct'?'成品':(v==='Material'?'物料':String(v));
+else if(f.key==='PriceType')out=v==='含税'||v==='不含税'?String(v):String(v);
+else if(f.type==='select'&&f.optionLabels&&f.options){var i=f.options.indexOf(v);out=(i>=0&&f.optionLabels[i])?f.optionLabels[i]:String(v)}
+else if(f.type==='number'||f.readonly||(typeof v==='number'))out=bizIsMoneyField(f)?money(v):String(bizMoney2(v));
+else out=String(v);
+if(forList&&bizIsLongNameField(f)&&out!=='-')return cellEllipsis(out,'col-company');
+return safe(out);
 }
 function bizStockTypeLabel(t){
 t=bizStr(t);
@@ -517,10 +538,10 @@ html+='<div class="panel"><div class="tools"><div class="lefttools"><input class
 html+='<div>';
 if(cfg.batch){html+='<input id="'+p+'ImportFile" type="file" accept=".xlsx,.csv" style="display:none"><button class="btn" id="'+p+'BatchAddBtn">批量添加</button> <button class="btn danger" id="'+p+'BatchDelBtn">批量删除</button> <button class="btn" id="'+p+'ImportBtn">导入表格</button> <button class="btn" id="'+p+'ExportBtn">导出表格</button> ';}
 html+='<button class="btn primary" id="'+p+'Add">＋ '+safe(cfg.addLabel)+'</button></div></div>';
-html+='<div class="dual-scroll" id="'+p+'DualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="'+tblCls+'"><thead><tr>';
+html+='<div class="dual-scroll" id="'+p+'DualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="'+tblCls+' biz-table-compact"><thead><tr>';
 if(cfg.batch)html+='<th class="col-check"><input type="checkbox" id="'+p+'SelectAll" title="全选/取消全选"></th>';
 html+='<th>'+safe(cfg.codeLabel)+'</th>';
-cfg.fields.forEach(function(f){html+='<th>'+safe(f.label)+'</th>'});
+bizListFields(cfg).forEach(function(f){html+='<th>'+safe(f.label)+'</th>'});
 html+='<th>最后更新</th><th>操作人</th><th>操作</th></tr></thead><tbody id="'+p+'Body"></tbody></table></div></div>';
 html+='<div class="foot"><span id="'+p+'Count">共 0 条记录</span><span>统一数据库 · 自动保存与备份</span></div></div>';
 var el=document.getElementById(v),main=document.querySelector('.main');
@@ -621,7 +642,7 @@ html+='<div class="notice stock-negative-hint"><span>负库存表示出库/领�
 html+='<div class="cards"><div class="card"><span class="dot">品</span><div class="card-label">品项数</div><div class="card-value" id="stockItemCount">0</div></div>';
 html+='<div class="card"><span class="dot">量</span><div class="card-label">数量合计</div><div class="card-value" id="stockQtySum">0</div></div></div>';
 html+='<div class="panel"><div class="tools"><div class="lefttools"><input class="search" id="stockSearch" placeholder="搜索品项名称"><button class="btn" id="stockReset">重置</button></div></div>';
-html+='<div class="dual-scroll" id="stockDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table"><thead><tr><th>类型</th><th>编码</th><th>名称</th><th>规格</th><th>单位</th><th>仓库</th><th>当前数量</th><th>成本价</th><th>库存金额</th></tr></thead><tbody id="stockBody"></tbody></table></div></div>';
+html+='<div class="dual-scroll" id="stockDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>类型</th><th>编码</th><th>名称</th><th>当前数量</th><th>库存金额</th><th>操作</th></tr></thead><tbody id="stockBody"></tbody></table></div></div>';
 html+='<div class="foot"><span id="stockCount">共 0 条记录</span><span>库存汇总第一版 · 不支持手工新增</span></div></div>';
 var el=document.getElementById('stockView');if(el){el.innerHTML=html;document.querySelector('.main').appendChild(el);setTimeout(function(){if(typeof bindDualScroll==='function')bindDualScroll('stockDualScroll');},0);}
 }
@@ -744,20 +765,21 @@ function bizRefreshDualScroll(cfg){var pk=bizPageKey(cfg);if(typeof refreshPageD
 function bizRender(cfg){
 var st=bizEnsureState(cfg.view),rows=bizVisibleRows(cfg),p=cfg.prefix,canEdit=bizCan(cfg,'edit'),canDel=bizCan(cfg,'delete'),canBatch=cfg.batch&&bizCan(cfg,'delete');
 var body=document.getElementById(p+'Body');if(!body)return;
-var colSpan=cfg.fields.length+4+(cfg.batch?1:0);
+var listFields=bizListFields(cfg),colSpan=listFields.length+4+(cfg.batch?1:0);
 if(!bizCan(cfg,'view')){body.innerHTML='<tr><td colspan="'+colSpan+'" class="empty">无权限查看</td></tr>';return}
 body.innerHTML=rows.length?rows.map(function(x){
 var checkCell=cfg.batch?'<td class="col-check">'+(canBatch?'<input type="checkbox"'+(st.selected.has(x.Id)?' checked':'')+' onchange="bizToggleSelect(\''+cfg.view+'\',\''+x.Id+'\',this.checked)">':'')+'</td>':'';
-var cells=cfg.fields.map(function(f){
+var cells=listFields.map(function(f){
 var v=x[f.key];if(f.key==='Status')return'<td><span class="status">● '+safe(v||'-')+'</span></td>';
-return'<td>'+bizFormatCell(f,v)+'</td>'}).join('');
+return'<td>'+bizFormatCell(f,v,true)+'</td>'}).join('');
 var actions='';
+if(bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenDetail(\''+cfg.view+'\',\''+x.Id+'\')">查看</button>';
 if(cfg.view==='receivableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenReceiptDetails(\''+x.Id+'\')">收款明细</button>';
 if(cfg.view==='payableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenPaymentDetails(\''+x.Id+'\')">付款明细</button>';
 if(canEdit)actions+='<button class="action" onclick="bizEdit(\''+cfg.view+'\',\''+x.Id+'\')">编辑</button>';
 if(canDel)actions+='<button class="action del" onclick="bizDelete(\''+cfg.view+'\',\''+x.Id+'\')">删除</button>';
 if(!actions)actions='-';
-return'<tr>'+checkCell+'<td><b>'+safe(x.Code)+'</b></td>'+cells+'<td>'+safe(x.UpdatedAt||'-')+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td>'+actions+'</td></tr>';
+return'<tr>'+checkCell+'<td><b>'+safe(x.Code)+'</b></td>'+cells+'<td>'+formatDateTime(x.UpdatedAt)+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td>'+actions+'</td></tr>';
 }).join(''):'<tr><td colspan="'+colSpan+'" class="empty">暂无记录，请点击新增</td></tr>';
 document.getElementById(p+'Count').textContent='共 '+rows.length+' 条记录';
 document.getElementById(p+'Total').textContent=(st.data||[]).length;
@@ -776,6 +798,44 @@ try{var st=bizEnsureState(cfg.view);st.data=await api(cfg.api)||[];st.editing=nu
 function bizFindCfgByView(view){for(var k in bizModules){if(bizModules[k].view===view)return bizModules[k]}return null}
 window.bizLoadPage=function(page){if(page==='production-purchase-inbound')page='purchase-inbound';var cfg=bizModules[page];if(cfg)bizLoad(cfg);if(page==='warehouse-stock')loadStockPage();};
 window.bizEdit=function(view,id){var cfg=bizFindCfgByView(view);if(!cfg)return;var item=(bizEnsureState(view).data||[]).find(function(x){return x.Id===id});if(item)openBizModal(cfg,item);};
+function ensureBizDetailModal(){
+var root=ensureBizModalRoot();
+if(document.getElementById('bizDetailModal'))return;
+root.insertAdjacentHTML('beforeend','<div class="modal" id="bizDetailModal"><div class="dialog"><div class="dialoghead"><div class="dialogtitle" id="bizDetailTitle">详情</div><button type="button" class="close" id="bizDetailClose">×</button></div><div class="form"><div class="biz-detail-grid" id="bizDetailBody"></div></div><div class="dialogfoot"><button type="button" class="btn" id="bizDetailOk">关闭</button></div></div></div>');
+document.getElementById('bizDetailClose').onclick=closeBizDetail;
+document.getElementById('bizDetailOk').onclick=closeBizDetail;
+}
+function closeBizDetail(){var m=document.getElementById('bizDetailModal');if(m)m.classList.remove('show')}
+window.bizOpenDetail=function(view,id){
+var cfg=bizFindCfgByView(view);if(!cfg)return;
+var item=(bizEnsureState(view).data||[]).find(function(x){return x.Id===id});if(!item)return;
+ensureBizDetailModal();
+document.getElementById('bizDetailTitle').textContent=cfg.title+' · '+safe(item.Code||'');
+var html='<div class="biz-detail-item"><label>'+safe(cfg.codeLabel)+'</label><div>'+safe(item.Code||'-')+'</div></div>';
+bizDetailFields(cfg).forEach(function(f){var v=item[f.key];html+='<div class="biz-detail-item'+(f.full?' full':'')+'"><label>'+safe(f.label)+'</label><div>'+bizFormatCell(f,v,false)+'</div></div>';});
+html+='<div class="biz-detail-item"><label>最后更新</label><div>'+formatDateTime(item.UpdatedAt)+'</div></div>';
+html+='<div class="biz-detail-item"><label>操作人</label><div>'+safe(item.UpdatedBy||'-')+'</div></div>';
+if(item.Note)html+='<div class="biz-detail-item full"><label>备注</label><div>'+safe(item.Note)+'</div></div>';
+document.getElementById('bizDetailBody').innerHTML=html;
+document.getElementById('bizDetailModal').classList.add('show');
+};
+window.bizOpenStockDetailByCode=function(code){
+var x=stockData.find(function(it){return String(it.ItemCode||'')===String(code||'')});if(!x)return;
+ensureBizDetailModal();
+document.getElementById('bizDetailTitle').textContent='库存详情 · '+safe(x.ItemCode||'');
+var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
+document.getElementById('bizDetailBody').innerHTML=
+'<div class="biz-detail-item"><label>类型</label><div>'+safe(bizStockTypeLabel(x.ItemType))+'</div></div>'+
+'<div class="biz-detail-item"><label>编码</label><div>'+safe(x.ItemCode||'-')+'</div></div>'+
+'<div class="biz-detail-item full"><label>名称</label><div>'+safe(x.ItemName||'-')+'</div></div>'+
+'<div class="biz-detail-item"><label>规格</label><div>'+safe(x.Spec||'-')+'</div></div>'+
+'<div class="biz-detail-item"><label>单位</label><div>'+safe(x.Unit||'-')+'</div></div>'+
+'<div class="biz-detail-item"><label>仓库</label><div>'+safe(x.WarehouseName||'-')+'</div></div>'+
+'<div class="biz-detail-item"><label>当前数量</label><div>'+bizQty(qty)+'</div></div>'+
+'<div class="biz-detail-item"><label>成本价</label><div>'+money(x.CostPrice||0)+'</div></div>'+
+'<div class="biz-detail-item"><label>库存金额</label><div>'+money(x.StockAmount||0)+'</div></div>';
+document.getElementById('bizDetailModal').classList.add('show');
+};
 window.bizDelete=async function(view,id){return runActionOnce('biz-del-'+view+'-'+id,async function(){var cfg=bizFindCfgByView(view);if(!cfg||!bizCan(cfg,'delete')){tip('无权限操作');return}var x=(bizEnsureState(view).data||[]).find(function(v){return v.Id===id});var mod=bizImpactModule(cfg);if(mod){await runWithOperationImpactCheck(mod,'delete',id,null,{actionLabel:'删除',objectLabel:(x&&x.Code)||''},async function(){await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')});return}if(!await deleteConfirm(bizBuildDeleteConfirm(cfg,x)))return;try{await api(cfg.api+'/'+id,{method:'DELETE'});await bizLoad(cfg);tip('已删除')}catch(err){tip(err.message||'删除失败')}},'删除中...')};
 function openBizModal(cfg,item){
 if(item&&!bizCan(cfg,'edit')){tip('无权限操作');return}
@@ -816,13 +876,13 @@ var stockData=[];
 function stockVisibleRows(){var q=(document.getElementById('stockSearch')||{}).value||'';q=q.trim().toLowerCase();return stockData.filter(function(x){return [x.ItemType,x.ItemCode,x.ItemName,x.Spec,x.WarehouseName].join(' ').toLowerCase().indexOf(q)>=0})}
 function renderStockList(){
 var rows=stockVisibleRows(),body=document.getElementById('stockBody');
-if(!can('stock.view')){if(body)body.innerHTML='<tr><td colspan="9" class="empty">无权限查看</td></tr>';return}
+if(!can('stock.view')){if(body)body.innerHTML='<tr><td colspan="6" class="empty">无权限查看</td></tr>';return}
 if(body)body.innerHTML=rows.length?rows.map(function(x){
 var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
 var neg=qty<0;
 var qtyHtml='<b>'+bizQty(qty)+'</b>'+(neg?'<span class="stock-qty-warn">负库存</span>':'');
-return'<tr'+(neg?' class="stock-row-negative"':'')+'><td>'+safe(bizStockTypeLabel(x.ItemType))+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+safe(x.ItemName||'-')+'</td><td>'+safe(x.Spec||'-')+'</td><td>'+safe(x.Unit||'-')+'</td><td>'+safe(x.WarehouseName||'-')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+money(x.CostPrice||0)+'</td><td>'+money(x.StockAmount||0)+'</td></tr>';
-}).join(''):'<tr><td colspan="9" class="empty">暂无库存数据，请先录入并确认入库/出库记录</td></tr>';
+return'<tr'+(neg?' class="stock-row-negative"':'')+'><td>'+safe(bizStockTypeLabel(x.ItemType))+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+cellEllipsis(x.ItemName||'-','col-company')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+money(x.StockAmount||0)+'</td><td><button class="action" onclick="bizOpenStockDetailByCode(\''+String(x.ItemCode||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">查看</button></td></tr>';
+}).join(''):'<tr><td colspan="6" class="empty">暂无库存数据，请先录入并确认入库/出库记录</td></tr>';
 if(document.getElementById('stockCount'))document.getElementById('stockCount').textContent='共 '+rows.length+' 条记录';
 if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('warehouse-stock');else if(typeof refreshAllDualScroll==='function')setTimeout(refreshAllDualScroll,0);
 }
@@ -899,7 +959,7 @@ var acts='';
 if(canEditDetail)acts+='<button type="button" class="action" onclick="openArapDetailEdit(\''+d.Id+'\')">编辑</button> ';
 if(canDelDetail)acts+='<button type="button" class="action del" onclick="deleteArapDetail(\''+d.Id+'\')">删除</button>';
 if(!acts)acts='-';
-return'<tr><td>'+safe((d[dk]||'').slice(0,10))+'</td><td><b>'+money(d.Amount)+'</b></td><td>'+safe(d.Account||'-')+'</td><td>'+safe(d.PaymentMethod||'-')+'</td><td>'+safe(d.Handler||'-')+'</td><td>'+safe(d.Note||'-')+'</td><td>'+acts+'</td></tr>';
+return'<tr><td>'+formatDateTime(d[dk])+'</td><td><b>'+money(d.Amount)+'</b></td><td>'+safe(d.Account||'-')+'</td><td>'+safe(d.PaymentMethod||'-')+'</td><td>'+safe(d.Handler||'-')+'</td><td>'+cellEllipsis(d.Note||'-','col-note')+'</td><td>'+acts+'</td></tr>';
 }).join(''):'<tr><td colspan="7" class="empty">暂无明细，请点击新增</td></tr>';
 }
 
