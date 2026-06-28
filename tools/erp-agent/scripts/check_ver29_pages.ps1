@@ -72,6 +72,16 @@ $sourceMarkers = @(
     @{ Page = "rc16物料库存类型字段"; Source = "Material.html"; Marker = "materialStockType"; Risk = "P1" }
     @{ Page = "rc16库存汇总状态列"; Source = "Business.html"; Marker = "stock-status-out"; Risk = "P1" }
     @{ Page = "rc16出入库库存类型带出"; Source = "Business.html"; Marker = "MaterialStockType"; Risk = "P1" }
+    @{ Page = "rc17库存汇总类型筛选"; Source = "Business.html"; Marker = "stockTypeFilter"; Risk = "P1" }
+    @{ Page = "rc17库存汇总状态筛选"; Source = "Business.html"; Marker = "stockStatusFilter"; Risk = "P1" }
+    @{ Page = "rc17库存汇总是否库存物料"; Source = "Business.html"; Marker = "stockInvFilter"; Risk = "P1" }
+    @{ Page = "rc17库存参考导出"; Source = "Business.html"; Marker = "stockExportBtn"; Risk = "P1" }
+    @{ Page = "rc17成品入库提示"; Source = "Business.html"; Marker = "FinishedHint"; Risk = "P1" }
+    @{ Page = "rc17物料是否成品设备列"; Source = "Material.html"; Marker = "是否成品设备"; Risk = "P1" }
+    @{ Page = "rc17物料是否维修备件列"; Source = "Material.html"; Marker = "是否维修备件"; Risk = "P1" }
+    @{ Page = "rc17物料成本方式列"; Source = "Material.html"; Marker = "成本方式"; Risk = "P1" }
+    @{ Page = "rc17物料库存属性说明"; Source = "Material.html"; Marker = "暂不上移动加权平均"; Risk = "P1" }
+    @{ Page = "rc17库存导出API"; Source = "Program.cs"; Marker = "/api/stocks/export"; Risk = "P1" }
 )
 
 $homeResult = Test-Ver29Http -Url "$BaseUrl/" -TimeoutSec $TimeoutSec -AcceptableStatus @(200)

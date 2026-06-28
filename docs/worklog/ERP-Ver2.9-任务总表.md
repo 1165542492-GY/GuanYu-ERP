@@ -175,14 +175,38 @@
 
 | 项目 | 内容 |
 |------|------|
-| **状态** | 已开发（2026-06-28），待浏览器验收 |
+| **状态** | 已完成（2026-06-28）：commit/push、正式 App 同步、8787 人工验收、tag `v2.9.0-rc16` |
 | **报告** | `docs/worklog/reports/ver29_rc16_inventory_stage1_development_20260628_135300.md` |
-| **涉及文件** | `Program.cs`、`Material.html`、`Business.html`、`TestDataService.cs`、`check_ver29_pages.ps1` |
+| **正式 App** | `D:\冠誉制造ERP\App` |
 | **说明** | |
 | | 物料 StockType 等 7 字段 + 物料页展示/筛选/导入导出 |
 | | 库存汇总展示库存类型、安全库存、库存状态 |
 | | 出入库轻量带出库存类型；库存不足提醒不拦截 |
 | | **未**重构 BuildStockMap；**未**改应收/应付/财务核心 |
+
+---
+
+## 13.1 Ver2.9-rc16 完成状态（2026-06-28 更新）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已完成：commit/push、正式 App 同步、8787 人工验收、tag `v2.9.0-rc16` |
+| **正式 App** | `D:\冠誉制造ERP\App` |
+
+---
+
+## 14. Ver2.9-rc17 库存类型阶段 2 低风险收口
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已开发（2026-06-28），待浏览器验收 |
+| **打包脚本** | `tools/erp-agent/scripts/pack_rc17_inventory_stage2_polish.ps1` |
+| **涉及文件** | `Business.html`、`Material.html`、`Program.cs`（展示/导出/校验）、`TestDataService.cs`、文档、`check_ver29_pages.ps1` |
+| **说明** | |
+| | 库存汇总筛选、列顺序、参考导出字段 |
+| | 物料列表/弹窗收口；出入库提示文案 |
+| | 文档状态修正（rc16 已完成记录） |
+| | **不包含**：库存核心计算重构、移动加权平均、多仓库、维修扣库存、006 执行、清空数据 |
 
 ---
 

@@ -440,16 +440,29 @@ if(t==='Material'||t==='物料')return'外购配件';
 return t||'外购配件';
 }
 function bizStockStatusClass(st){st=bizStr(st);if(st==='缺货')return'stock-status-out';if(st==='偏低')return'stock-status-low';return'stock-status-ok'}
+function bizUpdatePurchaseInboundTypeHint(cfg,st,mat){
+var hint=document.getElementById(cfg.prefix+'InboundTypeHint');if(!hint)return;
+var isFinished=(st==='成品设备')||(mat&&mat.IsFinishedGood);
+if(isFinished){hint.textContent='采购入库暂不建议直接入整机成品，请使用「成品入库」记录生产完工入库。';hint.className='biz-stock-hint warn';}
+else{hint.textContent='';hint.className='biz-stock-hint';}
+}
 function bizApplyMaterialStockTypeFill(cfg,mat){
-if(!mat){bizSetFieldVal(cfg,'MaterialStockType','');if(cfg.view==='purchaseInboundView')bizUpdatePurchaseInboundTypeHint(cfg,'');return}
+if(!mat){bizSetFieldVal(cfg,'MaterialStockType','');if(cfg.view==='purchaseInboundView')bizUpdatePurchaseInboundTypeHint(cfg,'',null);return}
 var st=mat.StockType||'外购配件';
 bizSetFieldVal(cfg,'MaterialStockType',st);
-if(cfg.view==='purchaseInboundView')bizUpdatePurchaseInboundTypeHint(cfg,st);
+if(cfg.view==='purchaseInboundView')bizUpdatePurchaseInboundTypeHint(cfg,st,mat);
 }
-function bizUpdatePurchaseInboundTypeHint(cfg,st){
-var hint=document.getElementById(cfg.prefix+'InboundTypeHint');if(!hint)return;
-if(st==='成品设备'){hint.textContent='成品设备建议通过成品入库进入库存，采购入库暂不建议直接入整机成品。';hint.className='biz-stock-hint warn';}
-else{hint.textContent='';hint.className='biz-stock-hint';}
+function bizStockHintSafetyText(si){
+if(!si)return'';
+var ss=numVal(si.SafetyStock);
+if(ss>0)return'，安全库存 '+bizQty(ss);
+return'';
+}
+function bizUpdateFinishedInboundHint(cfg){
+var hint=document.getElementById(cfg.prefix+'FinishedHint');if(!hint)return;
+var bomId=bizGetFieldVal(cfg,'BomId'),mcId=bizGetFieldVal(cfg,'ModelCostId');
+if(!bomId&&!mcId){hint.textContent='成品入库必须关联 BOM 或机型成本，请先选择来源后再保存。';hint.className='biz-stock-hint warn';}
+else{hint.textContent='已关联 BOM/机型成本，保存后将增加成品设备库存。';hint.className='biz-stock-hint';}
 }
 function bizMaterialUnitPrice(mat){
 if(!mat)return 0;
@@ -581,8 +594,16 @@ var mid=bizGetFieldVal(cfg,'MaterialId');
 var si3=(bizRefs.stockItems||[]).find(function(x){return bizStr(x.ItemId)===mid;});
 avail=si3?numVal(si3.CurrentQuantity!=null?si3.CurrentQuantity:si3.Quantity):0;label='物料';
 }else{hint.textContent='';hint.className='biz-stock-hint';return;}
-if(qty>0&&qty>avail+0.0001){hint.textContent='当前'+label+'库存 '+bizQty(avail)+'，本次数量 '+bizQty(qty)+'，库存可能不足（仍允许保存）';hint.className='biz-stock-hint warn';}
-else{hint.textContent='当前'+label+'库存 '+bizQty(avail)+'，本次数量 '+bizQty(qty);hint.className='biz-stock-hint';}
+if(qty>0&&qty>avail+0.0001){
+var stType=bizGetFieldVal(cfg,'MaterialStockType')||label;
+hint.textContent='库存类型 '+stType+'，当前库存 '+bizQty(avail)+bizStockHintSafetyText(si3||si2||si)+'，本次 '+bizQty(qty)+'，库存可能不足（仍允许保存，请确认）';
+hint.className='biz-stock-hint warn';
+}else{
+var stType2=bizGetFieldVal(cfg,'MaterialStockType')||label;
+var siRef=si3||si2||si;
+hint.textContent='库存类型 '+stType2+'，当前库存 '+bizQty(avail)+bizStockHintSafetyText(siRef)+'，本次 '+bizQty(qty);
+hint.className='biz-stock-hint';
+}
 }
 function bizQty(v){return String(bizMoney2(v))}
 function bizRefLabel(refKey,item,display){
@@ -664,6 +685,7 @@ if(f.ref==='purchaseOrders'&&it){var st2=bizEnsureState(cfg.view);bizApplyPurcha
 if(cfg.view==='purchaseInboundView'&&f.key==='MaterialId')bizApplyInboundManualMaterial(cfg);
 if(cfg.view==='receivableView'||cfg.view==='payableView')bizToggleArapLinkedReadonly(cfg);
 bizRecalcForm(cfg);bizRefreshFieldVisibility(cfg);bizUpdateStockHint(cfg);
+if(cfg.view==='finishedInboundView')bizUpdateFinishedInboundHint(cfg);
 }
 function bizEnsureState(view){var st=bizState[view];if(!st){st=bizState[view]={data:[],editing:null,selected:new Set()};return st}if(!st.selected)st.selected=new Set();if(!st.data)st.data=[];return st;}
 function bizBatchWritableFields(cfg){return cfg.fields.filter(function(f){if(f.computed)return false;if(f.type==='refSelect'&&f.batchRef)return true;if(f.type==='refSelect')return false;if(f.readonly)return false;return true;});}
@@ -742,6 +764,7 @@ secFields.forEach(function(f){if(!f.costHidden)html+=buildBizFieldHtml(cfg,f);})
 });
 if(cfg.view==='salesOutboundView'||cfg.view==='productionPickView')html+='<div class="biz-stock-hint" id="'+p+'StockHint"></div>';
 if(cfg.view==='purchaseInboundView')html+='<div class="biz-stock-hint" id="'+p+'InboundTypeHint"></div>';
+if(cfg.view==='finishedInboundView')html+='<div class="biz-stock-hint" id="'+p+'FinishedHint"></div>';
 return '<div class="modal biz-modal" id="'+p+'Modal" aria-hidden="true">'+
 '<div class="dialog" role="dialog" aria-modal="true">'+
 '<div class="dialoghead"><div class="dialogtitle" id="'+p+'ModalTitle">'+safe(cfg.addLabel)+'</div><button type="button" class="close" id="'+p+'Close" aria-label="关闭">×</button></div>'+
@@ -831,6 +854,9 @@ if(pickHint&&pickHint.classList.contains('warn')){
 if(!(await confirmAction({title:'库存可能不足',message:'当前库存可能不足，本次仍允许保存，请确认后继续。',level:'warning',confirmText:'继续保存'})))return;
 }
 }
+if(cfg.view==='finishedInboundView'){
+if(!bizStr(body.BomId)&&!bizStr(body.ModelCostId)){tip('成品入库必须关联 BOM 或机型成本，请先选择来源');return}
+}
 if(bizNeedsConfirmStatus(cfg,body,isEdit,st)){
 var mod=bizImpactModule(cfg);
 if(mod){
@@ -886,11 +912,18 @@ html+='<div class="cards"><div class="card"><span class="dot">品</span><div cla
 html+='<div class="card"><span class="dot">量</span><div class="card-label">数量合计</div><div class="card-value" id="stockQtySum">0</div></div>';
 html+='<div class="card"><span class="dot">额</span><div class="card-label">库存金额合计</div><div class="card-value" id="stockAmountSum">0.00</div></div>';
 html+='<div class="card"><span class="dot">负</span><div class="card-label">负库存品项</div><div class="card-value" id="stockNegativeCount">0</div></div></div>';
-html+='<div class="panel"><div class="tools"><div class="lefttools"><input class="search" id="stockSearch" placeholder="搜索品项名称、编码、库存类型"><select id="stockFilter" class="size-select"><option value="">全部</option><option value="has">有库存</option><option value="zero">零库存</option><option value="negative">负库存</option><option value="low">低库存(≤5)</option><option value="status-out">缺货</option><option value="status-low">库存偏低</option></select><button class="btn" id="stockReset">重置</button></div></div>';
-html+='<div class="dual-scroll" id="stockDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>库存类型</th><th>编码</th><th>名称</th><th>当前数量</th><th>安全库存</th><th>库存状态</th><th>库存金额</th><th>操作</th></tr></thead><tbody id="stockBody"></tbody></table></div></div>';
-html+='<div class="foot"><span id="stockCount">共 0 条记录</span><span>库存汇总第一版 · 不支持手工新增</span></div></div>';
-var el=document.getElementById('stockView');if(el){el.innerHTML=html;document.querySelector('.main').appendChild(el);setTimeout(function(){if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('warehouse-stock');else if(typeof bindDualScroll==='function')bindDualScroll('stockDualScroll');},0);}
+html+='<div class="panel"><div class="tools"><div class="lefttools"><input class="search" id="stockSearch" placeholder="搜索编码、名称、规格、库存类型"><select id="stockTypeFilter" class="size-select"><option value="">全部库存类型</option><option>原材料</option><option>外购配件</option><option>标准件</option><option>成品设备</option><option>维修备件</option><option>低值易耗品</option><option>其他</option></select><select id="stockStatusFilter" class="size-select"><option value="">全部状态</option><option value="缺货">缺货</option><option value="偏低">偏低</option><option value="正常">正常</option></select><select id="stockInvFilter" class="size-select"><option value="">是否库存物料</option><option value="yes">是</option><option value="no">否</option></select><button class="btn" id="stockReset">重置</button></div><div><button class="btn" id="stockExportBtn">导出参考表</button></div></div>';
+html+='<div class="dual-scroll" id="stockDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>物料编码</th><th>名称</th><th>规格</th><th>单位</th><th>库存类型</th><th>仓库</th><th>当前库存</th><th>安全库存</th><th>库存状态</th><th>成本单价</th><th>库存金额</th><th>操作</th></tr></thead><tbody id="stockBody"></tbody></table></div></div>';
+html+='<div class="foot"><span id="stockCount">共 0 条记录</span><span>库存汇总 · 只读参考 · 导出不参与导入</span></div></div>';
+var el=document.getElementById('stockView');if(el){el.innerHTML=html;document.querySelector('.main').appendChild(el);wireStockPageTools();setTimeout(function(){if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('warehouse-stock');else if(typeof bindDualScroll==='function')bindDualScroll('stockDualScroll');},0);}
 }
+function wireStockPageTools(){
+if(document.getElementById('stockSearch')&&!document.getElementById('stockSearch')._wired){document.getElementById('stockSearch')._wired=1;document.getElementById('stockSearch').oninput=renderStockList;}
+['stockTypeFilter','stockStatusFilter','stockInvFilter'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._wired){el._wired=1;el.onchange=function(){renderStockList();};}});
+if(document.getElementById('stockReset')&&!document.getElementById('stockReset')._wired){document.getElementById('stockReset')._wired=1;document.getElementById('stockReset').onclick=function(){document.getElementById('stockSearch').value='';['stockTypeFilter','stockStatusFilter','stockInvFilter'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});renderStockList();};}
+if(document.getElementById('stockExportBtn')&&!document.getElementById('stockExportBtn')._wired){document.getElementById('stockExportBtn')._wired=1;document.getElementById('stockExportBtn').onclick=function(){if(!can('stock.view')){tip('无权限操作');return}if(typeof downloadCsvExport==='function')downloadCsvExport('/api/stocks/export',typeof buildExportFileName==='function'?buildExportFileName('库存汇总','.csv'):'库存汇总.csv');};}
+}
+function stockIsInventoryItem(x){return!(x.IsInventoryItem===false||x.IsInventoryItem==='0'||x.IsInventoryItem===0)}
 window.onBusinessLoginDone=function(){initBusinessUi();bizLoadRefs().then(function(){Object.keys(bizModules).forEach(function(page){bizLoad(bizModules[page])});loadStockPage();});};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initBusinessUi);else initBusinessUi();
 function bizCan(cfg,act){return can(cfg.perm+'.'+act)}
@@ -927,6 +960,7 @@ if(cfg.view==='purchaseOrderView'&&item&&item.SupplierId)bizApplySupplierUiField
 if(cfg.view==='productionPickView')bizRefreshPickMaterialList(cfg);
 if(cfg.view==='receivableView'||cfg.view==='payableView')bizToggleArapLinkedReadonly(cfg);
 bizUpdateStockHint(cfg);
+if(cfg.view==='finishedInboundView')bizUpdateFinishedInboundHint(cfg);
 }
 function bizApplySalesOutboundFields(row){
 var order=(bizRefs.salesOrders||[]).find(function(x){return bizStr(x.Id)===bizStr(row.SalesOrderId)});
@@ -1120,6 +1154,7 @@ var po=(bizRefs.purchaseOrders||[]).find(function(x){return bizStr(x.Id)===bizSt
 if(po)bizApplyPurchaseOrderDisplay(cfg,po,item.Id||'');
 }
 bizUpdateStockHint(cfg);
+if(cfg.view==='finishedInboundView')bizUpdateFinishedInboundHint(cfg);
 });
 }
 function closeBizModal(cfg){
@@ -1129,33 +1164,33 @@ modal.classList.remove('show');modal.setAttribute('aria-hidden','true');
 if(!document.querySelector('.modal.show'))document.body.style.overflow='';
 var st=bizEnsureState(cfg.view);st.editing=null;st.editingUpdatedAt=null;
 }
-var stockData=[],stockFilterMode='';
+var stockData=[];
 function stockVisibleRows(){
 var q=(document.getElementById('stockSearch')||{}).value||'';q=q.trim().toLowerCase();
-var f=(document.getElementById('stockFilter')||{}).value||stockFilterMode||'';
+var typeF=(document.getElementById('stockTypeFilter')||{}).value||'';
+var statusF=(document.getElementById('stockStatusFilter')||{}).value||'';
+var invF=(document.getElementById('stockInvFilter')||{}).value||'';
 return stockData.filter(function(x){
-var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
-if(f==='has'&&qty<=0)return false;
-if(f==='zero'&&qty!==0)return false;
-if(f==='negative'&&qty>=0)return false;
-if(f==='low'&&(qty<=0||qty>5))return false;
-if(f==='status-out'&&x.StockStatus!=='缺货')return false;
-if(f==='status-low'&&x.StockStatus!=='偏低')return false;
-return [x.ItemType,x.ItemCode,x.ItemName,x.Spec,x.WarehouseName,x.StockType,x.StockStatus].join(' ').toLowerCase().indexOf(q)>=0;
+if(typeF&&(x.StockType||'')!==typeF)return false;
+if(statusF&&(x.StockStatus||'正常')!==statusF)return false;
+if(invF==='yes'&&!stockIsInventoryItem(x))return false;
+if(invF==='no'&&stockIsInventoryItem(x))return false;
+return [x.ItemType,x.ItemCode,x.ItemName,x.Spec,x.Unit,x.WarehouseName,x.StockType,x.StockStatus,x.DefaultWarehouse].join(' ').toLowerCase().indexOf(q)>=0;
 });
 }
+var STOCK_TABLE_COLS=12;
 function renderStockList(){
 var rows=stockVisibleRows(),body=document.getElementById('stockBody');
 var guide=document.getElementById('stockEmptyGuide');if(guide)guide.style.display=stockData.length?'none':'block';
-if(!can('stock.view')){if(body)body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(8,'perm'):'<tr><td colspan="8" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!can('stock.view')){if(body)body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(STOCK_TABLE_COLS,'perm'):'<tr><td colspan="'+STOCK_TABLE_COLS+'" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
 if(body)body.innerHTML=rows.length?rows.map(function(x){
 var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
 var neg=qty<0;
 var qtyHtml='<b>'+bizQty(qty)+'</b>'+(neg?'<span class="stock-qty-warn">负库存</span>':'');
-var stLabel=safe(x.StockStatus||'-');
-var stCls=bizStockStatusClass(x.StockStatus);
-return'<tr'+(neg?' class="stock-row-negative"':'')+'><td>'+safe(bizStockTypeLabel(x.ItemType,x))+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+cellEllipsis(x.ItemName||'-','col-company')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+bizQty(x.SafetyStock||0)+'</td><td><span class="'+stCls+'">'+stLabel+'</span></td><td>'+money(x.StockAmount||0)+'</td><td><button class="action" onclick="bizOpenStockDetailByCode(\''+String(x.ItemCode||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">查看</button></td></tr>';
-}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(8,'stock'):'<tr><td colspan="8" class="empty">暂无库存数据。请先做采购入库或成品入库；出库/领用会减少库存。</td></tr>');
+var stLabel=safe(x.StockStatus||'正常');
+var stCls=bizStockStatusClass(x.StockStatus||'正常');
+return'<tr'+(neg?' class="stock-row-negative"':'')+'><td><b>'+safe(x.ItemCode||'-')+'</b></td><td class="company">'+cellEllipsis(x.ItemName||'-','col-company')+'</td><td>'+cellEllipsis(x.Spec||'-','col-company')+'</td><td>'+safe(x.Unit||'-')+'</td><td>'+safe(bizStockTypeLabel(x.ItemType,x))+'</td><td>'+safe(x.WarehouseName||x.DefaultWarehouse||'默认仓库')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+bizQty(x.SafetyStock||0)+'</td><td><span class="'+stCls+'">'+stLabel+'</span></td><td>'+money(x.CostPrice||0)+'</td><td>'+money(x.StockAmount||0)+'</td><td><button class="action" onclick="bizOpenStockDetailByCode(\''+String(x.ItemCode||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">查看</button></td></tr>';
+}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(STOCK_TABLE_COLS,'stock'):'<tr><td colspan="'+STOCK_TABLE_COLS+'" class="empty">暂无库存数据。请先做采购入库或成品入库；出库/领用会减少库存。</td></tr>');
 if(document.getElementById('stockCount'))document.getElementById('stockCount').textContent='共 '+rows.length+' 条记录（全部 '+stockData.length+' 品项）';
 var negCount=stockData.filter(function(x){return numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity)<0}).length;
 if(document.getElementById('stockNegativeCount'))document.getElementById('stockNegativeCount').textContent=negCount;
@@ -1172,9 +1207,7 @@ if(document.getElementById('stockQtySum'))document.getElementById('stockQtySum')
 renderStockList();
 }catch(e){stockData=[];renderStockList()}
 }
-if(document.getElementById('stockSearch'))document.getElementById('stockSearch').oninput=renderStockList;
-if(document.getElementById('stockFilter'))document.getElementById('stockFilter').onchange=function(){stockFilterMode=this.value;renderStockList();};
-if(document.getElementById('stockReset'))document.getElementById('stockReset').onclick=function(){document.getElementById('stockSearch').value='';if(document.getElementById('stockFilter'))document.getElementById('stockFilter').value='';stockFilterMode='';renderStockList();};
+if(document.getElementById('stockSearch')&&!document.getElementById('stockSearch')._wired)wireStockPageTools();
 
 var ARAP_ACCOUNTS=['现金','银行','微信','支付宝','其他'];
 var RECEIPT_FINANCE_ACCOUNTS=['自动（按订单含税状态）','公户','公司私户','个人私户'];

@@ -735,6 +735,9 @@ namespace SupplierErpApp
         public bool IsServicePart { get; set; }
         public decimal SafetyStock { get; set; }
         public string StockStatus { get; set; }
+        public bool? IsInventoryItem { get; set; }
+        public string DefaultWarehouse { get; set; }
+        public string CostMethod { get; set; }
         public decimal Quantity { get { return CurrentQuantity; } set { CurrentQuantity = value; } }
     }
 
@@ -1207,6 +1210,7 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finished_inbound.delete")) return; DeleteFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
                 if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
                 if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
+                if (path == "/api/stocks/export") { if (!RequirePermission(ctx, user, "stock.view")) return; ExportStocksCsv(ctx); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
                 if (path == "/api/reconciliation/customers" && ctx.Request.HttpMethod == "GET") { ListReconciliationCustomers(ctx, user); return; }
                 if (path == "/api/reconciliation/customer/export" && ctx.Request.HttpMethod == "GET") { ExportCustomerReconciliation(ctx, user); return; }
@@ -5814,6 +5818,8 @@ namespace SupplierErpApp
         {
             if (item == null) BizFail("数据不能为空");
             ResolveBomAndModelCostLink(item);
+            if (string.IsNullOrWhiteSpace(item.BomId) && string.IsNullOrWhiteSpace(item.ModelCostId))
+                BizFail("成品入库必须关联 BOM 或机型成本");
             item.ProductName = (item.ProductName ?? "").Trim();
             item.BomId = (item.BomId ?? "").Trim();
             item.BomCode = (item.BomCode ?? "").Trim();
@@ -6137,6 +6143,9 @@ namespace SupplierErpApp
                 bool isFinished = string.Equals(agg.ItemType, "成品", StringComparison.OrdinalIgnoreCase);
                 bool isService = false;
                 decimal safetyStock = 0;
+                bool? isInventory = true;
+                string defaultWarehouse = "默认仓库";
+                string costMethod = "机型成本快照";
                 if (!isFinished)
                 {
                     var mat = FindMaterialForStockItem(agg.ItemType, agg.ItemId, agg.ItemCode);
@@ -6146,8 +6155,15 @@ namespace SupplierErpApp
                         isFinished = mat.IsFinishedGood;
                         isService = mat.IsServicePart;
                         safetyStock = mat.SafetyStock;
+                        isInventory = mat.IsInventoryItem ?? true;
+                        defaultWarehouse = string.IsNullOrWhiteSpace(mat.DefaultWarehouse) ? "默认仓库" : mat.DefaultWarehouse;
+                        costMethod = string.IsNullOrWhiteSpace(mat.CostMethod) ? "固定成本价" : mat.CostMethod;
                     }
-                    else stockType = "外购配件";
+                    else
+                    {
+                        stockType = "外购配件";
+                        costMethod = "固定成本价";
+                    }
                 }
                 return new StockItem
                 {
@@ -6157,7 +6173,7 @@ namespace SupplierErpApp
                     ItemName = agg.ItemName,
                     Spec = agg.Spec,
                     Unit = agg.Unit,
-                    WarehouseName = "默认仓库",
+                    WarehouseName = defaultWarehouse,
                     CurrentQuantity = qty,
                     CostPrice = costPrice,
                     StockAmount = RoundMoney(Math.Abs(qty) * costPrice),
@@ -6165,7 +6181,10 @@ namespace SupplierErpApp
                     IsFinishedGood = isFinished,
                     IsServicePart = isService,
                     SafetyStock = safetyStock,
-                    StockStatus = ComputeStockStatusLabel(qty, safetyStock)
+                    StockStatus = ComputeStockStatusLabel(qty, safetyStock),
+                    IsInventoryItem = isInventory,
+                    DefaultWarehouse = defaultWarehouse,
+                    CostMethod = costMethod
                 };
             }).OrderBy(x => x.ItemType).ThenBy(x => x.ItemName).ToList();
         }
@@ -6179,6 +6198,29 @@ namespace SupplierErpApp
                 TotalQuantity = RoundMoney(items.Sum(x => x.CurrentQuantity)),
                 Items = items.ToArray()
             };
+        }
+
+        static void ExportStocksCsv(HttpListenerContext ctx)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("物料编码,名称,规格,单位,库存类型,是否库存物料,仓库,默认仓库,当前库存,安全库存,库存状态,成本方式,成本单价,库存金额");
+            foreach (var x in BuildStockItems())
+            {
+                bool inv = x.IsInventoryItem ?? true;
+                sb.AppendLine(string.Join(",", new[]
+                {
+                    x.ItemCode, x.ItemName, x.Spec, x.Unit, x.StockType,
+                    inv ? "是" : "否",
+                    x.WarehouseName, x.DefaultWarehouse ?? x.WarehouseName,
+                    x.CurrentQuantity.ToString("0.##"),
+                    x.SafetyStock.ToString("0.##"),
+                    x.StockStatus ?? "",
+                    x.CostMethod ?? "",
+                    x.CostPrice.ToString("0.00"),
+                    x.StockAmount.ToString("0.00")
+                }.Select(Csv)));
+            }
+            WriteCsvDownload(ctx, BuildExportFileName("库存汇总"), sb.ToString());
         }
 
         struct BackupFileSpec

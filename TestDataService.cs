@@ -626,10 +626,16 @@ namespace SupplierErpApp
 
         static void WriteStockReferenceSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "库存汇总", new[] { "类型", "编码", "名称", "规格", "单位", "仓库", "当前数量", "成本价", "库存金额" });
+            var ws = AddSheet(wb, "库存汇总", new[] { "物料编码", "名称", "规格", "单位", "库存类型", "是否库存物料", "仓库", "默认仓库", "当前库存", "安全库存", "库存状态", "成本方式", "成本单价", "库存金额" });
             int r = 2;
             foreach (var x in BuildStockItems())
-                WriteRow(ws, r++, x.ItemType, x.ItemCode, x.ItemName, x.Spec, x.Unit, x.WarehouseName, x.CurrentQuantity, Money2(x.CostPrice), Money2(x.StockAmount));
+            {
+                bool inv = x.IsInventoryItem ?? true;
+                WriteRow(ws, r++, x.ItemCode, x.ItemName, x.Spec, x.Unit, x.StockType, inv ? "是" : "否",
+                    x.WarehouseName, x.DefaultWarehouse ?? x.WarehouseName,
+                    x.CurrentQuantity.ToString("0.##"), Money2(x.SafetyStock), x.StockStatus ?? "",
+                    x.CostMethod ?? "", Money2(x.CostPrice), Money2(x.StockAmount));
+            }
             ws.Cell(r, 1).Value = "（仅供参考，不参与导入）";
         }
 
