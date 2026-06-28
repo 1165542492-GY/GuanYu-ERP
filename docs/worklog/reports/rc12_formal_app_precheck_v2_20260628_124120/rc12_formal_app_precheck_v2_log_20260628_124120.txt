@@ -1,0 +1,247 @@
+
+========== 基础信息 ==========
+ProjectRoot: C:\Users\Administrator\Documents\ERP
+FormalAppDir: D:\冠誉制造ERP\App
+FormalDataDir: D:\冠誉制造ERP\Data
+ExpectedHead: e61326a
+Timestamp: 20260628_124120
+边界：只检查，不同步、不覆盖、不删除、不tag、不执行006、不接库存
+
+========== 关闭开发版 ERP 进程 ==========
+已尝试关闭冠誉制造ERP进程。
+
+========== git log -1 --oneline ==========
+命令: git log -1 --oneline
+e61326a Ver2.9-rc12 UI dialog browser polish
+ExitCode: 0
+
+========== git status -sb ==========
+命令: git status -sb
+## codex/ver2.8-basic-business-framework...origin/codex/ver2.8-basic-business-framework
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/rc12_formal_app_precheck_v2_20260628_124120/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+ExitCode: 0
+
+========== git status --short ==========
+命令: git status --short
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/rc12_formal_app_precheck_v2_20260628_124120/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+ExitCode: 0
+
+========== 确认 HEAD 是否为 rc12 ==========
+当前 HEAD: e61326a
+HEAD 确认为 rc12。
+
+========== 检查未提交内容，只允许 docs/worklog/reports 报告类文件 ==========
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/rc12_formal_app_precheck_v2_20260628_124120/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+未发现代码类未提交变更；仅有报告类文件，允许继续预检查。
+
+========== 高风险关键词检查 ==========
+高风险关键词检查通过。
+
+========== dotnet build .\ERP.csproj ==========
+命令: dotnet build .\ERP.csproj
+  姝ｅ湪纭畾瑕佽繕鍘熺殑椤圭洰鈥?
+  鎵�鏈夐」鐩潎鏄渶鏂扮殑锛屾棤娉曡繕鍘熴�?
+  ERP -> C:\Users\Administrator\Documents\ERP\bin\Debug\net8.0-windows\鍐犺獕鍒堕�燛RP.dll
+
+宸叉垚鍔熺敓鎴愩�?
+    0 涓鍛?
+    0 涓敊璇?
+
+宸茬敤鏃堕棿 00:00:01.94
+ExitCode: 0
+
+========== 启动开发版 ERP ==========
+
+========== 检查开发版 8787 ==========
+HTTP StatusCode: 200
+erpHumanizeError：找到
+erpEmptyHtml：找到
+ERP_UI_MSG：找到
+erpTableEmptyHtml：找到
+erpShowDetailMessage：找到
+
+========== 执行 Ver2.9 回归 ==========
+
+========== run_ver29_regression.ps1 ==========
+命令: powershell.exe -ExecutionPolicy Bypass -File C:\Users\Administrator\Documents\ERP\tools\erp-agent\scripts\run_ver29_regression.ps1
+========================================
+  ERP Ver2.9 Regression (rc7)
+  Time: 2026-06-28 12:41:31
+========================================
+
+>>> [1/4] dotnet build ERP.csproj
+[OK] Build succeeded
+
+>>> [2/4] Git Guard
+=== Ver2.9 Git Guard ===
+执行时间: 2026-06-28 12:41:34
+[OK] 工作目录: C:\Users\Administrator\Documents\ERP
+当前分支: codex/ver2.8-basic-business-framework
+
+git status --short:
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/rc12_formal_app_precheck_v2_20260628_124120/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+
+[WARN] 当前工作区有未提交变更，请人工确认是否为预期改动。
+
+git log --oneline -8:
+e61326a Ver2.9-rc12 UI dialog browser polish
+ca1f4be Ver2.9-rc11 audit permission and UI dialog polish
+b1a036e Ver2.9-rc10 after-sales closure enhancement
+d3145c7 Ver2.9-rc9 after-sales service work order
+8577113 Ver2.9-rc8 regression scripts and form simplification
+7cb7b1e Ver2.9-rc6 next action buttons and delete protection
+a336b88 Ver2.9-rc4 production work order
+6929b7b Ver2.9-rc3 table display optimization
+
+说明: 本脚本不会自动 commit / push / reset / clean。
+
+>>> [3/4] API Health
+=== Ver2.9 API Health Check ===
+执行时间: 2026-06-28 12:41:34
+[PASS] 首页 — HTTP 200
+[PASS] 系统信息 /api/info — HTTP 401（需登录，服务正常）
+[PASS] 老板看板 owner-summary (month) — HTTP 401（需登录，服务正常）
+[PASS] 老板看板 owner-summary (all) — HTTP 401（需登录，服务正常）
+
+报告已写入: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_api_health_20260628_124134.md
+
+>>> [4/4] Pages Check
+=== Ver2.9 Pages Check ===
+执行时间: 2026-06-28 12:41:35
+[OK] 首页 HTTP 200，内容长度 536881 字符
+[PASS] 登录/首页 (App.html)
+[PASS] 老板首页看板 (App.html)
+[PASS] 显示大小切换 (App.html)
+[PASS] dual-scroll 机制 (App.html)
+[PASS] 供应商管理 (App.html)
+[PASS] 客户管理 (Customer.html)
+[PASS] 物料管理 (Material.html)
+[PASS] BOM 表 (App.html)
+[PASS] 机型成本 (App.html)
+[PASS] 销售订单 (Business.html)
+[PASS] 销售出库 (Business.html)
+[PASS] 采购单 (Business.html)
+[PASS] 采购入库 (Business.html)
+[PASS] 生产工单 (Business.html)
+[PASS] 售后维修工单 (Business.html)
+[PASS] 售后维修新增按钮 (Business.html)
+[PASS] 售后维修下一步按钮 (Business.html)
+[PASS] 生产领用 (Business.html)
+[PASS] 成品入库 (Business.html)
+[PASS] 库存汇总 (Business.html)
+[PASS] 应收款 (Business.html)
+[PASS] 应付款 (Business.html)
+[PASS] 财务 (Finance.html)
+[PASS] 合同资料 (Contract.html)
+[PASS] 合同 (Contract.html)
+[PASS] 业务下一步按钮 (Business.html)
+[PASS] 测试数据 (TestData.html)
+[PASS] 测试数据售后维修Sheet (TestData.html)
+[PASS] 数据备份/维护 (App.html)
+[PASS] 子账号/权限 (App.html)
+
+--- API 权限拦截抽样 ---
+[PASS] 供应商列表 API — HTTP 401（需登录，服务正常）
+[PASS] 客户列表 API — HTTP 401（需登录，服务正常）
+[PASS] 生产工单 API — HTTP 401（需登录，服务正常）
+[PASS] 售后维修 API — HTTP 401（需登录，服务正常）
+[PASS] 售后维修操作记录 (AfterSalesServiceOrder.cs)
+[PASS] 售后维修权限键 (Permissions.cs)
+[PASS] 售后维修生成应收记录 (AfterSalesServiceOrder.cs)
+[PASS] 操作记录售后模块解析 (OperationLog.cs)
+[PASS] 操作记录列表精简 (OperationLog.html)
+[PASS] 全系统提示人话化 (App.html)
+[PASS] 全系统空数据提示 (App.html)
+[PASS] rc12列表空态区分 (App.html)
+[PASS] rc12详情提示弹窗 (App.html)
+
+报告已写入: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_pages_check_20260628_124135.md
+
+========================================
+  Done: PASS
+  Summary: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_regression_summary_20260628_124131.md
+========================================
+ExitCode: 0
+
+========== 检查正式目录 ==========
+正式 App 目录存在：D:\冠誉制造ERP\App
+
+Name                                  Length LastWriteTime      
+----                                  ------ -------------      
+ClosedXML.dll                        1622528 2024/11/15 08:26:30
+ClosedXML.Parser.dll                  188416 2024/01/18 03:51:36
+DocumentFormat.OpenXml.dll           6349424 2024/10/16 03:18:56
+DocumentFormat.OpenXml.Framework.dll  471152 2024/10/16 03:18:56
+ExcelNumberFormat.dll                  30720 2020/10/02 16:42:28
+RBush.dll                              34304 2024/11/14 21:43:18
+SixLabors.Fonts.dll                  1135616 2023/08/11 20:04:44
+System.IO.Packaging.dll               142136 2024/09/17 07:09:52
+冠誉制造ERP.deps.json                       5235 2026/06/26 18:24:26
+冠誉制造ERP.dll                           913408 2026/06/27 18:03:31
+冠誉制造ERP.exe                           152064 2026/06/27 18:03:31
+冠誉制造ERP.pdb                           148644 2026/06/27 18:03:31
+冠誉制造ERP.runtimeconfig.json               458 2026/06/26 18:24:26
+
+
+
+正式 Data 目录存在：D:\冠誉制造ERP\Data
+
+Name                            Length LastWriteTime      
+----                            ------ -------------      
+after-sales-service-orders.json   3018 2026/06/28 12:35:45
+bom.json                          3136 2026/06/28 12:03:35
+bom_sequence.json                    1 2026/06/28 12:41:25
+contracts.json                       2 2026/06/28 08:37:36
+contract_sequence.json               1 2026/06/28 12:41:25
+contract_settings.json            3892 2026/06/25 22:38:45
+contract_setting_sequence.json       1 2026/06/28 12:41:25
+customers.json                     372 2026/06/28 12:33:59
+customer_sequence.json               2 2026/06/28 12:41:25
+dictionary_options.json           5918 2026/06/25 02:01:28
+finance.json                       392 2026/06/28 12:36:04
+finance_opening.json                75 2026/06/28 08:37:36
+finished_inbounds.json               2 2026/06/28 08:37:36
+finished_inbound_sequence.json       1 2026/06/28 12:41:25
+materials.json                    1996 2026/06/28 08:47:12
+material_sequence.json               1 2026/06/28 12:41:25
+model_costs.json                   407 2026/06/28 09:03:01
+model_cost_sequence.json             1 2026/06/28 12:41:25
+operation.log                     5256 2026/06/28 12:36:04
+operation_logs.json              49902 2026/06/28 12:36:04
+operation_log_sequence.json          2 2026/06/28 12:35:12
+payables.json                        2 2026/06/28 08:37:36
+payable_sequence.json                1 2026/06/28 12:41:25
+production-work-orders.json       1723 2026/06/28 00:28:47
+production_picks.json                2 2026/06/28 08:37:36
+production_pick_sequence.json        1 2026/06/28 12:41:25
+purchase_inbounds.json               2 2026/06/28 08:37:36
+purchase_inbound_sequence.json       1 2026/06/28 12:41:25
+purchase_orders.json                 2 2026/06/28 08:37:36
+purchase_order_sequence.json         1 2026/06/28 12:41:25
+receivables.json                  1463 2026/06/28 12:36:04
+receivable_sequence.json             1 2026/06/28 12:41:25
+sales_orders.json                  771 2026/06/28 12:34:25
+sales_order_sequence.json            1 2026/06/28 12:41:25
+sales_outbounds.json                 2 2026/06/28 08:37:36
+sales_outbound_sequence.json         1 2026/06/28 12:41:25
+suppliers.json                    1744 2026/06/28 12:33:00
+supplier_sequence.json               2 2026/06/28 12:41:25
+system_settings.json                98 2026/06/27 10:47:04
+users.json                         815 2026/06/28 08:35:21
+
+
+
+
+========== 生成报告 ==========

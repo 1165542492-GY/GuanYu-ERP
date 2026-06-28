@@ -1,0 +1,44 @@
+
+========== 基础信息 ==========
+ProjectRoot: C:\Users\Administrator\Documents\ERP
+FormalAppDir: D:\冠誉制造ERP\App
+FormalDataDir: D:\冠誉制造ERP\Data
+ExpectedHead: e61326a
+Timestamp: 20260628_124004
+边界：只检查，不同步、不覆盖、不删除、不tag、不执行006、不接库存
+
+========== 关闭开发版 ERP 进程 ==========
+已尝试关闭冠誉制造ERP进程。
+
+========== git log -1 --oneline ==========
+命令: git log -1 --oneline
+e61326a Ver2.9-rc12 UI dialog browser polish
+ExitCode: 0
+
+========== git status -sb ==========
+命令: git status -sb
+## codex/ver2.8-basic-business-framework...origin/codex/ver2.8-basic-business-framework
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+ExitCode: 0
+
+========== git status --short ==========
+命令: git status --short
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+ExitCode: 0
+
+========== 确认 HEAD 是否为 rc12 ==========
+当前 HEAD: e61326a
+HEAD 确认为 rc12。
+
+========== 确认工作区是否干净 ==========
+工作区不是干净状态：
+?? docs/worklog/reports/rc12_formal_app_precheck_20260628_124004/
+?? docs/worklog/reports/ver29_rc12_manual_acceptance_pass_20260628_123831.md
+?? docs/worklog/reports/ver29_rc12_release_candidate_checklist_20260628_123831.md
+
+========== 脚本失败 ==========
+失败原因：工作区不干净，不能进入正式 App 同步准备。
