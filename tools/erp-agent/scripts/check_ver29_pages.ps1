@@ -41,6 +41,7 @@ $pageMarkers = @(
     @{ Page = "采购单"; Source = "Business.html"; Marker = "purchaseOrderView"; Risk = "P0" }
     @{ Page = "采购入库"; Source = "Business.html"; Marker = "purchaseInboundView"; Risk = "P0" }
     @{ Page = "生产工单"; Source = "Business.html"; Marker = "productionWorkOrderView"; Risk = "P0" }
+    @{ Page = "售后维修工单"; Source = "Business.html"; Marker = "afterSalesServiceOrderView"; Risk = "P0" }
     @{ Page = "生产领用"; Source = "Business.html"; Marker = "productionPickView"; Risk = "P0" }
     @{ Page = "成品入库"; Source = "Business.html"; Marker = "finishedInboundView"; Risk = "P0" }
     @{ Page = "库存汇总"; Source = "Business.html"; Marker = "stockView"; Risk = "P0" }
@@ -103,6 +104,7 @@ else {
         @{ Name = "供应商列表 API"; Url = "$BaseUrl/api/suppliers" }
         @{ Name = "客户列表 API"; Url = "$BaseUrl/api/customers" }
         @{ Name = "生产工单 API"; Url = "$BaseUrl/api/production-work-orders" }
+        @{ Name = "售后维修 API"; Url = "$BaseUrl/api/after-sales-service-orders" }
     )
     Write-Host ""
     Write-Host "--- API 权限拦截抽样 ---"

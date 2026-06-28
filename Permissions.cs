@@ -28,7 +28,8 @@ namespace SupplierErpApp
             "receivable.receipt_add","receivable.receipt_edit","receivable.receipt_delete",
             "payable.view","payable.add","payable.edit","payable.delete",
             "payable.payment_add","payable.payment_edit","payable.payment_delete",
-            "reconciliation.customer_view","reconciliation.customer_export"
+            "reconciliation.customer_view","reconciliation.customer_export",
+            "after_sales.view","after_sales.add","after_sales.edit","after_sales.delete"
         };
 
         static readonly Dictionary<string, string[]> PermissionLegacyMap = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
@@ -212,6 +213,12 @@ namespace SupplierErpApp
                 }},
                 new PermissionGroup { Module = "库存汇总", Items = new[] {
                     new PermissionItem { Key = "stock.view", Label = "查看" }
+                }},
+                new PermissionGroup { Module = "售后维修工单", Items = new[] {
+                    new PermissionItem { Key = "after_sales.view", Label = "查看" },
+                    new PermissionItem { Key = "after_sales.add", Label = "新增" },
+                    new PermissionItem { Key = "after_sales.edit", Label = "修改" },
+                    new PermissionItem { Key = "after_sales.delete", Label = "删除" }
                 }},
                 new PermissionGroup { Module = "应收款", Items = new[] {
                     new PermissionItem { Key = "receivable.view", Label = "查看" },

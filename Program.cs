@@ -597,6 +597,53 @@ namespace SupplierErpApp
         public string UpdatedAt { get; set; }
     }
 
+    public class AfterSalesPartLine
+    {
+        public string MaterialId { get; set; }
+        public string MaterialCode { get; set; }
+        public string MaterialName { get; set; }
+        public string Spec { get; set; }
+        public string Unit { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal Amount { get; set; }
+        public string Remark { get; set; }
+    }
+
+    public class AfterSalesServiceOrder
+    {
+        public string Id { get; set; }
+        public string ServiceNo { get; set; }
+        public string ServiceDate { get; set; }
+        public string CustomerId { get; set; }
+        public string CustomerName { get; set; }
+        public string ContactName { get; set; }
+        public string ContactPhone { get; set; }
+        public string MachineName { get; set; }
+        public string MachineSpec { get; set; }
+        public string FaultDescription { get; set; }
+        public string ServiceType { get; set; }
+        public string AssignedWorker { get; set; }
+        public string VisitDate { get; set; }
+        public string RepairResult { get; set; }
+        public string Status { get; set; }
+        public string Remark { get; set; }
+        public decimal PartsAmount { get; set; }
+        public decimal LaborAmount { get; set; }
+        public decimal OtherAmount { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal ReceivableAmount { get; set; }
+        public decimal ReceivedAmount { get; set; }
+        public decimal UnreceivedAmount { get; set; }
+        public string ReceivableId { get; set; }
+        public string ReceivableNo { get; set; }
+        public List<AfterSalesPartLine> Parts { get; set; }
+        public string CreatedAt { get; set; }
+        public string CreatedBy { get; set; }
+        public string UpdatedAt { get; set; }
+        public string UpdatedBy { get; set; }
+    }
+
     public class ReceiptDetail
     {
         public string Id { get; set; }
@@ -631,6 +678,8 @@ namespace SupplierErpApp
         public string CustomerName { get; set; }
         public string SalesOrderId { get; set; }
         public string SalesOrderNo { get; set; }
+        public string ServiceOrderId { get; set; }
+        public string ServiceOrderNo { get; set; }
         public decimal ReceivableAmount { get; set; }
         public decimal ReceivedAmount { get; set; }
         public decimal UnreceivedAmount { get; set; }
@@ -743,6 +792,7 @@ namespace SupplierErpApp
         static readonly string FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
         static readonly string FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
         static readonly string ProductionWorkOrdersFile = Path.Combine(DataDir, "production-work-orders.json");
+        static readonly string AfterSalesServiceOrdersFile = Path.Combine(DataDir, "after-sales-service-orders.json");
         static readonly string ReceivablesFile = Path.Combine(DataDir, "receivables.json");
         static readonly string ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
         static readonly string PayablesFile = Path.Combine(DataDir, "payables.json");
@@ -1127,6 +1177,18 @@ namespace SupplierErpApp
                 if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; GetProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
                 if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
                 if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path == "/api/after-sales-service-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "after_sales.view")) return; WriteJson(ctx, LoadAfterSalesServiceOrders()); return; }
+                if (path == "/api/after-sales-service-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.add")) return; AddAfterSalesServiceOrder(ctx, user); return; }
+                if (path == "/api/after-sales-service-orders/export") { if (!RequirePermission(ctx, user, "after_sales.view")) return; ExportAfterSalesServiceOrdersCsv(ctx); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/confirm-dispatch") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; ConfirmDispatchAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/confirm-dispatch".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/start") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; StartAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/start".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/finish") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; FinishAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/finish".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/settle") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; SettleAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/settle".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; CancelAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/cancel".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/generate-receivable") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; GenerateReceivableForAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/generate-receivable".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "after_sales.view")) return; GetAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; UpdateAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "after_sales.delete")) return; DeleteAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length)); return; }
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "finished_inbound.view")) return; WriteJson(ctx, LoadFinishedInbounds()); return; }
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finished_inbound.add")) return; AddFinishedInbound(ctx, user); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finished_inbound.edit")) return; UpdateFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
@@ -4352,6 +4414,7 @@ namespace SupplierErpApp
             EnsureJsonFile(FinishedInboundsFile);
             EnsureJsonFile(FinishedInboundSequenceFile, "0");
             EnsureJsonFile(ProductionWorkOrdersFile);
+            EnsureJsonFile(AfterSalesServiceOrdersFile);
             EnsureJsonFile(ReceivablesFile);
             EnsureJsonFile(ReceivableSequenceFile, "0");
             EnsureJsonFile(PayablesFile);
@@ -5782,6 +5845,9 @@ namespace SupplierErpApp
                     BizFail("该应收款已有收款记录，请先删除收款明细后再删除应收款。", 409);
                 if (IsAutoSource(item.SourceType) || !string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo))
                     BizFail("该应收款由销售订单自动生成或关联销售订单，不能删除。请先处理来源销售订单。", 409);
+                if (!string.IsNullOrWhiteSpace(item.ServiceOrderId) || !string.IsNullOrWhiteSpace(item.ServiceOrderNo)
+                    || string.Equals(item.SourceType ?? "", "售后维修", StringComparison.OrdinalIgnoreCase))
+                    BizFail("该应收款关联售后维修工单，不能删除。请先处理来源维修工单。", 409);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });

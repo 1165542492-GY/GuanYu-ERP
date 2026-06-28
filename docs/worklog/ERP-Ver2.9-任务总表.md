@@ -112,6 +112,20 @@
 
 ---
 
+## 9. Ver2.9-rc9 售后维修工单（009）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已完成（2026-06-28），待浏览器验收 |
+| **报告** | `docs/worklog/reports/ver29_rc9_after_sales_service_work_order_20260628_095706.md` |
+| **涉及文件** | `AfterSalesServiceOrder.cs`、`Program.cs`、`Permissions.cs`、`OperationImpactService.cs`、`Business.html`、`App.html`、`check_ver29_pages.ps1` |
+| **内容** | |
+| | 售后管理菜单、维修工单 CRUD、配件明细与金额自动计算 |
+| | 状态流转（派工/维修/完成/结算）、手动生成应收 |
+| | 草稿不扣库存、不自动应收；删除与应收关联保护 |
+
+---
+
 ## 阶段依赖关系
 
 ```

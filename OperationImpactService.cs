@@ -137,6 +137,7 @@ namespace SupplierErpApp
                 case "purchaseinbound": return ImpactPurchaseInbound(operation, id, payload);
                 case "productionpick": return ImpactProductionPick(operation, id, payload);
                 case "finishedinbound": return ImpactFinishedInbound(operation, id, payload);
+                case "aftersalesserviceorder": return ImpactAfterSalesServiceOrder(operation, id, payload);
                 case "receivable": return ImpactReceivable(operation, id, payload);
                 case "receivablereceipt": return ImpactReceivableReceipt(operation, id, payload);
                 case "payable": return ImpactPayable(operation, id, payload);
@@ -440,6 +441,41 @@ namespace SupplierErpApp
             return r;
         }
 
+        static OperationImpactResultDto ImpactAfterSalesServiceOrder(string operation, string id, JsonObject payload)
+        {
+            var item = LoadAfterSalesServiceOrders().FirstOrDefault(x => x.Id == id);
+            var label = item != null ? item.ServiceNo : id;
+            var r = NewImpact("售后维修工单影响预检", label);
+            var items = new List<OperationImpactItemDto>();
+            var blocking = new List<string>();
+            var warnings = new List<string>();
+            if (item == null && operation == "delete") { blocking.Add("售后维修工单不存在"); FinalizeImpact(r, items, blocking, warnings); return r; }
+
+            if (operation == "delete")
+            {
+                if (!CanDeleteAfterSalesServiceOrder(item))
+                {
+                    if (!string.IsNullOrWhiteSpace(item.ReceivableId))
+                    {
+                        blocking.Add("已生成应收的维修单不能删除，请先处理应收关联。");
+                        AddImpact(items, "receivable", "关联应收款", 1, item.ReceivableNo ?? item.ReceivableId);
+                    }
+                    else if (NormalizeAfterSalesServiceStatus(item.Status) == "已完成" || NormalizeAfterSalesServiceStatus(item.Status) == "已结算")
+                        blocking.Add("已完成或已结算的维修单不能删除。");
+                    else
+                        blocking.Add("仅草稿或已取消的维修单可以删除。");
+                }
+                else
+                {
+                    r.Level = "warning";
+                    warnings.Add("删除后不可直接恢复。");
+                }
+                AddImpact(items, "audit", "操作记录", 1, "将记录本次删除");
+            }
+            FinalizeImpact(r, items, blocking, warnings);
+            return r;
+        }
+
         static OperationImpactResultDto ImpactReceivable(string operation, string id, JsonObject payload)
         {
             var item = LoadReceivables().FirstOrDefault(x => x.Id == id);
@@ -461,6 +497,12 @@ namespace SupplierErpApp
                 {
                     blocking.Add("该应收款由销售订单自动生成或关联销售订单，不能删除。请先处理来源销售订单。");
                     AddImpact(items, "salesOrder", "来源销售订单", 1, string.IsNullOrWhiteSpace(item.SalesOrderNo) ? item.SalesOrderId : item.SalesOrderNo);
+                }
+                else if (!string.IsNullOrWhiteSpace(item.ServiceOrderId) || !string.IsNullOrWhiteSpace(item.ServiceOrderNo)
+                    || string.Equals(item.SourceType ?? "", "售后维修", StringComparison.OrdinalIgnoreCase))
+                {
+                    blocking.Add("该应收款关联售后维修工单，不能删除。请先处理来源维修工单。");
+                    AddImpact(items, "afterSalesServiceOrder", "来源维修工单", 1, string.IsNullOrWhiteSpace(item.ServiceOrderNo) ? item.ServiceOrderId : item.ServiceOrderNo);
                 }
                 else
                 {
@@ -972,6 +1014,7 @@ namespace SupplierErpApp
                 case "purchase_inbound": return "purchaseInbound";
                 case "production_pick": return "productionPick";
                 case "finished_inbound": return "finishedInbound";
+                case "after_sales_service_order": return "afterSalesServiceOrder";
                 case "receivable": return "receivable";
                 case "payable": return "payable";
                 default: return auditKey;
