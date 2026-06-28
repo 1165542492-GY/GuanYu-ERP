@@ -69,6 +69,9 @@ $sourceMarkers = @(
     @{ Page = "全系统空数据提示"; Source = "App.html"; Marker = "erpEmptyHtml"; Risk = "P2" }
     @{ Page = "rc12列表空态区分"; Source = "App.html"; Marker = "erpTableEmptyHtml"; Risk = "P2" }
     @{ Page = "rc12详情提示弹窗"; Source = "App.html"; Marker = "erpShowDetailMessage"; Risk = "P2" }
+    @{ Page = "rc16物料库存类型字段"; Source = "Material.html"; Marker = "materialStockType"; Risk = "P1" }
+    @{ Page = "rc16库存汇总状态列"; Source = "Business.html"; Marker = "stock-status-out"; Risk = "P1" }
+    @{ Page = "rc16出入库库存类型带出"; Source = "Business.html"; Marker = "MaterialStockType"; Risk = "P1" }
 )
 
 $homeResult = Test-Ver29Http -Url "$BaseUrl/" -TimeoutSec $TimeoutSec -AcceptableStatus @(200)

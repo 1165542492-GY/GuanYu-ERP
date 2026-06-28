@@ -156,6 +156,36 @@
 
 ---
 
+## 12. Ver2.9-rc15 006 / 库存类型深化设计（015）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 设计已完成（2026-06-28），**未执行开发**，等待用户确认库存规则 |
+| **报告** | `docs/worklog/reports/ver29_rc15_006_inventory_design.md` |
+| **评审任务** | `tools/erp-agent/tasks/todo/016_Ver29_rc15_006_inventory_design_user_review.md` |
+| **前置清单** | `docs/worklog/reports/ver29_006_inventory_precheck_questions_20260628_132014.md` |
+| **说明** | |
+| | 7 类库存类型、物料字段、汇总/出入库/负库存/成本价规则设计 |
+| | 分 7 阶段开发计划；不改业务代码、不执行 inbox 006 |
+| | 用户确认后 → 迁移方案 + 分阶段开发任务 |
+
+---
+
+## 13. Ver2.9-rc16 006 / 库存类型深化阶段 1（017）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已开发（2026-06-28），待浏览器验收 |
+| **报告** | `docs/worklog/reports/ver29_rc16_inventory_stage1_development_20260628_135300.md` |
+| **涉及文件** | `Program.cs`、`Material.html`、`Business.html`、`TestDataService.cs`、`check_ver29_pages.ps1` |
+| **说明** | |
+| | 物料 StockType 等 7 字段 + 物料页展示/筛选/导入导出 |
+| | 库存汇总展示库存类型、安全库存、库存状态 |
+| | 出入库轻量带出库存类型；库存不足提醒不拦截 |
+| | **未**重构 BuildStockMap；**未**改应收/应付/财务核心 |
+
+---
+
 ## 阶段依赖关系
 
 ```

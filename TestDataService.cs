@@ -487,10 +487,11 @@ namespace SupplierErpApp
 
         static void WriteMaterialSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "物料管理", new[] { "物料编号", "供应商", "物料名称/规格", "数量/单位", "含税价", "不含税价", "价格类型", "备注", "状态", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "物料管理", new[] { "物料编号", "供应商", "物料名称/规格", "数量/单位", "含税价", "不含税价", "价格类型", "库存类型", "是否纳入库存", "是否成品", "是否维修备件", "安全库存", "默认仓库", "成本方式", "备注", "状态", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadMaterials())
-                WriteRow(ws, r++, x.Code, x.Supplier, x.NameSpec, x.QuantityUnit, Money2(x.TaxPrice), Money2(x.NoTaxPrice), ExportPriceTypeLabel(x.PriceType), x.Note, x.Status, x.UpdatedAt, x.UpdatedBy);
+                WriteRow(ws, r++, x.Code, x.Supplier, x.NameSpec, x.QuantityUnit, Money2(x.TaxPrice), Money2(x.NoTaxPrice), ExportPriceTypeLabel(x.PriceType),
+                    x.StockType, (x.IsInventoryItem ?? true) ? "是" : "否", x.IsFinishedGood ? "是" : "否", x.IsServicePart ? "是" : "否", Money2(x.SafetyStock), x.DefaultWarehouse, x.CostMethod, x.Note, x.Status, x.UpdatedAt, x.UpdatedBy);
         }
 
         static void WriteBomSheet(XLWorkbook wb)
@@ -784,6 +785,7 @@ namespace SupplierErpApp
                     existing.TaxPrice = Money(Cell(row, "含税价")); existing.NoTaxPrice = Money(Cell(row, "不含税价"));
                     existing.PriceType = NormalizePriceType(Cell(row, "价格类型")); existing.Note = Cell(row, "备注");
                     if (!string.IsNullOrWhiteSpace(Cell(row, "状态"))) existing.Status = Cell(row, "状态");
+                    ApplyMaterialInventoryFromImportRow(row, existing);
                     existing.UpdatedAt = ProfileUpdatedAtNow(); existing.UpdatedBy = user.DisplayName;
                     res.Updated++; changed = true;
                 }
@@ -800,6 +802,7 @@ namespace SupplierErpApp
                         Status = string.IsNullOrWhiteSpace(Cell(row, "状态")) ? "启用" : Cell(row, "状态"),
                         UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                     };
+                    ApplyMaterialInventoryFromImportRow(row, item);
                     list.Insert(0, item); res.Added++; changed = true;
                 }
             }

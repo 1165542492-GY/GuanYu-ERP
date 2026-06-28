@@ -95,6 +95,13 @@ namespace SupplierErpApp
         public string PriceType { get; set; }
         public string Note { get; set; }
         public string Status { get; set; }
+        public string StockType { get; set; }
+        public bool? IsInventoryItem { get; set; }
+        public bool IsFinishedGood { get; set; }
+        public bool IsServicePart { get; set; }
+        public decimal SafetyStock { get; set; }
+        public string DefaultWarehouse { get; set; }
+        public string CostMethod { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -723,6 +730,11 @@ namespace SupplierErpApp
         public decimal CurrentQuantity { get; set; }
         public decimal CostPrice { get; set; }
         public decimal StockAmount { get; set; }
+        public string StockType { get; set; }
+        public bool IsFinishedGood { get; set; }
+        public bool IsServicePart { get; set; }
+        public decimal SafetyStock { get; set; }
+        public string StockStatus { get; set; }
         public decimal Quantity { get { return CurrentQuantity; } set { CurrentQuantity = value; } }
     }
 
@@ -2671,9 +2683,99 @@ namespace SupplierErpApp
             WriteJson(ctx, new { imported = batchImported, skipped = batchSkipped, errors = batchErrors.Take(20).ToArray() });
         }
 
+        static readonly string[] MaterialStockTypes = { "原材料", "外购配件", "标准件", "成品设备", "维修备件", "低值易耗品", "其他" };
+        static readonly string[] MaterialCostMethods = { "固定成本价", "最近采购价", "机型成本快照", "手动指定" };
+
         static List<Material> LoadMaterials()
         {
-            lock (DataLock) return ReadJsonListCore<Material>(MaterialFile);
+            lock (DataLock)
+            {
+                var list = ReadJsonListCore<Material>(MaterialFile);
+                foreach (var item in list) NormalizeMaterialInventoryFields(item);
+                return list;
+            }
+        }
+
+        static string NormalizeMaterialStockType(string raw)
+        {
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(s)) return "外购配件";
+            foreach (var t in MaterialStockTypes)
+                if (string.Equals(t, s, StringComparison.OrdinalIgnoreCase)) return t;
+            return "其他";
+        }
+
+        static string NormalizeMaterialCostMethod(string raw)
+        {
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(s)) return "固定成本价";
+            foreach (var t in MaterialCostMethods)
+                if (string.Equals(t, s, StringComparison.OrdinalIgnoreCase)) return t;
+            return "固定成本价";
+        }
+
+        static bool ParseImportBool(string raw, bool defaultValue)
+        {
+            var s = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(s)) return defaultValue;
+            if (s == "1" || s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "是" || s == "Y" || s == "y") return true;
+            if (s == "0" || s.Equals("false", StringComparison.OrdinalIgnoreCase) || s == "否" || s == "N" || s == "n") return false;
+            return defaultValue;
+        }
+
+        static void NormalizeMaterialInventoryFields(Material item)
+        {
+            if (item == null) return;
+            item.StockType = NormalizeMaterialStockType(item.StockType);
+            item.IsInventoryItem = item.IsInventoryItem ?? true;
+            item.DefaultWarehouse = string.IsNullOrWhiteSpace(item.DefaultWarehouse) ? "默认仓库" : item.DefaultWarehouse.Trim();
+            item.CostMethod = NormalizeMaterialCostMethod(item.CostMethod);
+            if (item.SafetyStock < 0) item.SafetyStock = 0;
+            if (item.StockType == "成品设备") item.IsFinishedGood = true;
+            if (item.StockType == "维修备件") item.IsServicePart = true;
+            if (item.IsFinishedGood) item.StockType = "成品设备";
+            if (item.IsServicePart && item.StockType != "成品设备") item.StockType = "维修备件";
+        }
+
+        static void ApplyMaterialInventoryFromImportRow(Dictionary<string, string> row, Material item)
+        {
+            if (item == null) return;
+            string stockType = Cell(row, "库存类型", "StockType");
+            if (!string.IsNullOrWhiteSpace(stockType)) item.StockType = stockType;
+            string inv = Cell(row, "是否纳入库存", "IsInventoryItem");
+            if (!string.IsNullOrWhiteSpace(inv)) item.IsInventoryItem = ParseImportBool(inv, true);
+            string finished = Cell(row, "是否成品", "IsFinishedGood");
+            if (!string.IsNullOrWhiteSpace(finished)) item.IsFinishedGood = ParseImportBool(finished, false);
+            string service = Cell(row, "是否维修备件", "IsServicePart");
+            if (!string.IsNullOrWhiteSpace(service)) item.IsServicePart = ParseImportBool(service, false);
+            string safety = Cell(row, "安全库存", "SafetyStock");
+            if (!string.IsNullOrWhiteSpace(safety)) item.SafetyStock = Money(safety);
+            string wh = Cell(row, "默认仓库", "DefaultWarehouse");
+            if (!string.IsNullOrWhiteSpace(wh)) item.DefaultWarehouse = wh;
+            string costMethod = Cell(row, "成本方式", "CostMethod");
+            if (!string.IsNullOrWhiteSpace(costMethod)) item.CostMethod = costMethod;
+            NormalizeMaterialInventoryFields(item);
+        }
+
+        static string ComputeStockStatusLabel(decimal qty, decimal safetyStock)
+        {
+            if (qty <= 0) return "缺货";
+            if (safetyStock > 0 && qty < safetyStock) return "偏低";
+            return "正常";
+        }
+
+        static Material FindMaterialForStockItem(string itemType, string itemId, string itemCode)
+        {
+            if (string.Equals(itemType, "成品", StringComparison.OrdinalIgnoreCase)) return null;
+            var materials = LoadMaterials();
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                var byId = materials.FirstOrDefault(x => x.Id == itemId);
+                if (byId != null) return byId;
+            }
+            if (!string.IsNullOrWhiteSpace(itemCode))
+                return materials.FirstOrDefault(x => string.Equals(x.Code, itemCode, StringComparison.OrdinalIgnoreCase));
+            return null;
         }
 
         static void SaveMaterials(List<Material> items)
@@ -2684,6 +2786,7 @@ namespace SupplierErpApp
         static void AddMaterial(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<Material>(ReadBody(ctx.Request)); ValidateMaterial(item);
+            NormalizeMaterialInventoryFields(item);
             var saved = MutateJsonList<Material, Material>(MaterialFile, "materials", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N"); item.Code = NextCode(MaterialSequenceFile, "MAT", list.Select(x => x.Code), "WL"); item.PriceType = NormalizePriceType(item.PriceType); item.Status = "启用"; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
@@ -2702,7 +2805,10 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("物料不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 EnsureMaterialReferenceLockForEdit(item, input);
-                item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status; item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                item.Supplier = input.Supplier; item.NameSpec = input.NameSpec; item.QuantityUnit = input.QuantityUnit; item.TaxPrice = input.TaxPrice; item.NoTaxPrice = input.NoTaxPrice; item.PriceType = NormalizePriceType(input.PriceType); item.Note = input.Note; item.Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status;
+                item.StockType = input.StockType; item.IsInventoryItem = input.IsInventoryItem; item.IsFinishedGood = input.IsFinishedGood; item.IsServicePart = input.IsServicePart; item.SafetyStock = input.SafetyStock; item.DefaultWarehouse = input.DefaultWarehouse; item.CostMethod = input.CostMethod;
+                NormalizeMaterialInventoryFields(item);
+                item.UpdatedAt = ProfileUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Material>(item, true);
             });
             Audit(user, "修改物料", saved.Code + " " + saved.NameSpec); WriteJson(ctx, saved);
@@ -2806,9 +2912,12 @@ namespace SupplierErpApp
                             Supplier = input.Supplier, NameSpec = input.NameSpec, QuantityUnit = input.QuantityUnit,
                             TaxPrice = input.TaxPrice, NoTaxPrice = input.NoTaxPrice, PriceType = NormalizePriceType(input.PriceType), Note = input.Note,
                             Status = string.IsNullOrEmpty(input.Status) ? "启用" : input.Status,
+                            StockType = input.StockType, IsInventoryItem = input.IsInventoryItem, IsFinishedGood = input.IsFinishedGood, IsServicePart = input.IsServicePart,
+                            SafetyStock = input.SafetyStock, DefaultWarehouse = input.DefaultWarehouse, CostMethod = input.CostMethod,
                             UpdatedAt = ProfileUpdatedAtNow(), UpdatedBy = user.DisplayName
                         };
                         NormalizeMaterialPriceFields(item);
+                        NormalizeMaterialInventoryFields(item);
                         pending.Insert(0, item);
                         imported++;
                     }
@@ -3017,6 +3126,7 @@ namespace SupplierErpApp
             item.Supplier=item.Supplier.Trim();item.NameSpec=item.NameSpec.Trim();item.QuantityUnit=NormalizeMaterialQuantityUnit(item.QuantityUnit);item.Note=(item.Note??"").Trim();
             if(!LoadSuppliers().Any(x=>string.Equals(x.Company,item.Supplier,StringComparison.OrdinalIgnoreCase)))throw new Exception("所选供应商不在供应商管理中，请先建立供应商档案");
             NormalizeMaterialPriceFields(item);
+            NormalizeMaterialInventoryFields(item);
         }
 
         static string NormalizeMaterialQuantityUnit(string raw)
@@ -3167,6 +3277,7 @@ namespace SupplierErpApp
             item.Note = Cell(row, "备注");
             item.Status = Cell(row, "状态");
             if (string.IsNullOrEmpty(item.Status)) item.Status = "启用";
+            ApplyMaterialInventoryFromImportRow(row, item);
             NormalizeMaterialPriceFields(item);
             return item;
         }
@@ -3842,10 +3953,10 @@ namespace SupplierErpApp
 
         static void ExportMaterialsCsv(HttpListenerContext ctx)
         {
-            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,基准数量,单位,价格类型,单价,备注,状态,最后更新,操作人");
+            var sb=new StringBuilder();sb.AppendLine("物料编号,供应商,物料名称/规格,基准数量,单位,价格类型,单价,库存类型,是否纳入库存,是否成品,是否维修备件,安全库存,默认仓库,成本方式,备注,状态,最后更新,操作人");
             foreach(var x in LoadMaterials()){
                 var parts=ParseMaterialQtyUnitParts(x.QuantityUnit);
-                sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,parts.BaseQty.ToString("0.##"),parts.Unit,NormalizePriceType(x.PriceType),MaterialDisplayUnitPrice(x).ToString("0.00"),x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
+                sb.AppendLine(string.Join(",",new[]{x.Code,x.Supplier,x.NameSpec,parts.BaseQty.ToString("0.##"),parts.Unit,NormalizePriceType(x.PriceType),MaterialDisplayUnitPrice(x).ToString("0.00"),x.StockType,(x.IsInventoryItem??true)?"是":"否",x.IsFinishedGood?"是":"否",x.IsServicePart?"是":"否",x.SafetyStock.ToString("0.##"),x.DefaultWarehouse,x.CostMethod,x.Note,x.Status,x.UpdatedAt,x.UpdatedBy}.Select(Csv)));
             }
             WriteCsvDownload(ctx, BuildExportFileName("物料管理"), sb.ToString());
         }
@@ -6022,6 +6133,22 @@ namespace SupplierErpApp
                 decimal qty = RoundMoney(agg.Quantity);
                 decimal costPrice = qty == 0 ? 0 : RoundMoney(agg.CostAmount / Math.Abs(qty));
                 if (qty < 0) costPrice = agg.CostAmount > 0 ? RoundMoney(agg.CostAmount / Math.Abs(qty)) : 0;
+                string stockType = "成品设备";
+                bool isFinished = string.Equals(agg.ItemType, "成品", StringComparison.OrdinalIgnoreCase);
+                bool isService = false;
+                decimal safetyStock = 0;
+                if (!isFinished)
+                {
+                    var mat = FindMaterialForStockItem(agg.ItemType, agg.ItemId, agg.ItemCode);
+                    if (mat != null)
+                    {
+                        stockType = mat.StockType ?? "外购配件";
+                        isFinished = mat.IsFinishedGood;
+                        isService = mat.IsServicePart;
+                        safetyStock = mat.SafetyStock;
+                    }
+                    else stockType = "外购配件";
+                }
                 return new StockItem
                 {
                     ItemType = agg.ItemType,
@@ -6033,7 +6160,12 @@ namespace SupplierErpApp
                     WarehouseName = "默认仓库",
                     CurrentQuantity = qty,
                     CostPrice = costPrice,
-                    StockAmount = RoundMoney(Math.Abs(qty) * costPrice)
+                    StockAmount = RoundMoney(Math.Abs(qty) * costPrice),
+                    StockType = stockType,
+                    IsFinishedGood = isFinished,
+                    IsServicePart = isService,
+                    SafetyStock = safetyStock,
+                    StockStatus = ComputeStockStatusLabel(qty, safetyStock)
                 };
             }).OrderBy(x => x.ItemType).ThenBy(x => x.ItemName).ToList();
         }
