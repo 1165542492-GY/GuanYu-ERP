@@ -25,7 +25,6 @@ namespace SupplierErpApp
         public string Message { get; set; }
         public string Error { get; set; }
         public string Api { get; set; }
-        public string UserAgent { get; set; }
         public string BackupPath { get; set; }
     }
 
@@ -143,97 +142,47 @@ namespace SupplierErpApp
                     var end = custPart.IndexOfAny(new[] { ' ', '状', '应', '关', '配', '，' });
                     entityName = end > 0 ? custPart.Substring(0, end).Trim() : custPart;
                 }
-                else if (detail.IndexOf("客户 ", StringComparison.Ordinal) >= 0 || detail.IndexOf("客户：", StringComparison.Ordinal) >= 0)
+                else if (detail.IndexOf("客户 ", StringComparison.Ordinal) >= 0)
                 {
                     var custIdx2 = detail.IndexOf("客户 ", StringComparison.Ordinal);
-                    if (custIdx2 < 0) custIdx2 = detail.IndexOf("客户：", StringComparison.Ordinal);
-                    int skip = detail[custIdx2 + 2] == '：' ? 3 : 3;
-                    var custPart = detail.Substring(custIdx2 + skip).Trim();
-                    var end = custPart.IndexOfAny(new[] { '，', ',', ' ', '问', '状', '应', '关', '配' });
+                    var custPart = detail.Substring(custIdx2 + 3).Trim();
+                    var end = custPart.IndexOfAny(new[] { '，', ',', ' ' });
                     entityName = end > 0 ? custPart.Substring(0, end).Trim() : custPart;
                 }
-                TryResolveAfterSalesLogFromDetail(detail, ref module, ref entityType, ref entityCode, action);
+                TryResolveAfterSalesLogFromDetail(detail, ref module, ref entityType, ref entityCode);
             }
             else if (!string.IsNullOrWhiteSpace(action))
             {
-                TryResolveAfterSalesLogFromDetail(action, ref module, ref entityType, ref entityCode, action);
+                TryResolveAfterSalesLogFromDetail(action, ref module, ref entityType, ref entityCode);
             }
-            TryExtractEntityCodeFromText(detail ?? action, ref entityCode);
         }
 
-        static string GetClientUserAgent(HttpListenerContext ctx)
-        {
-            if (ctx == null || ctx.Request == null) return "";
-            try { return (ctx.Request.Headers["User-Agent"] ?? "").Trim(); }
-            catch { return ""; }
-        }
-
-        static bool IsAmbiguousSystemModule(string module)
-        {
-            module = (module ?? "").Trim();
-            return string.IsNullOrWhiteSpace(module)
-                || module == "系统"
-                || module.Equals("System", StringComparison.OrdinalIgnoreCase)
-                || module == "未知模块";
-        }
-
-        static bool HasAfterSalesIndicator(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            if (System.Text.RegularExpressions.Regex.IsMatch(text, @"\bSR20\d{6,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                return true;
-            string[] keys = { "售后维修", "售后工单", "维修工单", "after-sales", "after sales", "afterSales", "repair order", "AfterSalesServiceOrder" };
-            foreach (var k in keys)
-            {
-                if (text.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            }
-            return text.IndexOf("维修单", StringComparison.Ordinal) >= 0
-                && text.IndexOf("SR", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        static bool IsPureSystemAuthRecord(string action, string text)
-        {
-            string blob = ((action ?? "") + " " + (text ?? "")).Trim();
-            if (HasAfterSalesIndicator(text)) return false;
-            if (blob.IndexOf("登录", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("退出", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("权限不足", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("未登录", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("字典", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("子账号", StringComparison.Ordinal) >= 0) return true;
-            if (blob.IndexOf("税率", StringComparison.Ordinal) >= 0) return true;
-            return false;
-        }
-
-        static void TryExtractEntityCodeFromText(string text, ref string entityCode)
-        {
-            if (!string.IsNullOrWhiteSpace(entityCode)) return;
-            var m = System.Text.RegularExpressions.Regex.Match(text ?? "", @"\bSR20\d{6,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (m.Success) entityCode = m.Value;
-        }
-
-        static void TryResolveAfterSalesLogFromDetail(string text, ref string module, ref string entityType, ref string entityCode, string action = null)
+        static void TryResolveAfterSalesLogFromDetail(string text, ref string module, ref string entityType, ref string entityCode)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
-            if (module == "售后维修工单" && entityType == "AfterSalesServiceOrder")
+            if (module == "售后维修工单" && entityType == "AfterSalesServiceOrder") return;
+            if (text.IndexOf("售后维修", StringComparison.Ordinal) >= 0
+                || text.IndexOf("维修单 SR", StringComparison.OrdinalIgnoreCase) >= 0
+                || System.Text.RegularExpressions.Regex.IsMatch(text, @"\bSR20\d{6,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
             {
-                TryExtractEntityCodeFromText(text, ref entityCode);
-                return;
+                module = "售后维修工单";
+                entityType = "AfterSalesServiceOrder";
             }
-            if (IsPureSystemAuthRecord(action, text)) return;
-            if (!IsAmbiguousSystemModule(module) && module != "售后维修工单") return;
-            if (!HasAfterSalesIndicator(text)) return;
-            module = "售后维修工单";
-            entityType = "AfterSalesServiceOrder";
-            TryExtractEntityCodeFromText(text, ref entityCode);
+            if (string.IsNullOrWhiteSpace(entityCode))
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(text, @"\bSR20\d{6,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success) entityCode = m.Value;
+            }
         }
 
         static string FormatOperationLogMessage(string action, string detail, string module, string act)
         {
             if (!string.IsNullOrWhiteSpace(detail))
             {
-                if (detail.IndexOf("售后维修工单", StringComparison.Ordinal) >= 0
-                    || detail.IndexOf("维修单 ", StringComparison.Ordinal) >= 0)
+                if (detail.IndexOf("维修单 ", StringComparison.Ordinal) >= 0
+                    || detail.IndexOf("新增维修单", StringComparison.Ordinal) >= 0
+                    || detail.IndexOf("修改维修单", StringComparison.Ordinal) >= 0
+                    || detail.IndexOf("删除维修单", StringComparison.Ordinal) >= 0)
                     return detail;
                 if (!string.IsNullOrWhiteSpace(act) && detail.IndexOf(act, StringComparison.Ordinal) != 0)
                     return act + "：" + detail;
@@ -241,41 +190,29 @@ namespace SupplierErpApp
             return string.IsNullOrWhiteSpace(detail) ? (action ?? "") : detail;
         }
 
-        static string HumanizeAfterSalesFallbackMessage(OperationLogEntry e)
-        {
-            string code = e.EntityCode ?? "";
-            if (string.IsNullOrWhiteSpace(code))
-            {
-                var m = System.Text.RegularExpressions.Regex.Match(e.Message ?? "", @"\bSR20\d{6,}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (m.Success) code = m.Value;
-            }
-            string act = e.Action ?? "操作";
-            if (!string.IsNullOrWhiteSpace(code))
-                return string.Format("售后维修工单 {0} 发生了【{1}】操作", code, act);
-            return "售后维修相关记录发生了【" + act + "】操作";
-        }
-
         static string HumanizeOperationLogMessage(OperationLogEntry e)
         {
             if (e == null) return "";
             string msg = e.Message ?? "";
             if (string.IsNullOrWhiteSpace(msg)) return msg;
-            bool isAs = e.Module == "售后维修工单"
-                || (e.EntityCode ?? "").StartsWith("SR", StringComparison.OrdinalIgnoreCase)
-                || HasAfterSalesIndicator(msg);
-            if (!isAs) return msg;
-            if (msg.IndexOf("售后维修工单", StringComparison.Ordinal) >= 0) return msg;
-            msg = msg.Replace("新增售后维修工单 ", "新增售后维修工单 ");
-            msg = msg.Replace("新增维修单 ", "新增售后维修工单 ");
-            msg = msg.Replace("修改维修单 ", "修改售后维修工单 ");
-            msg = msg.Replace("删除维修单 ", "删除售后维修工单 ");
-            if (msg.IndexOf("售后维修工单", StringComparison.Ordinal) >= 0) return msg;
-            if (System.Text.RegularExpressions.Regex.IsMatch(msg, @"\bSR20\d{6,}\b"))
-            {
-                msg = System.Text.RegularExpressions.Regex.Replace(msg, @"\b(SR20\d{6,})\b", "售后维修工单 $1");
-                if (msg.IndexOf("新增", StringComparison.Ordinal) >= 0 && msg.IndexOf("发生了", StringComparison.Ordinal) < 0) return msg;
-            }
-            return HumanizeAfterSalesFallbackMessage(e);
+            if (msg.IndexOf("维修单 ", StringComparison.Ordinal) >= 0
+                || msg.IndexOf("新增维修单", StringComparison.Ordinal) >= 0
+                || msg.IndexOf("修改维修单", StringComparison.Ordinal) >= 0
+                || msg.IndexOf("删除维修单", StringComparison.Ordinal) >= 0)
+                return msg;
+            if (e.Module != "售后维修工单" && !(e.EntityCode ?? "").StartsWith("SR", StringComparison.OrdinalIgnoreCase)
+                && msg.IndexOf("售后维修", StringComparison.Ordinal) < 0
+                && !System.Text.RegularExpressions.Regex.IsMatch(msg, @"SR20\d{6,}"))
+                return msg;
+            msg = msg.Replace("新增售后维修工单 ", "新增维修单 ");
+            msg = msg.Replace("修改售后维修工单 ", "修改维修单 ");
+            msg = msg.Replace("删除售后维修工单 ", "删除维修单 ");
+            msg = msg.Replace("新增售后维修工单", "新增维修单 ");
+            msg = msg.Replace("修改售后维修工单", "修改维修单 ");
+            msg = msg.Replace("删除售后维修工单", "删除维修单 ");
+            if (msg.IndexOf("维修单 SR", StringComparison.OrdinalIgnoreCase) < 0)
+                msg = System.Text.RegularExpressions.Regex.Replace(msg, @"\b(SR20\d{6,})\b", "维修单 $1");
+            return msg;
         }
 
         static void NormalizeOperationLogEntry(OperationLogEntry e)
@@ -285,7 +222,7 @@ namespace SupplierErpApp
             string code = e.EntityCode ?? "";
             string module = e.Module ?? "";
             string entityType = e.EntityType ?? "";
-            TryResolveAfterSalesLogFromDetail(msg + " " + code + " " + (e.Action ?? ""), ref module, ref entityType, ref code, e.Action);
+            TryResolveAfterSalesLogFromDetail(msg + " " + code + " " + (e.Action ?? ""), ref module, ref entityType, ref code);
             e.Module = module;
             e.EntityType = entityType;
             if (!string.IsNullOrWhiteSpace(code)) e.EntityCode = code;
@@ -318,7 +255,6 @@ namespace SupplierErpApp
                     Message = SanitizeLogText(FormatOperationLogMessage(action, detail, module, act)),
                     Error = SanitizeLogText(error),
                     Api = apiOverride ?? (ctx ?? _auditContext)?.Request?.HttpMethod + " " + (ctx ?? _auditContext)?.Request?.Url?.AbsolutePath,
-                    UserAgent = SanitizeLogText(GetClientUserAgent(ctx ?? _auditContext)),
                     BackupPath = backupPath ?? ""
                 };
                 lock (DataLock)
@@ -383,7 +319,6 @@ namespace SupplierErpApp
             if (pageSize < 1) pageSize = 50;
             if (pageSize > 500) pageSize = 500;
             var all = LoadOperationLogs();
-            foreach (var x in all) NormalizeOperationLogEntry(x);
             IEnumerable<OperationLogEntry> q = all;
             if (!string.IsNullOrWhiteSpace(from)) q = q.Where(x => string.Compare(x.Time, from, StringComparison.Ordinal) >= 0);
             if (!string.IsNullOrWhiteSpace(to)) q = q.Where(x => string.Compare(x.Time, to + " 23:59:59", StringComparison.Ordinal) <= 0);
@@ -399,7 +334,7 @@ namespace SupplierErpApp
                     || (x.EntityCode ?? "").IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0
                     || (x.Username ?? "").IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0);
             }
-            var list = q.ToList();
+            var list = q.Select(x => { var c = x; NormalizeOperationLogEntry(c); return c; }).ToList();
             int total = list.Count;
             var items = list.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
             return new OperationLogQueryResult { Items = items, Total = total, Page = page, PageSize = pageSize };
@@ -431,17 +366,14 @@ namespace SupplierErpApp
             var q = ctx.Request.QueryString;
             var result = QueryOperationLogs(q["from"], q["to"], q["username"], q["module"], q["action"], q["result"], q["keyword"], 1, 10000);
             var sb = new StringBuilder();
-            sb.AppendLine("时间,操作人,IP,UserAgent,模块,操作类型,业务类型,业务ID,业务编号,业务名称,结果,摘要,失败原因,接口,备份路径");
+            sb.AppendLine("时间,操作人,IP,模块,操作类型,业务编号,名称摘要,结果,摘要,失败原因,接口,备份路径");
             foreach (var x in result.Items)
             {
                 sb.Append(Csv(x.Time)).Append(',')
                     .Append(Csv(x.DisplayName + "(" + x.Username + ")")).Append(',')
                     .Append(Csv(x.Ip)).Append(',')
-                    .Append(Csv(x.UserAgent)).Append(',')
                     .Append(Csv(x.Module)).Append(',')
                     .Append(Csv(x.Action)).Append(',')
-                    .Append(Csv(x.EntityType)).Append(',')
-                    .Append(Csv(x.EntityId)).Append(',')
                     .Append(Csv(x.EntityCode)).Append(',')
                     .Append(Csv(x.EntityName)).Append(',')
                     .Append(Csv(x.Result)).Append(',')

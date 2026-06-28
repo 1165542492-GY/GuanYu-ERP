@@ -1,0 +1,251 @@
+﻿**********************
+Windows PowerShell 脚本开始
+开始时间: 20260628112321
+用户名: DESKTOP-81CRIS4\Administrator
+RunAs 用户: DESKTOP-81CRIS4\Administrator
+配置名称: 
+计算机: DESKTOP-81CRIS4 (Microsoft Windows NT 10.0.19042.0)
+主机应用程序: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command if((Get-ExecutionPolicy ) -ne 'AllSigned') { Set-ExecutionPolicy -Scope Process Bypass }; & 'C:\Users\Administrator\Desktop\ERP_Ver29_rc11_防闪退最终复核.ps1'
+进程 ID: 8264
+PSVersion: 5.1.19041.1682
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.1682
+BuildVersion: 10.0.19041.1682
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+已启动脚本，输出文件为 C:\Users\Administrator\Documents\ERP\docs\worklog\reports\rc11_final_verify_noflash_20260628_112321\powershell_transcript_20260628_112321.txt
+
+========== 基础信息 ==========
+ProjectRoot: C:\Users\Administrator\Documents\ERP
+Timestamp: 20260628_112321
+LogDir: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\rc11_final_verify_noflash_20260628_112321
+ZipFile: C:\Users\Administrator\Documents\ERP\docs\worklog\reviews\ERP_Ver29_rc11防闪退最终复核日志给ChatGPT_20260628_112321.zip
+边界确认：不同步正式App、不tag、不执行006、不接库存、不commit、不push
+
+========== 当前目录 ==========
+
+
+========== 关闭旧 ERP 进程，解除 exe 锁定 ==========
+
+========== 确认 ERP 进程是否关闭 ==========
+Path
+----
+C:\Users\Administrator\Documents\ERP
+
+Id      : 9436
+Handles : 443
+CPU     : 0.34375
+SI      : 1
+Name    : 冠誉制造ERP
+
+
+Id      : 9436
+Handles : 443
+CPU     : 0.34375
+SI      : 1
+Name    : 冠誉制造ERP
+
+警告：仍检测到 ERP 进程，可能会导致 bin\Debug build 被锁。
+
+========== git status -sb 构建前 ==========
+## codex/ver2.8-basic-business-framework...origin/codex/ver2.8-basic-business-framework
+ M AfterSalesServiceOrder.cs
+ M App.html
+ M Business.html
+ M ERP.csproj
+ M Finance.html
+ M OperationLog.cs
+ M OperationLog.html
+ M VERSION.md
+ M docs/worklog/ERP-Ver2.9-浠诲姟鎬昏〃.md
+ M docs/worklog/ERP-Ver2.9-鎵ц鍙拌处.md
+ M tools/erp-agent/scripts/check_ver29_pages.ps1
+?? docs/worklog/reports/rc11_final_verify_20260628_112108/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112234/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112321/
+?? docs/worklog/reports/ver29_api_health_20260628_105114.md
+?? docs/worklog/reports/ver29_api_health_20260628_105937.md
+?? docs/worklog/reports/ver29_api_health_20260628_110646.md
+?? docs/worklog/reports/ver29_api_health_20260628_111723.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105115.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105938.md
+?? docs/worklog/reports/ver29_pages_check_20260628_110647.md
+?? docs/worklog/reports/ver29_pages_check_20260628_111723.md
+?? docs/worklog/reports/ver29_rc11_after_sales_audit_permission_closure_20260628_105208.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105058.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105934.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_110630.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_111707.md
+?? docs/worklog/reviews/
+?? tools/erp-agent/tasks/done/011_Ver29_after_sales_audit_permission_closure.md
+ExitCode: 0
+0
+
+========== git status --short 构建前 ==========
+ M AfterSalesServiceOrder.cs
+ M App.html
+ M Business.html
+ M ERP.csproj
+ M Finance.html
+ M OperationLog.cs
+ M OperationLog.html
+ M VERSION.md
+ M docs/worklog/ERP-Ver2.9-浠诲姟鎬昏〃.md
+ M docs/worklog/ERP-Ver2.9-鎵ц鍙拌处.md
+ M tools/erp-agent/scripts/check_ver29_pages.ps1
+?? docs/worklog/reports/rc11_final_verify_20260628_112108/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112234/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112321/
+?? docs/worklog/reports/ver29_api_health_20260628_105114.md
+?? docs/worklog/reports/ver29_api_health_20260628_105937.md
+?? docs/worklog/reports/ver29_api_health_20260628_110646.md
+?? docs/worklog/reports/ver29_api_health_20260628_111723.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105115.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105938.md
+?? docs/worklog/reports/ver29_pages_check_20260628_110647.md
+?? docs/worklog/reports/ver29_pages_check_20260628_111723.md
+?? docs/worklog/reports/ver29_rc11_after_sales_audit_permission_closure_20260628_105208.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105058.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105934.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_110630.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_111707.md
+?? docs/worklog/reviews/
+?? tools/erp-agent/tasks/done/011_Ver29_after_sales_audit_permission_closure.md
+ExitCode: 0
+0
+
+========== dotnet build .\ERP.csproj 正常 Debug 构建 ==========
+ExitCode: 0
+正常 Debug 构建失败，继续尝试 alt 输出目录构建，方便判断是否只是 exe 锁定。
+
+========== dotnet build -o bin\rc11-final-build-check alt 构建 ==========
+  姝ｅ湪纭畾瑕佽繕鍘熺殑椤圭洰鈥?
+  鎵€鏈夐」鐩潎鏄渶鏂扮殑锛屾棤娉曡繕鍘熴€?
+  ERP -> C:\Users\Administrator\Documents\ERP\bin\rc11-final-build-check\鍐犺獕鍒堕€燛RP.dll
+
+宸叉垚鍔熺敓鎴愩€?
+    0 涓鍛?
+    0 涓敊璇?
+
+宸茬敤鏃堕棿 00:00:01.81
+ExitCode: 0
+0
+
+========== 检查 Debug exe 是否存在 ==========
+EXE 存在：C:\Users\Administrator\Documents\ERP\bin\Debug\net8.0-windows\冠誉制造ERP.exe
+
+========== 启动新构建 ERP ==========
+已启动：C:\Users\Administrator\Documents\ERP\bin\Debug\net8.0-windows\冠誉制造ERP.exe
+
+========== 检查 8787 首页 HTTP 状态 ==========
+HTTP StatusCode: 200
+首页包含 erpHumanizeError：是，新页面内容已加载。
+首页包含 erpEmptyHtml：是。
+
+========== 执行 Ver2.9 回归脚本 ==========
+未找到 run_ver29_regression.ps1。
+
+========== git status -sb 最终 ==========
+## codex/ver2.8-basic-business-framework...origin/codex/ver2.8-basic-business-framework
+ M AfterSalesServiceOrder.cs
+ M App.html
+ M Business.html
+ M ERP.csproj
+ M Finance.html
+ M OperationLog.cs
+ M OperationLog.html
+ M VERSION.md
+ M docs/worklog/ERP-Ver2.9-浠诲姟鎬昏〃.md
+ M docs/worklog/ERP-Ver2.9-鎵ц鍙拌处.md
+ M tools/erp-agent/scripts/check_ver29_pages.ps1
+?? docs/worklog/reports/rc11_final_verify_20260628_112108/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112234/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112321/
+?? docs/worklog/reports/ver29_api_health_20260628_105114.md
+?? docs/worklog/reports/ver29_api_health_20260628_105937.md
+?? docs/worklog/reports/ver29_api_health_20260628_110646.md
+?? docs/worklog/reports/ver29_api_health_20260628_111723.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105115.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105938.md
+?? docs/worklog/reports/ver29_pages_check_20260628_110647.md
+?? docs/worklog/reports/ver29_pages_check_20260628_111723.md
+?? docs/worklog/reports/ver29_rc11_after_sales_audit_permission_closure_20260628_105208.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105058.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105934.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_110630.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_111707.md
+?? docs/worklog/reviews/
+?? tools/erp-agent/tasks/done/011_Ver29_after_sales_audit_permission_closure.md
+ExitCode: 0
+0
+
+========== git status --short 最终 ==========
+ M AfterSalesServiceOrder.cs
+ M App.html
+ M Business.html
+ M ERP.csproj
+ M Finance.html
+ M OperationLog.cs
+ M OperationLog.html
+ M VERSION.md
+ M docs/worklog/ERP-Ver2.9-浠诲姟鎬昏〃.md
+ M docs/worklog/ERP-Ver2.9-鎵ц鍙拌处.md
+ M tools/erp-agent/scripts/check_ver29_pages.ps1
+?? docs/worklog/reports/rc11_final_verify_20260628_112108/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112234/
+?? docs/worklog/reports/rc11_final_verify_noflash_20260628_112321/
+?? docs/worklog/reports/ver29_api_health_20260628_105114.md
+?? docs/worklog/reports/ver29_api_health_20260628_105937.md
+?? docs/worklog/reports/ver29_api_health_20260628_110646.md
+?? docs/worklog/reports/ver29_api_health_20260628_111723.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105115.md
+?? docs/worklog/reports/ver29_pages_check_20260628_105938.md
+?? docs/worklog/reports/ver29_pages_check_20260628_110647.md
+?? docs/worklog/reports/ver29_pages_check_20260628_111723.md
+?? docs/worklog/reports/ver29_rc11_after_sales_audit_permission_closure_20260628_105208.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105058.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_105934.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_110630.md
+?? docs/worklog/reports/ver29_regression_summary_20260628_111707.md
+?? docs/worklog/reviews/
+?? tools/erp-agent/tasks/done/011_Ver29_after_sales_audit_permission_closure.md
+ExitCode: 0
+0
+
+========== 生成摘要文件 ==========
+
+========== 收集最新回归报告 ==========
+
+========== 打包日志 ==========
+ZipArchiveHelper : 文件“C:\Users\Administrator\Documents\ERP\docs\worklog\reports\rc11_final_verify_noflash_20260628_11232
+1\powershell_transcript_20260628_112321.txt”正由另一进程使用，因此该进程无法访问此文件。
+所在位置 C:\Windows\system32\WindowsPowerShell\v1.0\Modules\Microsoft.PowerShell.Archive\Microsoft.PowerShell.Archive.psm1:6
+32 字符: 30
++ ... sArchived = ZipArchiveHelper $sourceFilePaths $destinationPath $compr ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : PermissionDenied: (C:\Users\Admini...0628_112321.txt:String) [Write-Error], IOException
+    + FullyQualifiedErrorId : CompressArchiveUnauthorizedAccessError,ZipArchiveHelper
+ZipArchiveHelper : 文件“C:\Users\Administrator\Documents\ERP\docs\worklog\reports\rc11_final_verify_noflash_20260628_1
+12321\powershell_transcript_20260628_112321.txt”正由另一进程使用，因此该进程无法访问此文件。
+所在位置 C:\Windows\system32\WindowsPowerShell\v1.0\Modules\Microsoft.PowerShell.Archive\Microsoft.PowerShell.Archive.p
+sm1:632 字符: 30
++ ... sArchived = ZipArchiveHelper $sourceFilePaths $destinationPath $compr ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : PermissionDenied: (C:\Users\Admini...0628_112321.txt:String) [Write-Error], IOException
+    + FullyQualifiedErrorId : CompressArchiveUnauthorizedAccessError,ZipArchiveHelper
+
+PS>TerminatingError(New-Object):“使用“1”个参数调用“.ctor”时发生异常:“流不可读。””
+PS>TerminatingError(New-Object):“使用“1”个参数调用“.ctor”时发生异常:“流不可读。””
+>> TerminatingError(New-Object):“使用“1”个参数调用“.ctor”时发生异常:“流不可读。””
+>> TerminatingError(New-Object):“使用“1”个参数调用“.ctor”时发生异常:“流不可读。””
+PS>TerminatingError(New-Object):“使用“1”个参数调用“.ctor”时发生异常:“流不可读。””
+
+========== 脚本发生异常 ==========
+异常信息：使用“1”个参数调用“.ctor”时发生异常:“流不可读。”
+**********************
+Windows PowerShell 脚本结束
+结束时间: 20260628112334
+**********************

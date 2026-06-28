@@ -65,8 +65,6 @@ $sourceMarkers = @(
     @{ Page = "售后维修生成应收记录"; Source = "AfterSalesServiceOrder.cs"; Marker = "售后维修生成应收"; Risk = "P1" }
     @{ Page = "操作记录售后模块解析"; Source = "OperationLog.cs"; Marker = "售后维修工单"; Risk = "P1" }
     @{ Page = "操作记录列表精简"; Source = "OperationLog.html"; Marker = "oplog-table-compact"; Risk = "P1" }
-    @{ Page = "全系统提示人话化"; Source = "App.html"; Marker = "erpHumanizeError"; Risk = "P1" }
-    @{ Page = "全系统空数据提示"; Source = "App.html"; Marker = "erpEmptyHtml"; Risk = "P2" }
 )
 
 $homeResult = Test-Ver29Http -Url "$BaseUrl/" -TimeoutSec $TimeoutSec -AcceptableStatus @(200)

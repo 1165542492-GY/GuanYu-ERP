@@ -210,32 +210,21 @@ namespace SupplierErpApp
             string no = (item.ServiceNo ?? "").Trim();
             string cust = (item.CustomerName ?? "").Trim();
             string status = (item.Status ?? "").Trim();
-            string fault = (item.FaultDescription ?? "").Trim();
-            if (fault.Length > 40) fault = fault.Substring(0, 40) + "…";
             string amt = item.ReceivableAmount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(extra) && extra.IndexOf("应收单:", StringComparison.Ordinal) >= 0)
             {
                 string recNo = extra.Replace("应收单:", "").Trim();
-                return string.Format("售后维修工单 {0} 已生成应收 {1}，客户：{2}，应收 {3} 元", no, recNo, cust, amt);
+                return string.Format("维修单 {0} 已生成应收 {1}，客户 {2}，应收 {3} 元", no, recNo, cust, amt);
             }
-            if (!string.IsNullOrWhiteSpace(oldStatus) && oldStatus != status)
-            {
-                if (status == "已取消")
-                    return string.Format("关闭售后维修工单 {0}，处理结果：{1}", no, string.IsNullOrWhiteSpace(item.RepairResult) ? status : item.RepairResult.Trim());
-                if (oldStatus == "已取消")
-                    return string.Format("重新打开售后维修工单 {0}", no);
-                string step = string.IsNullOrWhiteSpace(extra) ? "状态变更" : extra;
-                return string.Format("售后维修工单 {0} 状态由「{1}」变更为「{2}」", no, oldStatus, status);
-            }
+            if (!string.IsNullOrWhiteSpace(oldStatus) && oldStatus != status && !string.IsNullOrWhiteSpace(extra))
+                return string.Format("维修单 {0} 已{1}（{2}→{3}），客户 {4}，应收 {5} 元", no, extra, oldStatus, status, cust, amt);
             if ((action ?? "").IndexOf("删除", StringComparison.Ordinal) >= 0)
-                return string.Format("删除售后维修工单 {0}", no);
+                return string.Format("删除维修单 {0}，客户 {1}，{2}", no, cust, status);
             if ((action ?? "").IndexOf("新增", StringComparison.Ordinal) >= 0)
-                return string.Format("新增售后维修工单 {0}，客户：{1}，问题：{2}", no, cust, string.IsNullOrWhiteSpace(fault) ? "（未填）" : fault);
+                return string.Format("新增维修单 {0}，客户 {1}，{2}，应收 {3} 元", no, cust, status, amt);
             if ((action ?? "").IndexOf("修改", StringComparison.Ordinal) >= 0)
-                return string.Format("修改售后维修工单 {0}", no);
-            if (!string.IsNullOrWhiteSpace(no))
-                return string.Format("售后维修工单 {0} 发生了操作，客户：{1}", no, cust);
-            return string.Format("售后维修相关操作，客户：{0}", cust);
+                return string.Format("修改维修单 {0}，客户 {1}，{2}，应收 {3} 元", no, cust, status, amt);
+            return string.Format("维修单 {0}，客户 {1}，{2}，应收 {3} 元", no, cust, status, amt);
         }
 
         static void AuditAfterSalesServiceOrder(UserSession user, string action, AfterSalesServiceOrder item, string oldStatus = null, string extra = null)

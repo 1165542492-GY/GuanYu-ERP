@@ -214,7 +214,7 @@ var lines=[];
 if(BIZ_DELETE_LINK_VIEWS.indexOf(cfg.view)>=0&&item&&item.Status==='已确认')lines.push('删除已确认单据可能影响库存、应收或应付数据。确定继续删除吗？');
 if(cfg.view==='receivableView'&&item&&((item.ReceiptDetails&&item.ReceiptDetails.length)||numVal(item.ReceivedAmount)>0))lines.push('删除有关联明细的单据可能导致数据不一致，请确认已核对相关业务。');
 if(cfg.view==='payableView'&&item&&((item.PaymentDetails&&item.PaymentDetails.length)||numVal(item.PaidAmount)>0))lines.push('删除有关联明细的单据可能导致数据不一致，请确认已核对相关业务。');
-lines.push('确定要删除「'+(item&&item.Code||'该记录')+'」吗？\n删除后不可恢复。');
+lines.push('确定删除“'+(item&&item.Code||'')+'”吗？\n删除后不可直接恢复。');
 return lines.join('\n\n');
 }
 var bizModules={
@@ -803,7 +803,7 @@ var mod=bizImpactModule(cfg);
 if(mod){
 var payload={};Object.keys(body).forEach(function(k){payload[k]=body[k];});
 if(!(await runWithOperationImpactCheck(mod,'confirm',isEdit?st.editing:'',payload,{actionLabel:'确认',objectLabel:(body.Code||'')},async function(){return true})))return;
-}else if(!(await confirmAction({title:'确认保存',message:'当前单据保存为「已确认」后，可能会影响库存、应收或应付数据。\n\n确定继续保存吗？',level:'warning',confirmText:'确认保存'})))return;
+}else if(!window.confirm('当前单据保存为「已确认」后，可能会影响库存、应收或应付数据。确定继续保存吗？'))return;
 }
 if(isEdit){
 var modEdit=bizImpactModule(cfg);
@@ -984,7 +984,7 @@ function bizRender(cfg){
 var st=bizEnsureState(cfg.view),rows=bizVisibleRows(cfg),p=cfg.prefix,canEdit=bizCan(cfg,'edit'),canDel=bizCan(cfg,'delete'),canBatch=cfg.batch&&bizCan(cfg,'delete');
 var body=document.getElementById(p+'Body');if(!body)return;
 var listFields=bizListFields(cfg),colSpan=listFields.length+4+(cfg.batch?1:0);
-if(!bizCan(cfg,'view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(colSpan,'perm'):'<tr><td colspan="'+colSpan+'" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!bizCan(cfg,'view')){body.innerHTML='<tr><td colspan="'+colSpan+'" class="empty">无权限查看</td></tr>';return}
 body.innerHTML=rows.length?rows.map(function(x){
 var checkCell=cfg.batch?'<td class="col-check">'+(canBatch?'<input type="checkbox"'+(st.selected.has(x.Id)?' checked':'')+' onchange="bizToggleSelect(\''+cfg.view+'\',\''+x.Id+'\',this.checked)">':'')+'</td>':'';
 var cells=listFields.map(function(f){
@@ -999,7 +999,7 @@ if(canEdit)actions+='<button class="action" onclick="bizEdit(\''+cfg.view+'\',\'
 if(canDel)actions+='<button class="action del" onclick="bizDelete(\''+cfg.view+'\',\''+x.Id+'\')">删除</button>';
 if(!actions)actions='-';
 return'<tr>'+checkCell+'<td><b>'+safe(x.Code)+'</b></td>'+cells+'<td>'+formatDateTime(x.UpdatedAt)+'</td><td>'+safe(x.UpdatedBy||'-')+'</td><td>'+actions+'</td></tr>';
-}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(colSpan,'list'):'<tr><td colspan="'+colSpan+'" class="empty">暂无数据，请点击「新增」创建第一条记录。</td></tr>');
+}).join(''):'<tr><td colspan="'+colSpan+'" class="empty">暂无记录，请点击新增</td></tr>';
 document.getElementById(p+'Count').textContent='共 '+rows.length+' 条记录';
 document.getElementById(p+'Total').textContent=(st.data||[]).length;
 document.getElementById(p+'Confirmed').textContent=(st.data||[]).filter(function(x){return x.Status==='已确认'}).length;
@@ -1108,13 +1108,13 @@ return [x.ItemType,x.ItemCode,x.ItemName,x.Spec,x.WarehouseName].join(' ').toLow
 function renderStockList(){
 var rows=stockVisibleRows(),body=document.getElementById('stockBody');
 var guide=document.getElementById('stockEmptyGuide');if(guide)guide.style.display=stockData.length?'none':'block';
-if(!can('stock.view')){if(body)body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(6,'perm'):'<tr><td colspan="6" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!can('stock.view')){if(body)body.innerHTML='<tr><td colspan="6" class="empty">无权限查看</td></tr>';return}
 if(body)body.innerHTML=rows.length?rows.map(function(x){
 var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
 var neg=qty<0;
 var qtyHtml='<b>'+bizQty(qty)+'</b>'+(neg?'<span class="stock-qty-warn">负库存</span>':'');
 return'<tr'+(neg?' class="stock-row-negative"':'')+'><td>'+safe(bizStockTypeLabel(x.ItemType))+'</td><td>'+safe(x.ItemCode||'-')+'</td><td class="company">'+cellEllipsis(x.ItemName||'-','col-company')+'</td><td class="'+(neg?'stock-qty-negative':'')+'">'+qtyHtml+'</td><td>'+money(x.StockAmount||0)+'</td><td><button class="action" onclick="bizOpenStockDetailByCode(\''+String(x.ItemCode||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">查看</button></td></tr>';
-}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(6,'stock'):'<tr><td colspan="6" class="empty">暂无库存数据。请先做采购入库或成品入库；出库/领用会减少库存。</td></tr>');
+}).join(''):'<tr><td colspan="6" class="empty">暂无库存数据。请先做采购入库或成品入库；出库/领用会减少库存。</td></tr>';
 if(document.getElementById('stockCount'))document.getElementById('stockCount').textContent='共 '+rows.length+' 条记录（全部 '+stockData.length+' 品项）';
 var negCount=stockData.filter(function(x){return numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity)<0}).length;
 if(document.getElementById('stockNegativeCount'))document.getElementById('stockNegativeCount').textContent=negCount;
@@ -1393,7 +1393,7 @@ else bizGoNextPage('sales-outbound',{search:search});
 };
 function pwoRender(){
 var body=document.getElementById('pwoBody');if(!body)return;
-if(!pwoCan('view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(12,'perm'):'<tr><td colspan="12" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!pwoCan('view')){body.innerHTML='<tr><td colspan="12" class="empty">无权限查看</td></tr>';return}
 var rows=pwoVisibleRows();
 body.innerHTML=rows.length?rows.map(function(x){
 var acts='';
@@ -1406,7 +1406,7 @@ if(pwoCan('edit')&&x.Status!=='已完成'&&x.Status!=='已取消')acts+='<button
 if(pwoCan('delete')&&(x.Status==='草稿'||x.Status==='已取消'))acts+='<button class="action del" onclick="pwoDelete(\''+x.Id+'\')">删除</button>';
 if(!acts)acts='-';
 return'<tr><td><b>'+safe(x.WorkOrderNo||'-')+'</b></td><td>'+safe(x.SalesOrderNo||'-')+'</td><td>'+pwoCell(x.CustomerName||'-','col-company')+'</td><td>'+pwoCell(x.ProductName||'-','col-company')+'</td><td>'+bizMoney2(x.Quantity)+'</td><td>'+bizMoney2(x.ProducedQuantity)+'</td><td>'+bizMoney2(x.UnproducedQuantity)+'</td><td>'+safe((x.PlannedFinishDate||'').slice(0,10)||'-')+'</td><td><span class="status">● '+safe(x.Status||'-')+'</span></td><td>'+pwoFmtDate(x.UpdatedAt)+'</td><td>'+acts+'</td></tr>';
-}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(12,'list'):'<tr><td colspan="12" class="empty">暂无数据，请点击「新增」创建第一条记录。</td></tr>');
+}).join(''):'<tr><td colspan="12" class="empty">暂无生产工单，请点击新增</td></tr>';
 document.getElementById('pwoCount').textContent='共 '+rows.length+' 条记录';
 pwoUpdateStats();
 var addBtn=document.getElementById('pwoAdd');if(addBtn)addBtn.style.display=pwoCan('add')?'':'none';
@@ -1634,13 +1634,13 @@ window.pwoOpenFinish=pwoOpenFinish;
 function closePwoFinishModal(){var m=document.getElementById('pwoFinishModal');if(m)m.classList.remove('show');pwoFinishId=null}
 async function pwoStart(id){
 if(!pwoCan('edit')){tip('无权限操作');return}
-if(!(await confirmAction({title:'确认开始生产',message:'确定要开始生产该工单吗？\n开始后系统将记录生产进度。',confirmText:'确认'})))return;
+if(!window.confirm('确认开始生产该工单吗？'))return;
 try{await api('/api/production-work-orders/'+id+'/start',{method:'POST',body:'{}'});await loadProductionWorkOrderPage();tip('已开始生产')}catch(e){tip(e.message||'操作失败')}
 }
 window.pwoStart=pwoStart;
 async function pwoCancelWo(id){
 if(!pwoCan('edit')){tip('无权限操作');return}
-if(!(await confirmAction({title:'确认取消工单',message:'确定要取消该生产工单吗？\n取消后工单数据将保留，但不再继续生产。',level:'warning',confirmText:'确认取消'})))return;
+if(!window.confirm('确认取消该生产工单吗？数据将保留。'))return;
 try{await api('/api/production-work-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadProductionWorkOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}
 }
 window.pwoCancelWo=pwoCancelWo;
@@ -1819,11 +1819,11 @@ return acts||'-';
 }
 function asoRender(){
 var body=document.getElementById('asoBody');if(!body)return;
-if(!asoCan('view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(11,'perm'):'<tr><td colspan="11" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!asoCan('view')){body.innerHTML='<tr><td colspan="11" class="empty">无权限查看</td></tr>';return}
 var rows=asoVisibleRows();
 body.innerHTML=rows.length?rows.map(function(x){
 return'<tr><td><b>'+safe(x.ServiceNo||'-')+'</b></td><td>'+safe((x.ServiceDate||'').slice(0,10)||'-')+'</td><td>'+asoCell(x.CustomerName||'-','col-company')+'</td><td>'+asoCell(x.MachineName||'-','col-company')+'</td><td>'+safe(x.ServiceType||'-')+'</td><td>'+safe(x.AssignedWorker||'-')+'</td><td>'+asoMoney(x.ReceivableAmount)+'</td><td>'+asoMoney(x.UnreceivedAmount)+'</td><td><span class="status">● '+safe(x.Status||'-')+'</span></td><td>'+asoFmtDate(x.UpdatedAt)+'</td><td>'+asoBuildListActions(x)+'</td></tr>';
-}).join(''):(window.erpEmptyHtml?window.erpEmptyHtml(11,'list','暂无维修工单，请点击「新增维修工单」创建第一条记录。'):'<tr><td colspan="11" class="empty">暂无维修工单，请点击「新增维修工单」创建第一条记录。</td></tr>');
+}).join(''):'<tr><td colspan="11" class="empty">暂无维修工单，点击「新增维修工单」</td></tr>';
 document.getElementById('asoCount').textContent='共 '+rows.length+' 条记录';
 var addBtn=document.getElementById('asoAdd');if(addBtn)addBtn.style.display=asoCan('add')?'':'none';
 var expBtn=document.getElementById('asoExport');if(expBtn)expBtn.style.display=asoCan('view')?'':'none';
@@ -1885,11 +1885,11 @@ window.asoOpenEdit=asoOpenEdit;
 async function asoConfirmDispatch(id){if(!asoCan('edit'))return;try{await api('/api/after-sales-service-orders/'+id+'/confirm-dispatch',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已确认派工')}catch(e){tip(e.message||'操作失败')}}
 async function asoStart(id){if(!asoCan('edit'))return;try{await api('/api/after-sales-service-orders/'+id+'/start',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已开始维修')}catch(e){tip(e.message||'操作失败')}}
 async function asoFinish(id){if(!asoCan('edit'))return;try{await api('/api/after-sales-service-orders/'+id+'/finish',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已完成维修')}catch(e){tip(e.message||'操作失败')}}
-async function asoSettle(id){if(!asoCan('edit'))return;if(!(await confirmAction({title:'确认结算',message:'确定要结算该维修单吗？\n结算后未收金额将归零，请确认费用已核对。',level:'warning',confirmText:'确认结算'})))return;try{await api('/api/after-sales-service-orders/'+id+'/settle',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已结算')}catch(e){tip(e.message||'操作失败')}}
-async function asoCancelOrder(id){if(!asoCan('edit'))return;if(!(await confirmAction({title:'确认取消',message:'确定要取消该维修单吗？\n取消后工单将停止处理。',level:'warning',confirmText:'确认取消'})))return;try{await api('/api/after-sales-service-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}}
+async function asoSettle(id){if(!asoCan('edit'))return;if(!window.confirm('确认结算该维修单？结算后未收金额将归零。'))return;try{await api('/api/after-sales-service-orders/'+id+'/settle',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已结算')}catch(e){tip(e.message||'操作失败')}}
+async function asoCancelOrder(id){if(!asoCan('edit'))return;if(!window.confirm('确认取消该维修单？'))return;try{await api('/api/after-sales-service-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}}
 async function asoGenerateReceivable(id){
 if(!asoCan('edit'))return;
-if(!(await confirmAction({title:'生成应收款',message:'确定要为该维修单生成应收款吗？\n生成后不可重复生成，请确认维修费用无误。',level:'warning',confirmText:'确认生成'})))return;
+if(!window.confirm('将为该维修单生成应收款，且不可重复生成。是否继续？'))return;
 try{await api('/api/after-sales-service-orders/'+id+'/generate-receivable',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已生成应收款')}catch(e){tip(e.message||'操作失败')}
 }
 window.asoGenerateReceivable=asoGenerateReceivable;
