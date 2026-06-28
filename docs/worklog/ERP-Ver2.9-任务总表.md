@@ -80,6 +80,38 @@
 
 ---
 
+## 7. Ver2.9-rc7 回归计划与自动化脚本（008）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已完成（2026-06-28） |
+| **报告** | `docs/worklog/reports/ver29_rc7_regression_plan_20260628_024104.md` |
+| **脚本入口** | `tools/erp-agent/scripts/run_ver29_regression.ps1` |
+| **内容** | |
+| | P0/P1/P2 回归分级与人工验收清单 |
+| | `check_ver29_git_guard.ps1` — Git 工作区守卫 |
+| | `check_ver29_api_health.ps1` — API 健康检查 |
+| | `check_ver29_pages.ps1` — 核心页面嵌入标记检查 |
+| | `run_ver29_regression.ps1` — build + 汇总报告 |
+
+---
+
+## 8. Ver2.9-rc8 表单简化与自动关联
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已开发（2026-06-28），待浏览器验收 |
+| **报告** | `docs/worklog/reports/ver29_rc8_form_simplification_auto_link_20260628_092217.md` |
+| **涉及文件** | `App.html`、`Business.html`、`OperationLog.html`、`Program.cs`、`TestData.html`、`check_ver29_api_health.ps1` |
+| **内容** | |
+| | 采购单/批量、采购入库（Path A/B）、BOM、机型成本、生产领用、成品入库表单减负 |
+| | 应收/应付关联只读、库存汇总引导与筛选 |
+| | 测试数据导入结果分级展示 |
+| | 操作记录详情弹窗关闭修复 |
+| | `/api/info` 401/403 回归脚本误判修复 |
+
+---
+
 ## 阶段依赖关系
 
 ```
@@ -87,8 +119,8 @@ rc1 首页看板 ──► rc2 单据关联 ──► rc3 表格优化
                       │
                       ├──► rc4 生产工单（005）
                       ├──► rc6 下一步按钮（007，优先于库存深化）
+                      ├──► rc7 回归计划（008）◄── 006/009 前必跑
                       ├──► 售后维修（009，独立模块）
-                      ├──► rc8 回归计划
                       └──► rc5 仓库类型（006，最后做）
 ```
 

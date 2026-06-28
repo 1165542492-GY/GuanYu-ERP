@@ -115,7 +115,7 @@ function renderOplogDetail(d){
     +'<div class="oplog-detail-row"><span class="k">备份路径</span><span class="v">'+esc(dash(d.BackupPath))+'</span></div></div></div>';
 }
 function openOplogDetailModal(){var m=qs('oplogDetailModal');if(m)m.classList.add('show')}
-function closeOplogDetailModal(){if(window.erpUiLock&&window.erpUiLock.guardClose&&window.erpUiLock.guardClose())return;var m=qs('oplogDetailModal');if(m)m.classList.remove('show')}
+function closeOplogDetailModal(){if(window.erpUiLock&&!window.erpUiLock.guardClose())return;var m=qs('oplogDetailModal');if(m)m.classList.remove('show');if(!document.querySelector('.modal.show'))document.body.style.overflow=''}
 async function loadLogs(page){
   var body=qs('oplogListBody');if(!body)return;
   body.innerHTML='<tr><td colspan="10" class="empty">加载中...</td></tr>';
@@ -153,5 +153,6 @@ if(qs('oplogPrevBtn'))qs('oplogPrevBtn').onclick=function(){if(oplogPage>1)loadL
 if(qs('oplogNextBtn'))qs('oplogNextBtn').onclick=function(){var pages=Math.max(1,Math.ceil(oplogTotal/oplogPageSize));if(oplogPage<pages)loadLogs(oplogPage+1)};
 if(qs('oplogDetailClose'))qs('oplogDetailClose').onclick=closeOplogDetailModal;
 if(qs('oplogDetailOk'))qs('oplogDetailOk').onclick=closeOplogDetailModal;
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){var m=qs('oplogDetailModal');if(m&&m.classList.contains('show')){e.preventDefault();closeOplogDetailModal()}}});
 })();
 </script>

@@ -4496,16 +4496,29 @@ namespace SupplierErpApp
         static void ResolvePurchaseOrderLink(PurchaseInbound item)
         {
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.PurchaseOrderId))
-                BizFail("请选择来源采购单");
-            var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
-            if (order == null) BizFail("来源采购单不存在，请先在采购单中创建");
-            item.PurchaseNo = order.Code ?? "";
-            item.SupplierName = order.SupplierName ?? "";
-            item.MaterialId = order.MaterialId ?? "";
-            item.MaterialCode = order.MaterialCode ?? "";
-            item.MaterialName = order.MaterialName ?? "";
-            if (item.InboundPrice <= 0) item.InboundPrice = order.UnitPrice;
+            item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
+            item.SupplierName = (item.SupplierName ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(item.PurchaseOrderId))
+            {
+                var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
+                if (order == null) BizFail("来源采购单不存在，请先在采购单中创建");
+                item.PurchaseNo = order.Code ?? "";
+                item.SupplierName = order.SupplierName ?? "";
+                item.MaterialId = order.MaterialId ?? "";
+                item.MaterialCode = order.MaterialCode ?? "";
+                item.MaterialName = order.MaterialName ?? "";
+                if (item.InboundPrice <= 0) item.InboundPrice = order.UnitPrice;
+                return;
+            }
+            item.PurchaseNo = "";
+            if (string.IsNullOrWhiteSpace(item.SupplierName)) BizFail("请选择供应商或来源采购单");
+            if (string.IsNullOrWhiteSpace(item.MaterialId) && string.IsNullOrWhiteSpace(item.MaterialName))
+                BizFail("请选择物料");
+            if (item.InboundPrice <= 0 && !string.IsNullOrWhiteSpace(item.MaterialId))
+            {
+                var material = LoadMaterials().FirstOrDefault(x => x.Id == item.MaterialId);
+                if (material != null) item.InboundPrice = MaterialDisplayUnitPrice(material);
+            }
         }
 
         static void ResolveBomLinkForPick(ProductionPick item)
@@ -4885,7 +4898,7 @@ namespace SupplierErpApp
             item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源采购单缺少物料信息");
+            if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
             ValidatePurchaseInboundRemainingQty(item);
             if (item.InboundPrice < 0) BizFail("入库单价不能为负数");

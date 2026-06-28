@@ -78,6 +78,8 @@ R0 / R1 / R2 / R3 / R4 之一或组合。参见 docs/worklog/ERP-Ver2.9-风险�
 |------|------|
 | `run_safe_check.ps1` | git 状态、build、启动 ERP、接口检查、生成报告 |
 | `run_task_loop.ps1` | 从 inbox 取任务 → 安全检查 → 生成执行提示 → 可选 Cursor CLI → 再检查 → 更新台账 |
+| `scripts/run_ver29_regression.ps1` | Ver2.9 回归总入口：build → git guard → API → pages → 汇总 |
+| `scripts/check_ver29_*.ps1` | 分项回归检查（见 `scripts/README.md`） |
 
 ## 风险拦截
 

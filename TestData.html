@@ -4,6 +4,16 @@
 .test-data-section{margin-top:18px}
 .test-data-section h4{margin:0 0 10px;font-size:15px}
 .test-data-errors{color:var(--red);white-space:pre-wrap;line-height:1.6;font-size:13px}
+.test-data-warns{color:#b45309;white-space:pre-wrap;line-height:1.6;font-size:13px}
+.test-data-infos{color:var(--muted);white-space:pre-wrap;line-height:1.6;font-size:13px}
+.test-data-conclusion{margin:12px 0;padding:12px 14px;border-radius:8px;font-weight:600;line-height:1.6}
+.test-data-conclusion.ok{background:#ecfdf5;border:1px solid #86efac;color:#15803d}
+.test-data-conclusion.partial{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+.test-data-conclusion.block{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.test-data-sheet-detail{margin:6px 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fafbfd;font-size:12px;line-height:1.6;display:none}
+.test-data-sheet-detail.open{display:block}
+.test-data-sheet-toggle{cursor:pointer;color:var(--blue);font-size:12px;margin-left:8px}
+.test-data-task-banner{margin:10px 0;padding:10px 12px;border:1px solid #d4e4ff;background:#edf4ff;border-radius:8px;color:#3e5f92;font-size:13px;line-height:1.65}
 .test-data-hint{margin:10px 0 0;line-height:1.7;font-size:13px;color:var(--muted)}
 .test-data-hint.warn{color:var(--red)}
 .test-data-hint.ok{color:#15803d}
@@ -30,16 +40,18 @@
 </div>
 <div class="mini">当前文件：<b id="testDataFileName">未选择</b></div>
 <div id="testDataImportHint" class="test-data-hint">请先完成预检查，确认无错误后再正式导入</div>
+<div id="testDataTaskBanner" class="test-data-task-banner" style="display:none"></div>
 <div class="test-data-section" id="testDataPreviewSection" style="display:none">
 <h4>Sheet 识别与预检查结果</h4>
 <div class="test-data-copy-tools" id="testDataPreviewCopyWrap" style="display:none"><button type="button" class="btn" id="testDataCopyPreviewBtn">复制预检查结果</button></div>
 <div class="tablewrap"><table><thead><tr><th>Sheet 名称</th><th>对应模块</th><th>数据条数</th><th>预检查统计</th><th>导入说明</th></tr></thead><tbody id="testDataSheetBody"></tbody></table></div>
 <div id="testDataUnknownWrap" style="display:none;margin-top:10px" class="mini"></div>
-<div class="test-data-section"><h4>预检查错误</h4><div id="testDataPreviewErrors" class="test-data-errors">无</div></div>
+<div class="test-data-section"><h4>预检查明细</h4><div id="testDataPreviewConclusion" class="test-data-conclusion" style="display:none"></div><div id="testDataPreviewErrors" class="test-data-infos">无</div></div>
 </div>
 <div class="test-data-section" id="testDataResultSection" style="display:none">
 <h4>导入结果</h4>
-<div class="test-data-copy-tools" id="testDataResultCopyWrap" style="display:none"><button type="button" class="btn" id="testDataCopyRunBtn">复制导入结果</button></div>
+<div class="test-data-copy-tools" id="testDataResultCopyWrap" style="display:none"><button type="button" class="btn" id="testDataCopyRunBtn">复制导入结果</button><button type="button" class="btn" id="testDataExportRunBtn">导出结果 TXT</button></div>
+<div id="testDataRunConclusion" class="test-data-conclusion" style="display:none"></div>
 <div class="test-data-summary" id="testDataResultSummary"></div>
 <div class="tablewrap"><table><thead><tr><th>模块</th><th>新增</th><th>更新</th><th>跳过</th><th>失败</th><th>失败原因</th></tr></thead><tbody id="testDataResultBody"></tbody></table></div>
 </div>
@@ -58,8 +70,45 @@ function isTestDataImportTaskActive(){return importTaskActive}
 function activateImportTask(){
 if(importTaskActive)return;
 importTaskActive=true;
-if(window.erpUiLock)window.erpUiLock.lockFlow('测试数据导入任务进行中，请先完成、取消或关闭当前任务。');
+if(window.erpUiLock)window.erpUiLock.lockFlow('测试数据导入任务进行中。可点「取消本次导入」退出，或完成预检查/导入后自动结束。');
 updateFlowUi();
+updateTaskBanner();
+}
+function updateTaskBanner(){
+var b=document.getElementById('testDataTaskBanner');
+if(!b)return;
+if(importTaskActive&&!_execMode){
+b.style.display='block';
+b.textContent='当前有进行中的测试数据导入任务。如需退出：请点击下方「取消本次导入」，或完成/关闭预检查与导入流程。返回系统设置列表前也会提示是否取消。';
+}else b.style.display='none';
+}
+function classifyImportMsg(msg){
+var s=String(msg||'');
+if(/快照|仅作为|可忽略|警告/i.test(s))return'warn';
+if(/失败|错误|不存在且|必须|不能|拒绝/i.test(s))return'error';
+return'info';
+}
+function splitSheetMessages(sheet){
+var errs=[],warns=[],infos=[];
+(sheet.Errors||[]).forEach(function(e){
+var t=classifyImportMsg(e);
+if(t==='error')errs.push(e);else if(t==='warn')warns.push(e);else infos.push(e);
+});
+return{errs,warns,infos};
+}
+function renderImportConclusion(el,res,isPreview){
+if(!el)return;
+el.style.display='block';
+var failed=typeof res.TotalFailed==='number'?res.TotalFailed:(res.Modules?res.Modules.reduce(function(s,m){return s+(m.Failed||0)},0):0);
+var can=!!res.CanImport;
+if(isPreview){
+if(can&&failed===0){el.className='test-data-conclusion ok';el.textContent='结论：可以导入 — 预检查通过，可执行正式导入。';}
+else if(failed>0){el.className='test-data-conclusion block';el.textContent='结论：必须修复后再导入 — 存在 '+failed+' 项失败，请展开各 Sheet 明细查看原因。';}
+else{el.className='test-data-conclusion partial';el.textContent='结论：不建议导入 — 请核对预检查明细。';}
+}else{
+if(failed===0){el.className='test-data-conclusion ok';el.textContent='结论：导入完成 — 无失败项。';}
+else{el.className='test-data-conclusion partial';el.textContent='结论：部分导入 — 失败 '+failed+' 项，请查看下方失败原因。';}
+}
 }
 function finishImportTask(){
 if(!importTaskActive)return;
@@ -69,6 +118,7 @@ updateFlowUi();
 }
 function updateFlowUi(){
 refreshTestDataButtons();
+updateTaskBanner();
 }
 window.isTestDataImportTaskActive=isTestDataImportTaskActive;
 function cancelTestDataImportFlow(opts){
@@ -180,14 +230,25 @@ function renderPreview(res){
 state.lastPreview=res;
 var sec=document.getElementById('testDataPreviewSection');if(sec)sec.style.display='block';
 var copyWrap=document.getElementById('testDataPreviewCopyWrap');if(copyWrap)copyWrap.style.display='block';
+renderImportConclusion(document.getElementById('testDataPreviewConclusion'),res,true);
 var body=document.getElementById('testDataSheetBody');
 if(body){
-var rows=(res.Sheets||[]).map(function(s){
+var rows=(res.Sheets||[]).map(function(s,idx){
 var tag=s.ReferenceOnly?'<span class="test-data-tag ref">仅参考，不导入</span>':(s.Importable?'<span class="test-data-tag">将导入</span>':'<span class="test-data-tag skip">跳过</span>');
 var stats=s.ReferenceOnly?'-':('新增 '+(s.Added||0)+' · 更新 '+(s.Updated||0)+' · 跳过 '+(s.Skipped||0)+(s.Failed?(' · 失败 '+s.Failed):''));
-return'<tr><td>'+safe(s.SheetName)+'</td><td>'+safe(s.ModuleLabel||'-')+'</td><td>'+(s.RowCount||0)+'</td><td class="mini">'+stats+'</td><td>'+tag+'</td></tr>';
+var split=splitSheetMessages(s);
+var detailId='tdSheetDetail'+idx;
+var detailHtml='';
+if(split.errs.length)detailHtml+='<div class="test-data-errors"><b>错误</b><br>'+split.errs.map(function(x){return safe(x)}).join('<br>')+'</div>';
+if(split.warns.length)detailHtml+='<div class="test-data-warns"><b>警告</b><br>'+split.warns.map(function(x){return safe(x)}).join('<br>')+'</div>';
+if(split.infos.length)detailHtml+='<div class="test-data-infos"><b>提示</b><br>'+split.infos.map(function(x){return safe(x)}).join('<br>')+'</div>';
+if(!detailHtml&&s.Failed>0)detailHtml='<div class="test-data-errors">有 '+s.Failed+' 项失败，详见复制清单</div>';
+return'<tr><td>'+safe(s.SheetName)+(detailHtml?('<span class="test-data-sheet-toggle" data-target="'+detailId+'">展开明细</span>'):'')+'</td><td>'+safe(s.ModuleLabel||'-')+'</td><td>'+(s.RowCount||0)+'</td><td class="mini">'+stats+'</td><td>'+tag+'</td></tr>'+(detailHtml?('<tr><td colspan="5"><div class="test-data-sheet-detail" id="'+detailId+'">'+detailHtml+'</div></td></tr>'):'');
 }).join('');
 body.innerHTML=rows||'<tr><td colspan="5" class="empty">未识别到可导入 Sheet</td></tr>';
+body.querySelectorAll('.test-data-sheet-toggle').forEach(function(el){
+el.onclick=function(){var t=document.getElementById(el.getAttribute('data-target'));if(!t)return;var open=t.classList.toggle('open');el.textContent=open?'收起明细':'展开明细';};
+});
 }
 var unk=document.getElementById('testDataUnknownWrap');
 if(unk){
@@ -197,9 +258,16 @@ else{unk.style.display='none';unk.innerHTML='';}
 }
 var errBox=document.getElementById('testDataPreviewErrors');
 if(errBox){
-var errs=[];
-(res.Sheets||[]).forEach(function(s){if(s.Errors&&s.Errors.length)s.Errors.forEach(function(e){errs.push('['+s.SheetName+'] '+e);});});
-errBox.textContent=errs.length?errs.join('\n'):'无';
+var allErr=[],allWarn=[];
+(res.Sheets||[]).forEach(function(s){
+var sp=splitSheetMessages(s);
+sp.errs.forEach(function(e){allErr.push('['+s.SheetName+'] '+e);});
+sp.warns.forEach(function(e){allWarn.push('['+s.SheetName+'] '+e);});
+});
+var parts=[];
+if(allErr.length)parts.push('<div class="test-data-errors"><b>严重错误 ('+allErr.length+')</b>\n'+allErr.map(function(x){return safe(x)}).join('\n')+'</div>');
+if(allWarn.length)parts.push('<div class="test-data-warns"><b>警告 ('+allWarn.length+')</b>\n'+allWarn.map(function(x){return safe(x)}).join('\n')+'</div>');
+errBox.innerHTML=parts.length?parts.join('\n'):'<span class="test-data-infos">无错误或警告</span>';
 }
 state.fileHash=res.FileHash||'';
 state.totalFailed=typeof res.TotalFailed==='number'?res.TotalFailed:0;
@@ -211,16 +279,19 @@ function renderRun(res){
 state.lastRun=res;
 var sec=document.getElementById('testDataResultSection');if(sec)sec.style.display='block';
 var copyWrap=document.getElementById('testDataResultCopyWrap');if(copyWrap)copyWrap.style.display='block';
+renderImportConclusion(document.getElementById('testDataRunConclusion'),res,false);
 var sum=document.getElementById('testDataResultSummary');
 if(sum)sum.innerHTML='<span>新增 <b>'+(res.TotalAdded||0)+'</b></span><span>更新 <b>'+(res.TotalUpdated||0)+'</b></span><span>跳过 <b>'+(res.TotalSkipped||0)+'</b></span><span>失败 <b>'+(res.TotalFailed||0)+'</b></span>';
 var body=document.getElementById('testDataResultBody');
 if(body){
 body.innerHTML=(res.Modules||[]).map(function(m){
 var errs=(m.Errors&&m.Errors.length)?m.Errors.join('；'):'-';
-return'<tr><td>'+safe(m.ModuleLabel||m.ModuleKey)+'</td><td>'+(m.Added||0)+'</td><td>'+(m.Updated||0)+'</td><td>'+(m.Skipped||0)+'</td><td>'+(m.Failed||0)+'</td><td class="test-data-errors" style="white-space:normal">'+safe(errs)+'</td></tr>';
+var errCls=(m.Failed||0)>0?'test-data-errors':'test-data-infos';
+return'<tr><td>'+safe(m.ModuleLabel||m.ModuleKey)+'</td><td>'+(m.Added||0)+'</td><td>'+(m.Updated||0)+'</td><td>'+(m.Skipped||0)+'</td><td>'+(m.Failed||0)+'</td><td class="'+errCls+'" style="white-space:normal">'+safe(errs)+'</td></tr>';
 }).join('')||'<tr><td colspan="6" class="empty">无导入结果</td></tr>';
 }
 finishImportTask();
+updateTaskBanner();
 state.previewPassed=false;
 refreshTestDataButtons();
 setImportHint('pending');
@@ -295,6 +366,13 @@ var copyPreviewBtn=document.getElementById('testDataCopyPreviewBtn');
 if(copyPreviewBtn)copyPreviewBtn.onclick=function(){copyTestDataText(state.lastPreview?buildPreviewCopyText(state.lastPreview):'')};
 var copyRunBtn=document.getElementById('testDataCopyRunBtn');
 if(copyRunBtn)copyRunBtn.onclick=function(){copyTestDataText(state.lastRun?buildRunCopyText(state.lastRun):'')};
+var exportRunBtn=document.getElementById('testDataExportRunBtn');
+if(exportRunBtn)exportRunBtn.onclick=function(){
+var text=state.lastRun?buildRunCopyText(state.lastRun):'';
+if(!text){tip('暂无可导出内容');return}
+var blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='测试数据导入结果_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'')+'.txt';a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);tip('已导出 TXT');
+};
 setImportHint('pending');
 updateFlowUi();
 })();
