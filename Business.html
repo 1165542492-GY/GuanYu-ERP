@@ -1783,8 +1783,28 @@ document.getElementById('asoReceivedAmount').value=item?item.ReceivedAmount||'':
 asoState.partRows=(item&&item.Parts)?item.Parts.map(function(p){return{MaterialId:p.MaterialId||'',MaterialCode:p.MaterialCode||'',MaterialName:p.MaterialName||'',Spec:p.Spec||'-',Unit:p.Unit||'',Quantity:p.Quantity,UnitPrice:p.UnitPrice,Amount:p.Amount,Remark:p.Remark||''}}):[];
 asoRenderParts();
 }
+function asoBuildListNextActions(x){
+if(!x)return '';
+var acts='',id=safe(x.Id);
+if(x.Status==='已取消')return '';
+if(x.Status==='草稿'&&asoCan('edit'))acts+=bizNextBtn('下一步：确认派工','asoConfirmDispatch(\''+id+'\')');
+else if(x.Status==='待派工'&&asoCan('edit'))acts+=bizNextBtn('下一步：开始维修','asoStart(\''+id+'\')');
+else if(x.Status==='维修中'&&asoCan('edit'))acts+=bizNextBtn('下一步：完成维修','asoFinish(\''+id+'\')');
+else if(x.Status==='已完成'){
+if(asoCan('edit')&&numVal(x.ReceivableAmount)>0.0001&&!x.ReceivableId)acts+=bizNextBtn('下一步：生成应收','asoGenerateReceivable(\''+id+'\')');
+else if(asoCan('edit')&&numVal(x.ReceivableAmount)<=0.0001)acts+=bizNextBtn('下一步：结算','asoSettle(\''+id+'\')');
+else if(x.ReceivableId&&can('receivable.view'))acts+=bizNextBtn('下一步：查看应收','asoViewReceivable(\''+safe(x.ReceivableNo||'')+'\')');
+}
+else if(x.Status==='已结算'&&asoCan('view'))acts+=bizNextBtn('下一步：查看详情','asoOpenDetail(\''+id+'\')');
+return acts;
+}
+function asoBuildDetailNextHtml(item){
+var btns=asoBuildListNextActions(item);
+if(!btns)return '';
+return'<div class="biz-detail-item full" style="margin-top:12px"><label>下一步</label><div class="biz-field-hint" style="margin:6px 0 8px">按当前状态引导下一步操作；生成应收需二次确认，且不可重复生成。</div><div class="biz-next-btns" style="display:flex;gap:8px;flex-wrap:wrap">'+btns+'</div></div>';
+}
 function asoBuildListActions(x){
-var id=safe(x.Id),acts='';
+var id=safe(x.Id),acts=asoBuildListNextActions(x);
 if(asoCan('view'))acts+='<button class="action" onclick="asoOpenDetail(\''+id+'\')">查看详情</button>';
 if(asoCan('edit')&&(x.Status==='草稿'||x.Status==='待派工'||x.Status==='维修中'||x.Status==='已完成'))acts+='<button class="action" onclick="asoOpenEdit(\''+id+'\')">编辑</button>';
 if(asoCan('edit')&&x.Status==='草稿')acts+='<button class="action" onclick="asoConfirmDispatch(\''+id+'\')">确认派工</button>';
@@ -1815,11 +1835,11 @@ wireAfterSalesServiceOrderModule();
 try{asoState.data=await api('/api/after-sales-service-orders')||[];asoRender()}catch(e){asoState.data=[];asoRender();tip(e.message||'加载失败')}
 }
 function buildAfterSalesServiceOrderView(){
-var html='<div class="panel"><div class="biz-page-tips"><div class="biz-tip-blue">登记客户报修、派工上门、配件与费用；草稿不扣库存、不自动生成应收。</div><div class="biz-tip-flow">流程：草稿 → 确认派工 → 开始维修 → 完成维修 →（收费时）生成应收 → 结算</div><div class="biz-tip-orange">售后配件出库/扣库存本轮未接入，确认维修单后也不会自动扣库存；后续单独接入。</div></div>';
+var html='<div class="panel"><div class="biz-page-tips"><div class="biz-tip-blue">售后维修用于记录客户设备维修、派工、配件费、人工费和应收款。本轮配件只记录费用，不自动扣库存；需要收费时，维修完成后点生成应收款。</div><div class="biz-tip-flow">流程：草稿 → 确认派工 → 开始维修 → 完成维修 →（收费时）生成应收 → 结算</div></div>';
 html+='<div class="tools"><div class="lefttools"><input class="search" id="asoSearch" placeholder="搜索单号 / 客户 / 设备 / 派工人员"><select id="asoStatusFilter" class="size-select"><option value="">全部状态</option>'+ASO_STATUSES.map(function(s){return'<option value="'+safe(s)+'">'+safe(s)+'</option>'}).join('')+'</select><button class="btn" id="asoReset">重置</button></div>';
 html+='<div><button class="btn" id="asoExport">导出 CSV</button> <button class="btn primary" id="asoAdd" type="button">＋ 新增维修工单</button></div></div>';
 html+='<div class="dual-scroll" id="asoDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>维修单号</th><th>日期</th><th>客户</th><th>设备/机型</th><th>维修类型</th><th>派工人员</th><th>应收金额</th><th>未收金额</th><th>状态</th><th>最后更新</th><th>操作</th></tr></thead><tbody id="asoBody"></tbody></table></div></div>';
-html+='<div class="foot"><span id="asoCount">共 0 条记录</span><span>售后维修工单 · Ver2.9-rc9</span></div></div>';
+html+='<div class="foot"><span id="asoCount">共 0 条记录</span><span>售后维修工单 · Ver2.9-rc10</span></div></div>';
 var el=document.getElementById('afterSalesServiceOrderView');if(el){el.innerHTML=html;if(document.querySelector('.main')&&el.parentElement!==document.querySelector('.main'))document.querySelector('.main').appendChild(el);setTimeout(function(){if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('after-sales-service-order');},0);}
 var root=ensureBizModalRoot();
 if(!document.getElementById('asoModal'))root.insertAdjacentHTML('beforeend',buildAsoModalHtml());
@@ -1842,6 +1862,7 @@ if(item.Parts&&item.Parts.length){
 var pt='<table class="data-table biz-table-compact"><thead><tr><th>编号</th><th>名称</th><th>数量</th><th>单价</th><th>金额</th></tr></thead><tbody>'+item.Parts.map(function(p){return'<tr><td>'+safe(p.MaterialCode||'-')+'</td><td>'+safe(p.MaterialName||'-')+'</td><td>'+bizMoney2(p.Quantity)+'</td><td>'+asoMoney(p.UnitPrice)+'</td><td>'+asoMoney(p.Amount)+'</td></tr>'}).join('')+'</tbody></table>';
 html+=asoDetailRow('配件明细',pt,1);
 }
+html+=asoBuildDetailNextHtml(item);
 document.getElementById('asoDetailBody').innerHTML=html;
 document.getElementById('asoDetailModal').classList.add('show');
 }
@@ -1905,6 +1926,7 @@ var _origInitBusinessUiAs=initBusinessUi;
 initBusinessUi=function(){_origInitBusinessUiAs();initAfterSalesServiceOrderUi()};
 window.loadAfterSalesServiceOrderPage=loadAfterSalesServiceOrderPage;
 window.asoOpenAdd=asoOpenAdd;
+window.asoBuildListNextActions=asoBuildListNextActions;
 window.asoConfirmDispatch=asoConfirmDispatch;window.asoStart=asoStart;window.asoFinish=asoFinish;window.asoSettle=asoSettle;window.asoCancelOrder=asoCancelOrder;
 })();
 </script>

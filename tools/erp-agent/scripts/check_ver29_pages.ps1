@@ -42,6 +42,8 @@ $pageMarkers = @(
     @{ Page = "采购入库"; Source = "Business.html"; Marker = "purchaseInboundView"; Risk = "P0" }
     @{ Page = "生产工单"; Source = "Business.html"; Marker = "productionWorkOrderView"; Risk = "P0" }
     @{ Page = "售后维修工单"; Source = "Business.html"; Marker = "afterSalesServiceOrderView"; Risk = "P0" }
+    @{ Page = "售后维修新增按钮"; Source = "Business.html"; Marker = 'id="asoAdd"'; Risk = "P1" }
+    @{ Page = "售后维修下一步按钮"; Source = "Business.html"; Marker = "asoBuildListNextActions"; Risk = "P1" }
     @{ Page = "生产领用"; Source = "Business.html"; Marker = "productionPickView"; Risk = "P0" }
     @{ Page = "成品入库"; Source = "Business.html"; Marker = "finishedInboundView"; Risk = "P0" }
     @{ Page = "库存汇总"; Source = "Business.html"; Marker = "stockView"; Risk = "P0" }
@@ -52,6 +54,7 @@ $pageMarkers = @(
     @{ Page = "合同"; Source = "Contract.html"; Marker = "contractView"; Risk = "P0" }
     @{ Page = "业务下一步按钮"; Source = "Business.html"; Marker = "buildBizView"; Risk = "P1" }
     @{ Page = "测试数据"; Source = "TestData.html"; Marker = "systemSettingTestDataPanel"; Risk = "P1" }
+    @{ Page = "测试数据售后维修Sheet"; Source = "TestData.html"; Marker = "售后维修工单 Sheet"; Risk = "P1" }
     @{ Page = "数据备份/维护"; Source = "App.html"; Marker = "backupListTable"; Risk = "P1" }
     @{ Page = "子账号/权限"; Source = "App.html"; Marker = "systemSettingAccountPanel"; Risk = "P1" }
 )

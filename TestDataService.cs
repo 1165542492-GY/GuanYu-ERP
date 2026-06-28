@@ -24,6 +24,8 @@ namespace SupplierErpApp
             { "采购入库", "purchaseInbounds" },
             { "生产领用", "productionPicks" },
             { "成品入库", "finishedInbounds" },
+            { "售后维修工单", "afterSalesServiceOrders" },
+            { "AfterSalesServiceOrders", "afterSalesServiceOrders" },
             { "应收款", "receivables" },
             { "应付款", "payables" },
             { "财务收支", "financeTransactions" },
@@ -45,6 +47,7 @@ namespace SupplierErpApp
             { "purchaseInbounds", "采购入库" },
             { "productionPicks", "生产领用" },
             { "finishedInbounds", "成品入库" },
+            { "afterSalesServiceOrders", "售后维修工单" },
             { "receivables", "应收款" },
             { "payables", "应付款" },
             { "financeTransactions", "财务收支" },
@@ -56,7 +59,7 @@ namespace SupplierErpApp
         static readonly string[] TestDataImportOrder = {
             "suppliers", "customers", "materials", "boms", "modelCosts",
             "purchaseOrders", "purchaseInbounds", "salesOrders", "salesOutbounds",
-            "productionPicks", "finishedInbounds", "receivables", "payables",
+            "afterSalesServiceOrders", "productionPicks", "finishedInbounds", "receivables", "payables",
             "financeTransactions", "financeOpening"
         };
 
@@ -87,6 +90,7 @@ namespace SupplierErpApp
                 WritePurchaseInboundSheet(wb);
                 WriteProductionPickSheet(wb);
                 WriteFinishedInboundSheet(wb);
+                WriteAfterSalesServiceOrderSheet(wb);
                 WriteReceivableSheet(wb);
                 WritePayableSheet(wb);
                 WriteFinanceSheet(wb);
@@ -566,6 +570,26 @@ namespace SupplierErpApp
                 WriteRow(ws, r++, x.Code, x.BomCode, x.ProductName, x.Quantity, Money2(x.UnitCost), Money2(x.Amount), DateOnly(x.InboundDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
         }
 
+        static void WriteAfterSalesServiceOrderSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "售后维修工单", new[] {
+                "维修单号", "登记日期", "客户", "联系人", "电话", "设备名称", "规格型号", "故障描述", "维修类型", "派工人员",
+                "上门日期", "维修结果", "状态", "配件明细JSON", "配件费", "人工费", "其他费用", "优惠金额", "应收金额", "已收金额", "未收金额",
+                "关联应收单号", "备注", "最后更新", "操作人"
+            });
+            int r = 2;
+            foreach (var x in LoadAfterSalesServiceOrders())
+            {
+                string partsJson = (x.Parts == null || x.Parts.Count == 0) ? "" : Json.Serialize(x.Parts);
+                WriteRow(ws, r++, x.ServiceNo, DateOnly(x.ServiceDate), x.CustomerName, x.ContactName, x.ContactPhone, x.MachineName, x.MachineSpec,
+                    x.FaultDescription, x.ServiceType, x.AssignedWorker, DateOnly(x.VisitDate), x.RepairResult, x.Status, partsJson,
+                    Money2(x.PartsAmount), Money2(x.LaborAmount), Money2(x.OtherAmount), Money2(x.DiscountAmount),
+                    Money2(x.ReceivableAmount), Money2(x.ReceivedAmount), Money2(x.UnreceivedAmount),
+                    x.ReceivableNo, x.Remark, x.UpdatedAt, x.UpdatedBy);
+            }
+            ws.Cell(r, 1).Value = "说明：配件明细JSON 为配件行数组；导入时按规则重算金额，不自动扣库存、不自动生成应收（可关联已有应收单号）。";
+        }
+
         static void WriteReceivableSheet(XLWorkbook wb)
         {
             var ws = AddSheet(wb, "应收款", new[] { "应收编号", "销售订单号", "客户名称", "应收金额", "已收金额", "未收金额", "到期日期", "状态", "备注", "最后更新", "操作人" });
@@ -624,6 +648,7 @@ namespace SupplierErpApp
                 case "purchaseInbounds": return ImportPurchaseInboundsTest(rows, user, previewOnly, excelCtx);
                 case "productionPicks": return ImportProductionPicksTest(rows, user, previewOnly, excelCtx);
                 case "finishedInbounds": return ImportFinishedInboundsTest(rows, user, previewOnly, excelCtx);
+                case "afterSalesServiceOrders": return ImportAfterSalesServiceOrdersTest(rows, user, previewOnly, excelCtx);
                 case "receivables": return ImportReceivablesTest(rows, user, previewOnly, excelCtx);
                 case "payables": return ImportPayablesTest(rows, user, previewOnly, excelCtx);
                 case "financeTransactions": return ImportFinanceTransactionsTest(rows, user, previewOnly, excelCtx);
@@ -1116,6 +1141,185 @@ namespace SupplierErpApp
             if (previewOnly) importLoop(LoadFinishedInbounds());
             else MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
             res.Errors = errors.ToArray(); return res;
+        }
+
+        static List<AfterSalesPartLine> ParseAfterSalesPartsJsonForImport(string json, int rowNo, TestDataModuleResult res, List<string> errors)
+        {
+            if (Placeholder(json)) return new List<AfterSalesPartLine>();
+            try
+            {
+                var parts = Json.Deserialize<List<AfterSalesPartLine>>(json.Trim());
+                return parts ?? new List<AfterSalesPartLine>();
+            }
+            catch
+            {
+                AddErr(res, errors, rowNo, "配件明细JSON解析失败，请检查格式");
+                return null;
+            }
+        }
+
+        static void ResolveAfterSalesPartsForImport(List<AfterSalesPartLine> parts, List<Material> materials)
+        {
+            if (parts == null) return;
+            foreach (var p in parts)
+            {
+                if (p == null) continue;
+                if (!string.IsNullOrWhiteSpace(p.MaterialId)) continue;
+                var code = (p.MaterialCode ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(code)) continue;
+                var mat = materials.FirstOrDefault(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase));
+                if (mat != null) p.MaterialId = mat.Id;
+            }
+        }
+
+        static void ApplyAfterSalesReceivableLinkFromSheet(AfterSalesServiceOrder item, string receivableNo, AfterSalesServiceOrder existing)
+        {
+            receivableNo = Placeholder(receivableNo) ? "" : receivableNo.Trim();
+            if (!string.IsNullOrWhiteSpace(receivableNo))
+            {
+                var rec = LoadReceivables().FirstOrDefault(x => string.Equals(x.Code, receivableNo, StringComparison.OrdinalIgnoreCase));
+                if (rec == null) BizFail("关联应收单号不存在：" + receivableNo);
+                item.ReceivableId = rec.Id;
+                item.ReceivableNo = rec.Code;
+                return;
+            }
+            if (existing != null && !string.IsNullOrWhiteSpace(existing.ReceivableId))
+            {
+                item.ReceivableId = existing.ReceivableId;
+                item.ReceivableNo = existing.ReceivableNo;
+            }
+        }
+
+        static AfterSalesServiceOrder BuildAfterSalesServiceOrderFromImportRow(Dictionary<string, string> row, AfterSalesServiceOrder existing, List<Material> materials, int rowNo, TestDataModuleResult res, List<string> errors)
+        {
+            string customerName = Cell(row, "客户", "客户名称");
+            string customerCode = Cell(row, "客户编号");
+            if (Placeholder(customerName) && existing != null) customerName = existing.CustomerName;
+            if (Placeholder(customerName)) { AddErr(res, errors, rowNo, "请填写客户"); return null; }
+            var parts = ParseAfterSalesPartsJsonForImport(Cell(row, "配件明细JSON", "配件明细"), rowNo, res, errors);
+            if (parts == null) return null;
+            ResolveAfterSalesPartsForImport(parts, materials);
+            foreach (var p in parts)
+            {
+                if (p == null) continue;
+                if (string.IsNullOrWhiteSpace(p.MaterialId))
+                {
+                    AddErr(res, errors, rowNo, "配件明细缺少有效物料（MaterialId 或物料编号）");
+                    return null;
+                }
+            }
+            var item = new AfterSalesServiceOrder
+            {
+                Id = existing != null ? existing.Id : null,
+                ServiceNo = Cell(row, "维修单号"),
+                ServiceDate = Cell(row, "登记日期", "日期"),
+                CustomerName = customerName,
+                CustomerId = existing != null ? existing.CustomerId : "",
+                ContactName = Cell(row, "联系人"),
+                ContactPhone = Cell(row, "电话", "联系电话"),
+                MachineName = Cell(row, "设备名称", "设备/机型"),
+                MachineSpec = Cell(row, "规格型号"),
+                FaultDescription = Cell(row, "故障描述"),
+                ServiceType = Cell(row, "维修类型"),
+                AssignedWorker = Cell(row, "派工人员"),
+                VisitDate = Cell(row, "上门日期"),
+                RepairResult = Cell(row, "维修结果"),
+                Status = Cell(row, "状态"),
+                Remark = Cell(row, "备注"),
+                Parts = parts,
+                LaborAmount = Money(Cell(row, "人工费")),
+                OtherAmount = Money(Cell(row, "其他费用")),
+                DiscountAmount = Money(Cell(row, "优惠金额", "优惠/减免")),
+                ReceivedAmount = Money(Cell(row, "已收金额"))
+            };
+            if (!Placeholder(customerCode))
+            {
+                var cust = LoadCustomers().FirstOrDefault(x => string.Equals(x.Code, customerCode.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (cust != null) { item.CustomerId = cust.Id; item.CustomerName = cust.Company; }
+            }
+            if (string.IsNullOrWhiteSpace(item.FaultDescription)) { AddErr(res, errors, rowNo, "请填写故障描述"); return null; }
+            try { ApplyAfterSalesReceivableLinkFromSheet(item, Cell(row, "关联应收单号"), existing); }
+            catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); return null; }
+            try { ApplyAfterSalesServiceOrder(item, preserveReceivableLink: !string.IsNullOrWhiteSpace(item.ReceivableId)); }
+            catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); return null; }
+            return item;
+        }
+
+        static TestDataModuleResult ImportAfterSalesServiceOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
+        {
+            var res = NewModuleResult("afterSalesServiceOrders");
+            var errors = new List<string>();
+            bool changed = false;
+            int rowNo = 1;
+            var materials = excelCtx.GetMergedMaterials();
+            Action<List<AfterSalesServiceOrder>> importLoop = list =>
+            {
+                foreach (var row in rows)
+                {
+                    rowNo++;
+                    try
+                    {
+                        string serviceNo = Cell(row, "维修单号");
+                        string customerName = Cell(row, "客户", "客户名称");
+                        if (!Placeholder(serviceNo) && serviceNo.StartsWith("说明", StringComparison.Ordinal)) { res.Skipped++; continue; }
+                        if (Placeholder(customerName) && Placeholder(serviceNo)) { res.Skipped++; continue; }
+                        if (!Placeholder(customerName) && !excelCtx.CustomerExists(Cell(row, "客户编号"), customerName))
+                        { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加"); continue; }
+                        var existing = !Placeholder(serviceNo)
+                            ? list.FirstOrDefault(x => string.Equals(x.ServiceNo, serviceNo.Trim(), StringComparison.OrdinalIgnoreCase))
+                            : null;
+                        var item = BuildAfterSalesServiceOrderFromImportRow(row, existing, materials, rowNo, res, errors);
+                        if (item == null) continue;
+                        if (existing != null)
+                        {
+                            if (previewOnly) { res.Updated++; continue; }
+                            existing.ServiceDate = item.ServiceDate;
+                            existing.CustomerId = item.CustomerId;
+                            existing.CustomerName = item.CustomerName;
+                            existing.ContactName = item.ContactName;
+                            existing.ContactPhone = item.ContactPhone;
+                            existing.MachineName = item.MachineName;
+                            existing.MachineSpec = item.MachineSpec;
+                            existing.FaultDescription = item.FaultDescription;
+                            existing.ServiceType = item.ServiceType;
+                            existing.AssignedWorker = item.AssignedWorker;
+                            existing.VisitDate = item.VisitDate;
+                            existing.RepairResult = item.RepairResult;
+                            existing.Status = item.Status;
+                            existing.Remark = item.Remark;
+                            existing.Parts = item.Parts;
+                            existing.LaborAmount = item.LaborAmount;
+                            existing.OtherAmount = item.OtherAmount;
+                            existing.DiscountAmount = item.DiscountAmount;
+                            existing.ReceivedAmount = item.ReceivedAmount;
+                            existing.ReceivableId = item.ReceivableId;
+                            existing.ReceivableNo = item.ReceivableNo;
+                            ApplyAfterSalesServiceOrder(existing, preserveReceivableLink: !string.IsNullOrWhiteSpace(existing.ReceivableId));
+                            existing.UpdatedAt = NowTimeString();
+                            existing.UpdatedBy = user.DisplayName;
+                            res.Updated++; changed = true;
+                        }
+                        else
+                        {
+                            if (previewOnly) { res.Added++; continue; }
+                            item.Id = Guid.NewGuid().ToString("N");
+                            if (Placeholder(item.ServiceNo) || list.Any(x => string.Equals(x.ServiceNo, item.ServiceNo, StringComparison.OrdinalIgnoreCase)))
+                                item.ServiceNo = NextAfterSalesServiceNo(list);
+                            item.CreatedAt = NowTimeString();
+                            item.CreatedBy = user.DisplayName;
+                            item.UpdatedAt = NowTimeString();
+                            item.UpdatedBy = user.DisplayName;
+                            list.Insert(0, item);
+                            res.Added++; changed = true;
+                        }
+                    }
+                    catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
+                }
+            };
+            if (previewOnly) importLoop(LoadAfterSalesServiceOrders());
+            else MutateJsonList<AfterSalesServiceOrder, object>(AfterSalesServiceOrdersFile, "after_sales_service_orders", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            res.Errors = errors.ToArray();
+            return res;
         }
 
         static TestDataModuleResult ImportReceivablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)

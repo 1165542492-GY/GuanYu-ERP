@@ -126,6 +126,21 @@
 
 ---
 
+## 10. Ver2.9-rc10 售后维修收口增强（010）
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已完成（2026-06-28），待浏览器验收 |
+| **报告** | `docs/worklog/reports/ver29_rc10_after_sales_closure_enhancement_20260628_102905.md` |
+| **涉及文件** | `Business.html`、`TestDataService.cs`、`TestData.html`、`check_ver29_pages.ps1` |
+| **内容** | |
+| | 售后维修工单状态「下一步」按钮（复用 007 `bizNextBtn`） |
+| | 测试数据总表 Sheet「售后维修工单」导出/预检查/导入（按单号更新） |
+| | 页面通俗提示；回归脚本补充标记 |
+| | 不扣库存、不自动应收 |
+
+---
+
 ## 阶段依赖关系
 
 ```
