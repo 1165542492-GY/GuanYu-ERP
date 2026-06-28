@@ -24,6 +24,7 @@ Write-Host "执行时间: $ts"
 
 $checks = @(
     @{ Name = "首页"; Url = "$BaseUrl/"; Accept = @(200) }
+    @{ Name = "数据目录 /api/system/data-dir"; Url = "$BaseUrl/api/system/data-dir"; Accept = @(200) }
     @{ Name = "系统信息 /api/info"; Url = "$BaseUrl/api/info"; Accept = @(200, 401, 403) }
     @{ Name = "老板看板 owner-summary (month)"; Url = "$BaseUrl/api/dashboard/owner-summary?range=month"; Accept = @(200, 401) }
     @{ Name = "老板看板 owner-summary (all)"; Url = "$BaseUrl/api/dashboard/owner-summary?range=all"; Accept = @(200, 401) }

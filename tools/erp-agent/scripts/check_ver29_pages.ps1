@@ -92,6 +92,14 @@ $sourceMarkers = @(
     @{ Page = "rc19可入库数量"; Source = "Business.html"; Marker = "可入库数量"; Risk = "P1" }
     @{ Page = "rc19已无可出库数量"; Source = "Business.html"; Marker = "已无可出库数量"; Risk = "P1" }
     @{ Page = "rc19已无可入库数量"; Source = "Business.html"; Marker = "已无可入库数量"; Risk = "P1" }
+    @{ Page = "rc19.1环境变量沙盒"; Source = "Program.cs"; Marker = "ERP_DATA_DIR"; Risk = "P1" }
+    @{ Page = "rc19.1启动参数沙盒"; Source = "Program.cs"; Marker = "--data-dir"; Risk = "P1" }
+    @{ Page = "rc19.1数据目录接口"; Source = "Program.cs"; Marker = "/api/system/data-dir"; Risk = "P1" }
+    @{ Page = "rc19.1DataDirectory字段"; Source = "Program.cs"; Marker = "dataDirectorySource"; Risk = "P1" }
+    @{ Page = "rc19.1默认正式Data"; Source = "Program.cs"; Marker = "DefaultDataDir"; Risk = "P1" }
+    @{ Page = "rc19.1沙盒校验"; Source = "Program.cs"; Marker = "ValidateSandboxDataDirectory"; Risk = "P1" }
+    @{ Page = "rc19.1测试沙盒文档"; Source = "README.md"; Marker = "测试沙盒"; Risk = "P1" }
+    @{ Page = "rc19.1正式Data路径文档"; Source = "README.md"; Marker = "D:\冠誉制造ERP\Data"; Risk = "P1" }
     @{ Page = "rc17库存类型列"; Source = "Material.html"; Marker = "库存类型"; Risk = "P1" }
     @{ Page = "rc17安全库存"; Source = "Material.html"; Marker = "安全库存"; Risk = "P1" }
     @{ Page = "rc17固定成本价"; Source = "Material.html"; Marker = "固定成本价"; Risk = "P1" }
@@ -147,6 +155,7 @@ else {
 
     # 抽样 API 权限拦截（未登录应 401/403，说明路由存活）
     $apiSamples = @(
+        @{ Name = "数据目录 API"; Url = "$BaseUrl/api/system/data-dir" }
         @{ Name = "供应商列表 API"; Url = "$BaseUrl/api/suppliers" }
         @{ Name = "客户列表 API"; Url = "$BaseUrl/api/customers" }
         @{ Name = "生产工单 API"; Url = "$BaseUrl/api/production-work-orders" }
@@ -155,7 +164,7 @@ else {
     Write-Host ""
     Write-Host "--- API 权限拦截抽样 ---"
     foreach ($a in $apiSamples) {
-        $ar = Test-Ver29Http -Url $a.Url -TimeoutSec $TimeoutSec -AcceptableStatus @(200, 401, 403)
+        $ar = Test-Ver29Http -Url $a.Url -TimeoutSec $TimeoutSec -AcceptableStatus $(if ($a.Url -like "*/api/system/data-dir") { @(200) } else { @(200, 401, 403) })
         $st = if ($ar.Reachable) { "PASS" } else { "FAIL"; $allPass = $false }
         Write-Host "[$st] $($a.Name) — $($ar.Note)" -ForegroundColor $(if ($ar.Reachable) { "Green" } else { "Red" })
         $results += [PSCustomObject]@{

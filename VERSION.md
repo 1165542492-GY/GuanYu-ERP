@@ -1,5 +1,14 @@
 # 版本记录
 
+## Ver2.9-rc19.1（已开发，未提交）
+
+- **测试沙盒数据目录机制**：支持 `ERP_DATA_DIR` 环境变量与 `--data-dir` 启动参数；优先级 `--data-dir` > `ERP_DATA_DIR` > 默认正式目录
+- **默认正式数据目录不变**：`D:\冠誉制造ERP\Data`（未设置沙盒时与 rc19 行为一致）
+- **只读接口**：`GET /api/system/data-dir`（未登录可访问），返回 `dataDirectory`、`dataDirectorySource`、`isDefaultDataDirectory`
+- **沙盒路径校验**：禁止磁盘根目录、`App`、`Backups`、`Exports`、`Imports` 及正式 `Data` 作为沙盒路径
+- **空白新系统 E2E 必须在沙盒下运行**；正式使用不要设置 `ERP_DATA_DIR`
+- **未**改库存/应收/应付/财务核心；**未**同步正式 App；**未**清空正式 Data；**未**执行 006
+
 ## Ver2.9-rc18-rc19（已开发，未提交）
 
 - **rc18 表格显示体验优化**：table-cell-ellipsis、col-money、col-qty、col-action；常用列靠前；金额/数量分列展示

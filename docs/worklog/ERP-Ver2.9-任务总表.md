@@ -218,6 +218,21 @@
 
 ---
 
+## 16. Ver2.9-rc19.1 测试沙盒数据目录机制
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已开发，待沙盒验证/打包 |
+| **打包脚本** | `tools/erp-agent/scripts/pack_rc19_1_data_sandbox.ps1` |
+| **涉及文件** | `Program.cs`、`README.md`、`VERSION.md`、`安装说明.txt`、`check_ver29_pages.ps1`、`check_ver29_api_health.ps1` |
+| **功能** | `ERP_DATA_DIR` 环境变量、`--data-dir` 启动参数、`GET /api/system/data-dir` |
+| **默认** | 未设置时仍为 `D:\冠誉制造ERP\Data` |
+| **沙盒示例** | `D:\冠誉制造ERP\TestData\E2E_BlankMachineFactory_时间` |
+| **目的** | 为空白新系统机床厂全流程 E2E 提供安全隔离 |
+| **不包含** | 库存/应收/应付/财务核心改动、006、同步正式 App、清空正式 Data |
+
+---
+
 ## 阶段依赖关系
 
 ```

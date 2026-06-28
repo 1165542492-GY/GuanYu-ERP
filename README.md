@@ -463,6 +463,33 @@ D:\冠誉制造ERP\Imports       ← 建议将待导入的 Excel/CSV 文件放�
 
 系统最多保留 50 个 JSON 备份文件。升级或迁移前，请完整备份 `D:\冠誉制造ERP` 目录。
 
+### 测试沙盒数据目录（Ver2.9-rc19.1）
+
+**正式日常使用不要设置沙盒。** 默认数据目录始终为 `D:\冠誉制造ERP\Data`。
+
+仅在开发/自动化测试需要「空白新系统」或隔离造数时，可显式指定沙盒目录。
+
+**注意**：程序需管理员权限运行。`ERP_DATA_DIR` 请在**已提升的管理员命令行**中设置，或写入用户级环境变量后再启动；从普通 PowerShell 会话仅设置 `$env:ERP_DATA_DIR` 再启动，子进程可能读不到该值。推荐测试时使用 `--data-dir` 启动参数（优先级更高、最可靠）。
+
+**方式 1 — 环境变量**
+
+```powershell
+$env:ERP_DATA_DIR = "D:\冠誉制造ERP\TestData\E2E_BlankMachineFactory_20260628_160000"
+.\bin\Debug\net8.0-windows\冠誉制造ERP.exe
+```
+
+**方式 2 — 启动参数（优先于环境变量）**
+
+```powershell
+.\bin\Debug\net8.0-windows\冠誉制造ERP.exe --data-dir "D:\冠誉制造ERP\TestData\E2E_BlankMachineFactory_20260628_160000"
+```
+
+- 优先级：`--data-dir` > `ERP_DATA_DIR` > 默认 `D:\冠誉制造ERP\Data`
+- 沙盒目录不存在时会自动创建；沙盒默认为空白，**不会**复制正式 Data
+- 禁止将磁盘根目录、`D:\冠誉制造ERP\App`、`Backups` 或正式 `Data` 设为沙盒路径
+- 验证当前目录：`GET http://127.0.0.1:8787/api/system/data-dir`（无需登录）
+- **空白新系统机床厂全流程测试必须在沙盒下执行**
+
 ### 旧数据目录（历史兼容）
 
 旧版数据目录 `C:\ProgramData\智造ERP供应商管理` **不再作为正式数据目录**。首次启动时，若新目录尚无 JSON 数据且旧目录存在，程序会自动将旧目录下的 JSON 复制到 `D:\冠誉制造ERP\Data`（不删除、不覆盖旧数据）。
