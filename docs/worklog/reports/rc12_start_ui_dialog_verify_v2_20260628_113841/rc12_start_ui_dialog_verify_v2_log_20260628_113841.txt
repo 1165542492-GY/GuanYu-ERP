@@ -1,0 +1,141 @@
+
+========== »ù´¡ÐÅÏ¢ ==========
+ProjectRoot: C:\Users\Administrator\Documents\ERP
+BranchName: codex/ver2.8-basic-business-framework
+ExpectedRc11Commit: ca1f4be
+Timestamp: 20260628_113841
+TaskFile: C:\Users\Administrator\Documents\ERP\tools\erp-agent\tasks\todo\012_Ver29_rc12_ui_dialog_browser_verify_and_fix.md
+ZipFile: C:\Users\Administrator\Desktop\ERP_Ver29_rc12¿ª¹¤×¼±¸v2ÈÕÖ¾¸øChatGPT_20260628_113841.zip
+±ß½çÈ·ÈÏ£º²»Í¬²½ÕýÊ½App¡¢²»tag¡¢²»Ö´ÐÐ006¡¢²»½Ó¿â´æ¡¢²»Çå¿ÕÊý¾Ý¡¢²»commit¡¢²»push
+
+========== ¹Ø±Õ¾É ERP ½ø³Ì ==========
+Ã»ÓÐ·¢ÏÖÕýÔÚÔËÐÐµÄ¹ÚÓþÖÆÔìERP½ø³Ì¡£
+
+========== git branch --show-current ==========
+ÃüÁî: git branch --show-current
+codex/ver2.8-basic-business-framework
+ExitCode: 0
+
+========== git log -1 --oneline ==========
+ÃüÁî: git log -1 --oneline
+ca1f4be Ver2.9-rc11 audit permission and UI dialog polish
+ExitCode: 0
+
+========== git status -sb ¿ª¹¤Ç° ==========
+ÃüÁî: git status -sb
+## codex/ver2.8-basic-business-framework...origin/codex/ver2.8-basic-business-framework
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_20260628_113643/
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_v2_20260628_113841/
+ExitCode: 0
+
+========== git status --short ¿ª¹¤Ç° ==========
+ÃüÁî: git status --short
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_20260628_113643/
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_v2_20260628_113841/
+ExitCode: 0
+
+========== ³¢ÊÔ git fetch£¬Ê§°Ü²»ÖÐ¶Ï ==========
+
+========== git fetch origin codex/ver2.8-basic-business-framework ¿ÉÊ§°Ü ==========
+ÃüÁî: git fetch origin codex/ver2.8-basic-business-framework
+git.exe : fatal: unable to access 'https://github.com/1165542492-GY/GuanYu-ERP.git/': Failed to connect to github.com p
+ort 443 after 21187 ms: Could not connect to server
+ËùÔÚÎ»ÖÃ ÐÐ:65 ×Ö·û: 19
++         $output = & $Exe @ToolArgs 2>&1
++                   ~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: unable t...nnect to server:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ExitCode: 128
+
+========== È·ÈÏµ±Ç°±¾µØ HEAD ==========
+Local short HEAD: ca1f4be
+Local full HEAD : ca1f4be16700ce7676a73dad79c56c9c976868db
+Last log        : ca1f4be Ver2.9-rc11 audit permission and UI dialog polish
+È·ÈÏ£ºµ±Ç°±¾µØ»ùÏß¾ÍÊÇ rc11£ºca1f4be
+
+========== ¼ì²é¹¤×÷ÇøÊÇ·ñÖ»ÓÐÔÊÐíµÄÈÕÖ¾/ÈÎÎñÀà±ä¸ü ==========
+µ±Ç°ÒÑÓÐÎ´Ìá½»ÄÚÈÝ£º
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_20260628_113643/
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_v2_20260628_113841/
+Ö»ÓÐÈÕÖ¾/ÈÎÎñÀà±ä¸ü£¬¿ÉÒÔ¼ÌÐø¡£
+
+========== dotnet build .\ERP.csproj ==========
+ÃüÁî: dotnet build .\ERP.csproj
+  æ­£åœ¨ç¡®å®šè¦è¿˜åŽŸçš„é¡¹ç›®â€?
+  æ‰€æœ‰é¡¹ç›®å‡æ˜¯æœ€æ–°çš„ï¼Œæ— æ³•è¿˜åŽŸã€?
+  ERP -> C:\Users\Administrator\Documents\ERP\bin\Debug\net8.0-windows\å† èª‰åˆ¶é€ ERP.dll
+
+å·²æˆåŠŸç”Ÿæˆã€?
+    0 ä¸ªè­¦å‘?
+    0 ä¸ªé”™è¯?
+
+å·²ç”¨æ—¶é—´ 00:00:05.89
+ExitCode: 0
+
+========== Ö´ÐÐ Ver2.9 »Ø¹é ==========
+»Ø¹é½Å±¾£ºC:\Users\Administrator\Documents\ERP\tools\erp-agent\scripts\run_ver29_regression.ps1
+
+========== run_ver29_regression.ps1 ==========
+ÃüÁî: powershell.exe -ExecutionPolicy Bypass -File C:\Users\Administrator\Documents\ERP\tools\erp-agent\scripts\run_ver29_regression.ps1
+========================================
+  ERP Ver2.9 Regression (rc7)
+  Time: 2026-06-28 11:39:09
+========================================
+
+>>> [1/4] dotnet build ERP.csproj
+[OK] Build succeeded
+
+>>> [2/4] Git Guard
+=== Ver2.9 Git Guard ===
+Ö´ÐÐÊ±¼ä: 2026-06-28 11:39:12
+[OK] ¹¤×÷Ä¿Â¼: C:\Users\Administrator\Documents\ERP
+µ±Ç°·ÖÖ§: codex/ver2.8-basic-business-framework
+
+git status --short:
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_20260628_113643/
+?? docs/worklog/reports/rc12_start_ui_dialog_verify_v2_20260628_113841/
+
+[WARN] µ±Ç°¹¤×÷ÇøÓÐÎ´Ìá½»±ä¸ü£¬ÇëÈË¹¤È·ÈÏÊÇ·ñÎªÔ¤ÆÚ¸Ä¶¯¡£
+
+git log --oneline -8:
+ca1f4be Ver2.9-rc11 audit permission and UI dialog polish
+b1a036e Ver2.9-rc10 after-sales closure enhancement
+d3145c7 Ver2.9-rc9 after-sales service work order
+8577113 Ver2.9-rc8 regression scripts and form simplification
+7cb7b1e Ver2.9-rc6 next action buttons and delete protection
+a336b88 Ver2.9-rc4 production work order
+6929b7b Ver2.9-rc3 table display optimization
+05b9f47 Ver2.9-rc1 rc2 dashboard linkage and workflow agent
+
+ËµÃ÷: ±¾½Å±¾²»»á×Ô¶¯ commit / push / reset / clean¡£
+
+>>> [3/4] API Health
+=== Ver2.9 API Health Check ===
+Ö´ÐÐÊ±¼ä: 2026-06-28 11:39:12
+[FAIL] Ê×Ò³ ¡ª ÎÞ·¨Á¬½Óµ½Ô¶³Ì·þÎñÆ÷
+[FAIL] ÏµÍ³ÐÅÏ¢ /api/info ¡ª ÎÞ·¨Á¬½Óµ½Ô¶³Ì·þÎñÆ÷
+[FAIL] ÀÏ°å¿´°å owner-summary (month) ¡ª ÎÞ·¨Á¬½Óµ½Ô¶³Ì·þÎñÆ÷
+[FAIL] ÀÏ°å¿´°å owner-summary (all) ¡ª ÎÞ·¨Á¬½Óµ½Ô¶³Ì·þÎñÆ÷
+
+[ÌáÊ¾] ERP ·þÎñÎ´Æô¶¯»ò²»¿É·ÃÎÊ¡£ÇëÏÈÔËÐÐ bin\Debug\net8.0-windows\¹ÚÓþÖÆÔìERP.exe£¬ÔÙÖØÊÔ¡£
+       ±¾½Å±¾²»»áÇ¿ÐÐÉ±½ø³Ì»ò×Ô¶¯Æô¶¯ ERP¡£
+
+±¨¸æÒÑÐ´Èë: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_api_health_20260628_113912.md
+
+>>> [4/4] Pages Check
+=== Ver2.9 Pages Check ===
+Ö´ÐÐÊ±¼ä: 2026-06-28 11:39:21
+[FAIL] ÎÞ·¨»ñÈ¡Ê×Ò³ ¡ª ÎÞ·¨Á¬½Óµ½Ô¶³Ì·þÎñÆ÷
+[ÌáÊ¾] ÇëÏÈÆô¶¯ ERP£¨8787 ¶Ë¿Ú£©£¬±¾½Å±¾²»»á×Ô¶¯Æô¶¯»òÉ±½ø³Ì¡£
+
+±¨¸æÒÑÐ´Èë: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_pages_check_20260628_113921.md
+
+========================================
+  Done: PARTIAL - manual review needed
+  Summary: C:\Users\Administrator\Documents\ERP\docs\worklog\reports\ver29_regression_summary_20260628_113909.md
+========================================
+ExitCode: 1
+Òì³££ºÃüÁîÊ§°Ü£ºrun_ver29_regression.ps1£¬ExitCode=1
+
+========== ½Å±¾Ê§°Ü ==========
+Ê§°ÜÔ­Òò£ºÃüÁîÊ§°Ü£ºrun_ver29_regression.ps1£¬ExitCode=1
