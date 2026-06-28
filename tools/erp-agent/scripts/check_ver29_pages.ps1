@@ -82,6 +82,24 @@ $sourceMarkers = @(
     @{ Page = "rc17物料成本方式列"; Source = "Material.html"; Marker = "成本方式"; Risk = "P1" }
     @{ Page = "rc17物料库存属性说明"; Source = "Material.html"; Marker = "暂不上移动加权平均"; Risk = "P1" }
     @{ Page = "rc17库存导出API"; Source = "Program.cs"; Marker = "/api/stocks/export"; Risk = "P1" }
+    @{ Page = "rc18表格省略样式"; Source = "App.html"; Marker = "table-cell-ellipsis"; Risk = "P1" }
+    @{ Page = "rc18金额列样式"; Source = "App.html"; Marker = "col-money"; Risk = "P1" }
+    @{ Page = "rc18数量列样式"; Source = "App.html"; Marker = "col-qty"; Risk = "P1" }
+    @{ Page = "rc18操作列样式"; Source = "App.html"; Marker = "col-action"; Risk = "P1" }
+    @{ Page = "rc19销售订单转出库"; Source = "Business.html"; Marker = "转出库"; Risk = "P1" }
+    @{ Page = "rc19采购单转入库"; Source = "Business.html"; Marker = "转入库"; Risk = "P1" }
+    @{ Page = "rc19可出库数量"; Source = "Business.html"; Marker = "可出库数量"; Risk = "P1" }
+    @{ Page = "rc19可入库数量"; Source = "Business.html"; Marker = "可入库数量"; Risk = "P1" }
+    @{ Page = "rc19已无可出库数量"; Source = "Business.html"; Marker = "已无可出库数量"; Risk = "P1" }
+    @{ Page = "rc19已无可入库数量"; Source = "Business.html"; Marker = "已无可入库数量"; Risk = "P1" }
+    @{ Page = "rc17库存类型列"; Source = "Material.html"; Marker = "库存类型"; Risk = "P1" }
+    @{ Page = "rc17安全库存"; Source = "Material.html"; Marker = "安全库存"; Risk = "P1" }
+    @{ Page = "rc17固定成本价"; Source = "Material.html"; Marker = "固定成本价"; Risk = "P1" }
+    @{ Page = "rc17成品设备"; Source = "Material.html"; Marker = "成品设备"; Risk = "P1" }
+    @{ Page = "rc17维修备件"; Source = "Material.html"; Marker = "维修备件"; Risk = "P1" }
+    @{ Page = "rc17是否库存物料"; Source = "Material.html"; Marker = "是否库存物料"; Risk = "P1" }
+    @{ Page = "rc17库存状态"; Source = "Business.html"; Marker = "stockStatusFilter"; Risk = "P1" }
+    @{ Page = "rc17默认仓库"; Source = "Material.html"; Marker = "默认仓库"; Risk = "P1" }
 )
 
 $homeResult = Test-Ver29Http -Url "$BaseUrl/" -TimeoutSec $TimeoutSec -AcceptableStatus @(200)

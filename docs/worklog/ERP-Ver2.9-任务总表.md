@@ -199,14 +199,22 @@
 
 | 项目 | 内容 |
 |------|------|
-| **状态** | 已开发（2026-06-28），待浏览器验收 |
+| **状态** | 已完成：commit/push、正式 App 同步、8787 验收、tag `v2.9.0-rc17` |
 | **打包脚本** | `tools/erp-agent/scripts/pack_rc17_inventory_stage2_polish.ps1` |
-| **涉及文件** | `Business.html`、`Material.html`、`Program.cs`（展示/导出/校验）、`TestDataService.cs`、文档、`check_ver29_pages.ps1` |
-| **说明** | |
-| | 库存汇总筛选、列顺序、参考导出字段 |
-| | 物料列表/弹窗收口；出入库提示文案 |
-| | 文档状态修正（rc16 已完成记录） |
-| | **不包含**：库存核心计算重构、移动加权平均、多仓库、维修扣库存、006 执行、清空数据 |
+
+---
+
+## 15. Ver2.9-rc18-rc19 表格显示 + 单据流转合并收口
+
+| 项目 | 内容 |
+|------|------|
+| **状态** | 已开发，待浏览器验收 |
+| **打包脚本** | `tools/erp-agent/scripts/pack_rc18_rc19_table_flow_polish.ps1` |
+| **涉及文件** | `App.html`、`Business.html`、`Material.html`、`Customer.html`、`Finance.html`、文档、`check_ver29_pages.ps1` |
+| **rc18** | 表格 col-money/col-qty/col-action、table-cell-ellipsis、列顺序优化 |
+| **rc19** | 销售订单转出库、采购单转入库、可出/入库数量预填、防重复提示 |
+| **短期停点** | 验收通过后暂停 rc20+，准备 Ver2.9 阶段性正式试运行 |
+| **不包含** | 生产工单、库存预警、库存流水、库存/应收/应付/财务核心重构、006、清空数据 |
 
 ---
 
