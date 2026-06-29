@@ -26,10 +26,12 @@ html[data-size="xlarge"]{--cell-ellipsis-w:240px}
 .arap-detail-form .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
 .arap-detail-form .field.full{grid-column:1/-1}
 @media (max-width:720px){.arap-detail-form .grid{grid-template-columns:1fr}}
-#salesOrderView>.panel,#salesOutboundView>.panel,#purchaseOrderView>.panel,#purchaseInboundView>.panel,#productionPickView>.panel,#finishedInboundView>.panel,#productionWorkOrderView>.panel,#receivableView>.panel,#payableView>.panel,#stockView>.panel{overflow:hidden}
-#soDualScroll,#soutDualScroll,#poDualScroll,#pinDualScroll,#ppDualScroll,#finDualScroll,#pwoDualScroll,#asoDualScroll,#recDualScroll,#payDualScroll,#stockDualScroll{max-width:100%;overflow:hidden;flex-shrink:0}
-html[data-size="large"] .content .dual-scroll .table-scroll-top,html[data-size="xlarge"] .content .dual-scroll .table-scroll-top{flex:0 0 var(--hscroll-track)!important;min-height:var(--hscroll-track)!important;display:block!important;overflow-x:auto!important}
-html[data-size="xlarge"] .content .dual-scroll{display:flex!important;flex-direction:column!important;width:100%!important}
+#salesOrderView>.panel,#salesOutboundView>.panel,#purchaseOrderView>.panel,#purchaseInboundView>.panel,#productionPickView>.panel,#finishedInboundView>.panel,#productionWorkOrderView>.panel,#receivableView>.panel,#payableView>.panel,#stockView>.panel,#financeView>.panel{display:flex;flex-direction:column;min-height:0;overflow:visible}
+#soDualScroll,#soutDualScroll,#poDualScroll,#pinDualScroll,#ppDualScroll,#finDualScroll,#pwoDualScroll,#asoDualScroll,#recDualScroll,#payDualScroll,#stockDualScroll,#financeDualScroll,#oplogDualScroll{max-width:100%;overflow:hidden;flex-shrink:0;min-width:0}
+.content .dual-scroll .table-scroll-top{flex:0 0 var(--hscroll-track)!important;flex-shrink:0!important;height:var(--hscroll-track)!important;min-height:var(--hscroll-track)!important;max-height:var(--hscroll-track)!important;display:block!important;visibility:visible!important;overflow-x:auto!important;overflow-y:hidden!important}
+.content .dual-scroll.is-no-hscroll .table-scroll-top{display:none!important;height:0!important;min-height:0!important;max-height:0!important;border:none!important;padding:0!important;margin:0!important}
+.content .dual-scroll{display:flex!important;flex-direction:column!important;width:100%!important;min-height:0!important}
+.panel>.dual-scroll{flex:1 1 auto;min-height:0;min-width:0}
 .pwo-cards{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media(max-width:1100px){.pwo-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.pwo-cards{grid-template-columns:1fr 1fr}}
