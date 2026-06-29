@@ -204,6 +204,10 @@ namespace SupplierErpApp
             readonly HashSet<string> _bomKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _purchaseOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _salesOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly Dictionary<string, SalesOrder> _workbookSalesOrdersByCode = new Dictionary<string, SalesOrder>(StringComparer.OrdinalIgnoreCase);
+            readonly Dictionary<string, PurchaseOrder> _workbookPurchaseOrdersByCode = new Dictionary<string, PurchaseOrder>(StringComparer.OrdinalIgnoreCase);
+
+            const string WorkbookOrderIdPrefix = "__wb:";
 
             public static ExcelImportContext FromParsedWorkbook(ParsedTestWorkbook parsed)
             {
@@ -328,6 +332,79 @@ namespace SupplierErpApp
                 code = code.Trim();
                 return LoadSalesOrders().Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))
                     || _salesOrderCodes.Contains(code);
+            }
+
+            public SalesOrder ResolveSalesOrder(string code)
+            {
+                if (Placeholder(code)) return null;
+                code = code.Trim();
+                var persisted = LoadSalesOrders().FirstOrDefault(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase));
+                if (persisted != null) return persisted;
+                SalesOrder cached;
+                if (_workbookSalesOrdersByCode.TryGetValue(code, out cached)) return cached;
+                foreach (var row in GetModuleRows("salesOrders"))
+                {
+                    string rowCode = Cell(row, "订单编号", "销售单号");
+                    if (Placeholder(rowCode) || !string.Equals(rowCode.Trim(), code, StringComparison.OrdinalIgnoreCase)) continue;
+                    string customerCode = Cell(row, "客户编号"), customerName = Cell(row, "客户名称");
+                    if (Placeholder(customerName) && Placeholder(customerCode)) return null;
+                    if (!CustomerExists(customerCode, customerName)) return null;
+                    try
+                    {
+                        var item = new SalesOrder
+                        {
+                            CustomerCode = customerCode, CustomerName = customerName,
+                            MaterialCode = Cell(row, "物料编号"), MaterialName = Cell(row, "物料名称", "产品名称"),
+                            Quantity = Money(Cell(row, "数量")),
+                            TaxExcludedSalePrice = Money(Cell(row, "不含税销售单价", "销售单价", "单价")),
+                            TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")),
+                            OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = rowCode.Trim()
+                        };
+                        if (item.Quantity < 0) return null;
+                        ApplySalesOrder(item);
+                        item.Id = WorkbookOrderIdPrefix + code;
+                        if (Placeholder(item.Code)) item.Code = code;
+                        _workbookSalesOrdersByCode[code] = item;
+                        return item;
+                    }
+                    catch { return null; }
+                }
+                return null;
+            }
+
+            public PurchaseOrder ResolvePurchaseOrder(string code)
+            {
+                if (Placeholder(code)) return null;
+                code = code.Trim();
+                var persisted = LoadPurchaseOrders().FirstOrDefault(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase));
+                if (persisted != null) return persisted;
+                PurchaseOrder cached;
+                if (_workbookPurchaseOrdersByCode.TryGetValue(code, out cached)) return cached;
+                foreach (var row in GetModuleRows("purchaseOrders"))
+                {
+                    string rowCode = Cell(row, "采购编号", "采购单号");
+                    if (Placeholder(rowCode) || !string.Equals(rowCode.Trim(), code, StringComparison.OrdinalIgnoreCase)) continue;
+                    string supplierName = Cell(row, "供应商名称");
+                    if (Placeholder(supplierName) && Placeholder(Cell(row, "物料名称"))) return null;
+                    if (!Placeholder(supplierName) && !SupplierExists(supplierName)) return null;
+                    try
+                    {
+                        var item = new PurchaseOrder
+                        {
+                            SupplierName = supplierName, MaterialName = Cell(row, "物料名称"),
+                            Quantity = Money(Cell(row, "数量")), UnitPrice = Money(Cell(row, "采购单价", "单价")),
+                            OrderDate = Cell(row, "订单日期", "采购日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = rowCode.Trim()
+                        };
+                        if (item.Quantity < 0) return null;
+                        ApplyPurchaseOrder(item);
+                        item.Id = WorkbookOrderIdPrefix + code;
+                        if (Placeholder(item.Code)) item.Code = code;
+                        _workbookPurchaseOrdersByCode[code] = item;
+                        return item;
+                    }
+                    catch { return null; }
+                }
+                return null;
             }
 
             public List<Material> GetMergedMaterials()
@@ -895,6 +972,7 @@ namespace SupplierErpApp
             int rowNo = 1;
             Action<List<SalesOrder>> importLoop = list =>
             {
+            var addedOrders = new List<SalesOrder>();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -918,9 +996,17 @@ namespace SupplierErpApp
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-                    list.Insert(0, item); res.Added++; changed = true;
+                    list.Insert(0, item); addedOrders.Add(item); res.Added++; changed = true;
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
+            }
+            if (!previewOnly && addedOrders.Count > 0)
+            {
+                MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", receivables =>
+                {
+                    SyncAutoReceivablesForOrders(addedOrders, receivables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
             }
             };
             if (previewOnly) importLoop(LoadSalesOrders());
@@ -934,6 +1020,7 @@ namespace SupplierErpApp
             var errors = new List<string>();
             bool changed = false;
             int rowNo = 1;
+            var batch = new ImportBatchContext();
             Action<List<SalesOutbound>> importLoop = list =>
             {
             foreach (var row in rows)
@@ -946,23 +1033,20 @@ namespace SupplierErpApp
                     string orderNo = Cell(row, "销售订单号", "关联销售单号");
                     if (Placeholder(orderNo)) { AddErr(res, errors, rowNo, "请选择来源销售订单"); continue; }
                     if (!excelCtx.SalesOrderExists(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
-                    if (previewOnly)
-                    {
-                        decimal qty = Money(Cell(row, "出库数量", "数量")), cost = Money(Cell(row, "成本单价", "单价"));
-                        if (qty < 0 || cost < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
-                        res.Added++; continue;
-                    }
-                    var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
+                    var order = excelCtx.ResolveSalesOrder(orderNo);
                     if (order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
                     var item = new SalesOutbound
                     {
-                        SalesOrderId = order.Id, SalesOrderNo = order.Code,
+                        SalesOrderNo = order.Code,
                         CustomerName = Cell(row, "客户名称"), MaterialName = Cell(row, "物料名称", "产品名称"),
                         Quantity = Money(Cell(row, "出库数量", "数量")), CostPrice = Money(Cell(row, "成本单价", "单价")),
                         OutboundDate = Cell(row, "出库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
-                    ApplySalesOutbound(item);
+                    ApplySalesOutbound(item, batch, order);
+                    ValidateStockForConfirmedOutbound(item, null, batch);
+                    batch.RecordSalesOutbound(item);
+                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -984,6 +1068,7 @@ namespace SupplierErpApp
             int rowNo = 1;
             Action<List<PurchaseOrder>> importLoop = list =>
             {
+            var addedOrders = new List<PurchaseOrder>();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -1006,9 +1091,17 @@ namespace SupplierErpApp
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
-                    list.Insert(0, item); res.Added++; changed = true;
+                    list.Insert(0, item); addedOrders.Add(item); res.Added++; changed = true;
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
+            }
+            if (!previewOnly && addedOrders.Count > 0)
+            {
+                MutateJsonList<Payable, object>(PayablesFile, "payables", payables =>
+                {
+                    SyncAutoPayablesForOrders(addedOrders, payables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
             }
             };
             if (previewOnly) importLoop(LoadPurchaseOrders());
@@ -1022,6 +1115,7 @@ namespace SupplierErpApp
             var errors = new List<string>();
             bool changed = false;
             int rowNo = 1;
+            var batch = new ImportBatchContext();
             Action<List<PurchaseInbound>> importLoop = list =>
             {
             foreach (var row in rows)
@@ -1040,23 +1134,19 @@ namespace SupplierErpApp
                     string matCode = Cell(row, "物料编号"), matName = Cell(row, "物料名称");
                     if (!Placeholder(matName) && !excelCtx.MaterialExists(matCode, matName))
                     { AddErr(res, errors, rowNo, "物料不存在"); continue; }
-                    if (previewOnly)
-                    {
-                        decimal qty = Money(Cell(row, "入库数量", "数量")), price = Money(Cell(row, "入库单价", "单价"));
-                        if (qty < 0 || price < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
-                        res.Added++; continue;
-                    }
-                    var po = LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase));
+                    var po = excelCtx.ResolvePurchaseOrder(poNo);
                     if (po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
                     var item = new PurchaseInbound
                     {
-                        PurchaseOrderId = po.Id, PurchaseNo = po.Code, SupplierName = Cell(row, "供应商名称", po.SupplierName),
+                        PurchaseNo = po.Code, SupplierName = Cell(row, "供应商名称", po.SupplierName),
                         MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "入库数量", "数量")),
                         InboundPrice = Money(Cell(row, "入库单价", "单价")), InboundDate = Cell(row, "入库日期"),
                         Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
                     if (item.Quantity < 0 || item.InboundPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
-                    ApplyPurchaseInbound(item);
+                    ApplyPurchaseInbound(item, batch, po);
+                    batch.RecordPurchaseInbound(item);
+                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;

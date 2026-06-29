@@ -1391,9 +1391,9 @@ namespace SupplierErpApp
                 if (path == "/api/admin/clear-all-business-data" && ctx.Request.HttpMethod == "POST") { ClearAllBusinessData(ctx, user); return; }
                 if (path == "/api/admin/deep-initialize" && ctx.Request.HttpMethod == "POST") { DeepInitializeEmptyDatabase(ctx, user); return; }
                 if (path == "/api/admin/clear-data-password" && ctx.Request.HttpMethod == "POST") { ChangeClearDataPassword(ctx, user); return; }
-                if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { ExportOperationLogsCsv(ctx, user); return; }
-                if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { ListOperationLogs(ctx, user); return; }
-                if (path.StartsWith("/api/operation-logs/") && ctx.Request.HttpMethod == "GET") { GetOperationLogDetail(ctx, user, path.Substring("/api/operation-logs/".Length)); return; }
+                if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { if (!RequireAdmin(ctx, user)) return; ExportOperationLogsCsv(ctx, user); return; }
+                if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { if (!RequireAdmin(ctx, user)) return; ListOperationLogs(ctx, user); return; }
+                if (path.StartsWith("/api/operation-logs/") && ctx.Request.HttpMethod == "GET") { if (!RequireAdmin(ctx, user)) return; GetOperationLogDetail(ctx, user, path.Substring("/api/operation-logs/".Length)); return; }
                 if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user)) return; ExportTestDataAll(ctx, user); return; }
                 if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataPreview(ctx, user); return; }
                 if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
@@ -4767,18 +4767,21 @@ namespace SupplierErpApp
             unit = "";
         }
 
-        static void ResolveSalesOrderLink(SalesOutbound item)
+        static void ResolveSalesOrderLink(SalesOutbound item, SalesOrder knownOrder = null)
         {
             item.SalesOrderId = (item.SalesOrderId ?? "").Trim();
             item.SalesOrderNo = (item.SalesOrderNo ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(item.SalesOrderId) && string.IsNullOrWhiteSpace(item.SalesOrderNo))
+            if (knownOrder == null && string.IsNullOrWhiteSpace(item.SalesOrderId) && string.IsNullOrWhiteSpace(item.SalesOrderNo))
                 BizFail("请选择来源销售订单");
-            var orders = LoadSalesOrders();
-            SalesOrder order = null;
-            if (!string.IsNullOrWhiteSpace(item.SalesOrderId))
-                order = orders.FirstOrDefault(x => x.Id == item.SalesOrderId);
-            if (order == null && !string.IsNullOrWhiteSpace(item.SalesOrderNo))
-                order = orders.FirstOrDefault(x => string.Equals(x.Code, item.SalesOrderNo, StringComparison.OrdinalIgnoreCase));
+            SalesOrder order = knownOrder;
+            if (order == null)
+            {
+                var orders = LoadSalesOrders();
+                if (!string.IsNullOrWhiteSpace(item.SalesOrderId))
+                    order = orders.FirstOrDefault(x => x.Id == item.SalesOrderId);
+                if (order == null && !string.IsNullOrWhiteSpace(item.SalesOrderNo))
+                    order = orders.FirstOrDefault(x => string.Equals(x.Code, item.SalesOrderNo, StringComparison.OrdinalIgnoreCase));
+            }
             if (order == null) BizFail("来源销售订单不存在，请先在销售订单中创建");
             item.SalesOrderId = order.Id;
             item.SalesOrderNo = order.Code ?? "";
@@ -4834,15 +4837,39 @@ namespace SupplierErpApp
             }
         }
 
-        static void ResolvePurchaseOrderLink(PurchaseInbound item)
+        static void ResolvePurchaseOrderLink(PurchaseInbound item, PurchaseOrder knownOrder = null)
         {
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
             item.SupplierName = (item.SupplierName ?? "").Trim();
+            if (knownOrder != null)
+            {
+                item.PurchaseOrderId = knownOrder.Id;
+                item.PurchaseNo = knownOrder.Code ?? "";
+                item.SupplierName = knownOrder.SupplierName ?? "";
+                item.MaterialId = knownOrder.MaterialId ?? "";
+                item.MaterialCode = knownOrder.MaterialCode ?? "";
+                item.MaterialName = knownOrder.MaterialName ?? "";
+                if (item.InboundPrice <= 0) item.InboundPrice = knownOrder.UnitPrice;
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(item.PurchaseOrderId))
             {
                 var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
                 if (order == null) BizFail("来源采购单不存在，请先在采购单中创建");
+                item.PurchaseNo = order.Code ?? "";
+                item.SupplierName = order.SupplierName ?? "";
+                item.MaterialId = order.MaterialId ?? "";
+                item.MaterialCode = order.MaterialCode ?? "";
+                item.MaterialName = order.MaterialName ?? "";
+                if (item.InboundPrice <= 0) item.InboundPrice = order.UnitPrice;
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(item.PurchaseNo))
+            {
+                var order = LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, item.PurchaseNo, StringComparison.OrdinalIgnoreCase));
+                if (order == null) BizFail("来源采购单不存在，请先在采购单中创建");
+                item.PurchaseOrderId = order.Id;
                 item.PurchaseNo = order.Code ?? "";
                 item.SupplierName = order.SupplierName ?? "";
                 item.MaterialId = order.MaterialId ?? "";
@@ -5084,10 +5111,10 @@ namespace SupplierErpApp
         static List<SalesOutbound> LoadSalesOutbounds() { return LoadJsonList<SalesOutbound>(SalesOutboundsFile); }
         static void SaveSalesOutbounds(List<SalesOutbound> items) { SaveJsonList(SalesOutboundsFile, "sales_outbounds", items); }
 
-        static void ApplySalesOutbound(SalesOutbound item)
+        static void ApplySalesOutbound(SalesOutbound item, ImportBatchContext batch = null, SalesOrder linkedOrder = null)
         {
             if (item == null) BizFail("数据不能为空");
-            ResolveSalesOrderLink(item);
+            ResolveSalesOrderLink(item, linkedOrder);
             ApplySalesOutboundItemFields(item);
             item.CustomerName = (item.CustomerName ?? "").Trim();
             if (IsFinishedProductOutbound(item))
@@ -5103,7 +5130,7 @@ namespace SupplierErpApp
                 if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
             }
             if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
-            ValidateSalesOutboundRemainingQty(item);
+            ValidateSalesOutboundRemainingQty(item, null, batch, linkedOrder);
             AutoResolveSalesOutboundCost(item);
             if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
@@ -5229,10 +5256,10 @@ namespace SupplierErpApp
         static List<PurchaseInbound> LoadPurchaseInbounds() { return LoadJsonList<PurchaseInbound>(PurchaseInboundsFile); }
         static void SavePurchaseInbounds(List<PurchaseInbound> items) { SaveJsonList(PurchaseInboundsFile, "purchase_inbounds", items); }
 
-        static void ApplyPurchaseInbound(PurchaseInbound item)
+        static void ApplyPurchaseInbound(PurchaseInbound item, ImportBatchContext batch = null, PurchaseOrder linkedOrder = null)
         {
             if (item == null) BizFail("数据不能为空");
-            ResolvePurchaseOrderLink(item);
+            ResolvePurchaseOrderLink(item, linkedOrder);
             item.SupplierName = (item.SupplierName ?? "").Trim();
             string mid, mcode, mname, mspec, munit;
             ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
@@ -5241,7 +5268,7 @@ namespace SupplierErpApp
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
-            ValidatePurchaseInboundRemainingQty(item);
+            ValidatePurchaseInboundRemainingQty(item, null, batch, linkedOrder);
             if (item.InboundPrice < 0) BizFail("入库单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.InboundPrice);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
@@ -5343,11 +5370,22 @@ namespace SupplierErpApp
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplySalesOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try
+                    {
+                        ApplySalesOrder(input);
+                        string code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+                        EnsureUniqueNewOrderCode(code, list.Select(x => x.Code), pending.Select(x => x.Code));
+                        var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(code) ? NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSDD") : code; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++;
+                    }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
                 foreach (var item in pending) list.Insert(0, item);
+                MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", receivables =>
+                {
+                    SyncAutoReceivablesForOrders(pending, receivables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
                 batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
                 return new JsonMutationResult<object>(null, true);
             });
@@ -5367,10 +5405,16 @@ namespace SupplierErpApp
                 int imported = 0, skipped = 0, rowNo = 0;
                 var errors = new List<string>();
                 var pending = new List<SalesOutbound>();
+                var batch = new ImportBatchContext();
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplySalesOutbound(input); ValidateSalesOutboundRemainingQty(input); ValidateStockForConfirmedOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try
+                    {
+                        ApplySalesOutbound(input, batch);
+                        ValidateStockForConfirmedOutbound(input, null, batch);
+                        var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; batch.RecordSalesOutbound(item); pending.Insert(0, item); imported++;
+                    }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
@@ -5397,11 +5441,22 @@ namespace SupplierErpApp
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplyPurchaseOrder(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGDD") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try
+                    {
+                        ApplyPurchaseOrder(input);
+                        string code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+                        EnsureUniqueNewOrderCode(code, list.Select(x => x.Code), pending.Select(x => x.Code));
+                        var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(code) ? NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGDD") : code; item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++;
+                    }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
                 foreach (var item in pending) list.Insert(0, item);
+                MutateJsonList<Payable, object>(PayablesFile, "payables", payables =>
+                {
+                    SyncAutoPayablesForOrders(pending, payables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
                 batchImported = imported; batchSkipped = skipped; batchErrors = errors.ToArray();
                 return new JsonMutationResult<object>(null, true);
             });
@@ -5421,10 +5476,15 @@ namespace SupplierErpApp
                 int imported = 0, skipped = 0, rowNo = 0;
                 var errors = new List<string>();
                 var pending = new List<PurchaseInbound>();
+                var batch = new ImportBatchContext();
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplyPurchaseInbound(input); ValidatePurchaseInboundRemainingQty(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try
+                    {
+                        ApplyPurchaseInbound(input, batch);
+                        var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "CGRK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; batch.RecordPurchaseInbound(item); pending.Insert(0, item); imported++;
+                    }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
@@ -5438,9 +5498,10 @@ namespace SupplierErpApp
 
         static void ImportSalesOrders(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, updated = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
             MutateJsonList<SalesOrder, object>(SalesOrdersFile, "sales_orders", list =>
             {
+            var synced = new List<SalesOrder>();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -5449,13 +5510,36 @@ namespace SupplierErpApp
                     var item = new SalesOrder { CustomerName = Cell(row, "客户名称"), CustomerCode = Cell(row, "客户编号"), MaterialName = Cell(row, "物料名称", "产品名称", "产品/物料名称"), Quantity = Money(Cell(row, "数量")), TaxExcludedSalePrice = Money(Cell(row, "不含税销售单价", "销售单价", "单价")), TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")), OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "订单编号", "销售单号") };
                     if (Placeholder(item.CustomerName) && Placeholder(item.CustomerCode)) { skipped++; errors.Add("第" + rowNo + "行：请填写客户名称"); continue; }
                     if (Placeholder(item.CustomerName) && Placeholder(item.MaterialName)) { skipped++; continue; }
-                    ApplySalesOrder(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                    ApplySalesOrder(item);
+                    var existing = !Placeholder(item.Code) ? list.FirstOrDefault(x => string.Equals(x.Code, item.Code.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+                    if (existing != null)
+                    {
+                        EnsureSalesOrderReferenceLockForEdit(existing, item, LoadSalesOutbounds(), LoadReceivables());
+                        ApplySalesOrderImportUpdate(existing, item);
+                        existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                        synced.Add(existing); updated++;
+                    }
+                    else
+                    {
+                        item.Id = Guid.NewGuid().ToString("N");
+                        if (Placeholder(item.Code)) item.Code = NextCode(SalesOrderSequenceFile, "SO", list.Select(x => x.Code), "XSDD");
+                        item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                        list.Insert(0, item); synced.Add(item); imported++;
+                    }
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            return new JsonMutationResult<object>(null, imported > 0);
+            if (synced.Count > 0)
+            {
+                MutateJsonList<Receivable, object>(ReceivablesFile, "receivables", receivables =>
+                {
+                    SyncAutoReceivablesForOrders(synced, receivables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
+            }
+            return new JsonMutationResult<object>(null, imported + updated > 0);
             });
-            Audit(user, "导入销售订单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            Audit(user, "导入销售订单", "新增" + imported + "条，更新" + updated + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, updated = updated, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ImportSalesOutbounds(HttpListenerContext ctx, UserSession user)
@@ -5463,6 +5547,7 @@ namespace SupplierErpApp
             var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
             MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
             {
+            var batch = new ImportBatchContext();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -5470,7 +5555,9 @@ namespace SupplierErpApp
                 {
                     var item = new SalesOutbound { SalesOrderNo = Cell(row, "销售订单号", "关联销售单号"), CustomerName = Cell(row, "客户名称"), MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "出库数量", "数量")), CostPrice = Money(Cell(row, "成本单价", "单价")), OutboundDate = Cell(row, "出库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "出库编号", "出库单号") };
                     if (Placeholder(item.MaterialName)) { skipped++; continue; }
-                    ApplySalesOutbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                    ApplySalesOutbound(item, batch);
+                    ValidateStockForConfirmedOutbound(item, null, batch);
+                    item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; batch.RecordSalesOutbound(item); list.Insert(0, item); imported++;
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
@@ -5481,9 +5568,10 @@ namespace SupplierErpApp
 
         static void ImportPurchaseOrders(HttpListenerContext ctx, UserSession user)
         {
-            var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
+            var rows = ReadImportRows(ctx); int imported = 0, updated = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
             MutateJsonList<PurchaseOrder, object>(PurchaseOrdersFile, "purchase_orders", list =>
             {
+            var synced = new List<PurchaseOrder>();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -5491,13 +5579,36 @@ namespace SupplierErpApp
                 {
                     var item = new PurchaseOrder { SupplierName = Cell(row, "供应商名称"), MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "数量")), UnitPrice = Money(Cell(row, "采购单价", "单价")), OrderDate = Cell(row, "订单日期", "采购日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "采购编号", "采购单号") };
                     if (Placeholder(item.SupplierName) && Placeholder(item.MaterialName)) { skipped++; continue; }
-                    ApplyPurchaseOrder(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                    ApplyPurchaseOrder(item);
+                    var existing = !Placeholder(item.Code) ? list.FirstOrDefault(x => string.Equals(x.Code, item.Code.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+                    if (existing != null)
+                    {
+                        EnsurePurchaseOrderReferenceLockForEdit(existing, item, LoadPurchaseInbounds(), LoadPayables());
+                        ApplyPurchaseOrderImportUpdate(existing, item);
+                        existing.UpdatedAt = NowTimeString(); existing.UpdatedBy = user.DisplayName;
+                        synced.Add(existing); updated++;
+                    }
+                    else
+                    {
+                        item.Id = Guid.NewGuid().ToString("N");
+                        if (Placeholder(item.Code)) item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
+                        item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                        list.Insert(0, item); synced.Add(item); imported++;
+                    }
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
-            return new JsonMutationResult<object>(null, imported > 0);
+            if (synced.Count > 0)
+            {
+                MutateJsonList<Payable, object>(PayablesFile, "payables", payables =>
+                {
+                    SyncAutoPayablesForOrders(synced, payables, user);
+                    return new JsonMutationResult<object>(null, true);
+                });
+            }
+            return new JsonMutationResult<object>(null, imported + updated > 0);
             });
-            Audit(user, "导入采购单", "成功" + imported + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, skipped = skipped, errors = errors.Take(8).ToArray() });
+            Audit(user, "导入采购单", "新增" + imported + "条，更新" + updated + "条，跳过" + skipped + "条"); WriteJson(ctx, new { imported = imported, updated = updated, skipped = skipped, errors = errors.Take(8).ToArray() });
         }
 
         static void ImportPurchaseInbounds(HttpListenerContext ctx, UserSession user)
@@ -5505,6 +5616,7 @@ namespace SupplierErpApp
             var rows = ReadImportRows(ctx); int imported = 0, skipped = 0; var errors = new List<string>(); int rowNo = 1;
             MutateJsonList<PurchaseInbound, object>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
+            var batch = new ImportBatchContext();
             foreach (var row in rows)
             {
                 rowNo++;
@@ -5512,7 +5624,8 @@ namespace SupplierErpApp
                 {
                     var item = new PurchaseInbound { PurchaseNo = Cell(row, "采购单号", "关联采购单号"), SupplierName = Cell(row, "供应商名称"), MaterialName = Cell(row, "物料名称"), Quantity = Money(Cell(row, "入库数量", "数量")), InboundPrice = Money(Cell(row, "入库单价", "单价")), InboundDate = Cell(row, "入库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "入库编号", "入库单号") };
                     if (Placeholder(item.MaterialName)) { skipped++; continue; }
-                    ApplyPurchaseInbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                    ApplyPurchaseInbound(item, batch);
+                    item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; batch.RecordPurchaseInbound(item); list.Insert(0, item); imported++;
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }

@@ -66,9 +66,14 @@ namespace SupplierErpApp
             }
         }
 
-        static void ValidateStockForConfirmedOutbound(SalesOutbound item, string excludeId = null)
+        static void ValidateStockForConfirmedOutbound(SalesOutbound item, string excludeId = null, ImportBatchContext batch = null)
         {
             if (item == null || !IsConfirmedStatus(item.Status)) return;
+            if (batch != null)
+            {
+                batch.ValidateStockForConfirmedOutbound(item);
+                return;
+            }
             var options = new StockMapOptions { ExcludeSalesOutboundId = excludeId };
             if (IsFinishedProductOutbound(item))
             {
@@ -181,6 +186,41 @@ namespace SupplierErpApp
             if (auto == null) return;
             if (auto.PaidAmount > 0) BizFail("该采购单关联的自动应付款已有付款，不能删除");
             payables.Remove(auto);
+        }
+
+        static void SyncAutoReceivablesForOrders(IEnumerable<SalesOrder> orders, List<Receivable> receivables, UserSession user)
+        {
+            if (orders == null) return;
+            foreach (var order in orders)
+                SyncAutoReceivableInMemory(order, receivables, user);
+        }
+
+        static void SyncAutoPayablesForOrders(IEnumerable<PurchaseOrder> orders, List<Payable> payables, UserSession user)
+        {
+            if (orders == null) return;
+            foreach (var order in orders)
+                SyncAutoPayableInMemory(order, payables, user);
+        }
+
+        static void ApplySalesOrderImportUpdate(SalesOrder existing, SalesOrder input)
+        {
+            existing.CustomerId = input.CustomerId; existing.CustomerCode = input.CustomerCode; existing.CustomerName = input.CustomerName;
+            existing.CustomerContact = input.CustomerContact; existing.CustomerPhone = input.CustomerPhone; existing.CustomerAddress = input.CustomerAddress;
+            existing.ItemType = input.ItemType; existing.ModelCostId = input.ModelCostId; existing.BomId = input.BomId;
+            existing.MaterialId = input.MaterialId; existing.MaterialCode = input.MaterialCode;
+            existing.MaterialName = input.MaterialName; existing.Quantity = input.Quantity;
+            existing.TaxExcludedSalePrice = input.TaxExcludedSalePrice; existing.TaxIncludedSalePrice = input.TaxIncludedSalePrice;
+            existing.TaxExcludedSaleAmount = input.TaxExcludedSaleAmount; existing.TaxIncludedSaleAmount = input.TaxIncludedSaleAmount;
+            existing.UnitPrice = input.UnitPrice; existing.Amount = input.Amount; existing.OrderDate = input.OrderDate;
+            existing.Status = input.Status; existing.Note = input.Note;
+        }
+
+        static void ApplyPurchaseOrderImportUpdate(PurchaseOrder existing, PurchaseOrder input)
+        {
+            existing.SupplierName = input.SupplierName; existing.MaterialId = input.MaterialId; existing.MaterialCode = input.MaterialCode;
+            existing.MaterialName = input.MaterialName; existing.Quantity = input.Quantity;
+            existing.UnitPrice = input.UnitPrice; existing.Amount = input.Amount; existing.OrderDate = input.OrderDate;
+            existing.Status = input.Status; existing.Note = input.Note;
         }
 
         static SalesOrder PersistSalesOrderAdd(SalesOrder item, UserSession user)

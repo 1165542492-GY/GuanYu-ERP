@@ -142,8 +142,11 @@ function renderOplogDetail(d){
 }
 function openOplogDetailModal(){var m=qs('oplogDetailModal');if(m)m.classList.add('show')}
 function closeOplogDetailModal(){if(window.erpUiLock&&!window.erpUiLock.guardClose())return;var m=qs('oplogDetailModal');if(m)m.classList.remove('show');if(!document.querySelector('.modal.show'))document.body.style.overflow=''}
+function canViewOperationLogs(){return typeof isAdminUser==='function'&&isAdminUser()}
+function applyOplogPermissions(){var ok=canViewOperationLogs();if(qs('oplogExportBtn'))qs('oplogExportBtn').style.display=ok?'':'none';if(qs('oplogSearchBtn'))qs('oplogSearchBtn').style.display=ok?'':'none'}
 async function loadLogs(page){
   var body=qs('oplogListBody');if(!body)return;
+  if(!canViewOperationLogs()){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(8,'perm'):'<tr><td colspan="8" class="empty">当前账号没有权限查看此页面。</td></tr>';if(qs('oplogCountText'))qs('oplogCountText').textContent='共 0 条';applyOplogPermissions();return}
   body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(8,'loading'):'<tr><td colspan="8" class="empty">加载中...</td></tr>';
   try{
     var data=await api('/api/operation-logs?'+buildQuery(page));
@@ -173,7 +176,8 @@ async function loadLogs(page){
 window.loadOperationLogs=function(page){return loadLogs(page||1)};
 if(qs('oplogSearchBtn'))qs('oplogSearchBtn').onclick=function(){loadLogs(1)};
 if(qs('oplogResetBtn'))qs('oplogResetBtn').onclick=function(){['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';closeOplogDetailModal();loadLogs(1)};
-if(qs('oplogExportBtn'))qs('oplogExportBtn').onclick=function(){window.open('/api/operation-logs/export?'+buildQuery(oplogPage),'_blank')};
+if(qs('oplogExportBtn'))qs('oplogExportBtn').onclick=function(){if(!canViewOperationLogs()){tip('无权限操作','error');return}window.open('/api/operation-logs/export?'+buildQuery(oplogPage),'_blank')};
+applyOplogPermissions();
 if(qs('oplogPrevBtn'))qs('oplogPrevBtn').onclick=function(){if(oplogPage>1)loadLogs(oplogPage-1)};
 if(qs('oplogNextBtn'))qs('oplogNextBtn').onclick=function(){var pages=Math.max(1,Math.ceil(oplogTotal/oplogPageSize));if(oplogPage<pages)loadLogs(oplogPage+1)};
 if(qs('oplogDetailClose'))qs('oplogDetailClose').onclick=closeOplogDetailModal;
