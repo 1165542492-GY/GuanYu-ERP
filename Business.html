@@ -83,7 +83,7 @@ var BIZ_IMPACT_MODULE={'salesOrderView':'salesOrder','salesOutboundView':'salesO
 function bizImpactModule(cfg){return cfg&&BIZ_IMPACT_MODULE[cfg.view]?BIZ_IMPACT_MODULE[cfg.view]:'';}
 var BIZ_PAGE_TIPS={
 'salesOrderView':{blue:'销售订单用于记录客户要买什么；保存后会自动生成应收款。',flow:'现货/配件：销售订单 → 销售出库 → 应收；需要生产：销售订单 → 生产工单 → 领用/入库 → 销售出库。',orange:'订单已出库或已收款后，关键内容不能随意修改或删除。'},
-'salesOutboundView':{blue:'销售出库记录实际发了什么货；确认后才扣库存。',orange:'库存不足时不能出库；已确认出库单不能随意删除。'},
+'salesOutboundView':{blue:'销售出库记录实际发了什么货；确认后才扣库存。随货配件/赠品明细单独管理，不重复扣减主产品库存。',orange:'库存不足时不能出库；已确认出库单不能随意删除。'},
 'purchaseOrderView':{blue:'采购单记录采购计划，实际到货请去采购入库确认；保存后会自动生成应付款。',flow:'采购单 → 采购入库 → 应付款 → 付款。',orange:'采购单已入库或已付款后，关键内容不能随意修改或删除。'},
 'purchaseInboundView':{blue:'采购入库确认后增加库存；草稿或未确认不参与库存计算。',flow:'路径A：选来源采购单 → 填本次入库数量；路径B：不关联采购单 → 选手动供应商与物料。',orange:'已确认入库单不能随意删除，避免库存错账。'},
 'productionPickView':{blue:'生产领用用于记录车间实际用了哪些材料；确认后才扣原材料库存。',flow:'领料完成后，可到成品入库登记生产完成的设备。',orange:'库存不足不能领用；已确认领用单不能随意删除。'},
@@ -1131,6 +1131,7 @@ var actions='';
 if(bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenDetail(\''+cfg.view+'\',\''+x.Id+'\')">查看</button>';
 if(cfg.view==='receivableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenReceiptDetails(\''+x.Id+'\')">收款明细</button>';
 if(cfg.view==='payableView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenPaymentDetails(\''+x.Id+'\')">付款明细</button>';
+if(cfg.view==='salesOutboundView'&&bizCan(cfg,'view'))actions+='<button class="action" onclick="bizOpenSalesAccessoryDetails(\''+x.Id+'\')">随货配件</button>';
 actions+=bizBuildListNextActions(cfg,x,false);
 if(canEdit)actions+='<button class="action" onclick="bizEdit(\''+cfg.view+'\',\''+x.Id+'\')">编辑</button>';
 if(canDel)actions+='<button class="action del" onclick="bizDelete(\''+cfg.view+'\',\''+x.Id+'\')">删除</button>';
@@ -1950,6 +1951,7 @@ return'<div class="biz-detail-item full" style="margin-top:12px"><label>下一�
 function asoBuildListActions(x){
 var id=safe(x.Id),acts=asoBuildListNextActions(x);
 if(asoCan('view'))acts+='<button class="action" onclick="asoOpenDetail(\''+id+'\')">查看详情</button>';
+if(asoCan('view'))acts+='<button class="action" onclick="asoOpenRepairStockDetails(\''+id+'\')">维修物料</button>';
 if(asoCan('edit')&&(x.Status==='草稿'||x.Status==='待派工'||x.Status==='维修中'||x.Status==='已完成'))acts+='<button class="action" onclick="asoOpenEdit(\''+id+'\')">编辑</button>';
 if(asoCan('edit')&&x.Status==='草稿')acts+='<button class="action" onclick="asoConfirmDispatch(\''+id+'\')">确认派工</button>';
 if(asoCan('edit')&&x.Status==='待派工')acts+='<button class="action" onclick="asoStart(\''+id+'\')">开始维修</button>';
@@ -1979,7 +1981,7 @@ wireAfterSalesServiceOrderModule();
 try{asoState.data=await api('/api/after-sales-service-orders')||[];asoRender()}catch(e){asoState.data=[];asoRender();tip(e.message||'加载失败')}
 }
 function buildAfterSalesServiceOrderView(){
-var html='<div class="panel"><div class="biz-page-tips"><div class="biz-tip-blue">售后维修用于记录客户设备维修、派工、配件费、人工费和应收款。本轮配件只记录费用，不自动扣库存；需要收费时，维修完成后点生成应收款。</div><div class="biz-tip-flow">流程：草稿 → 确认派工 → 开始维修 → 完成维修 →（收费时）生成应收 → 结算</div></div>';
+var html='<div class="panel"><div class="biz-page-tips"><div class="biz-tip-blue">售后维修用于记录客户设备维修、派工、配件费、人工费和应收款。维修物料明细可领用/退料/补领/换料并联动库存；下方配件费明细仅记费用不扣库存。</div><div class="biz-tip-flow">流程：草稿 → 确认派工 → 开始维修 → 完成维修 →（收费时）生成应收 → 结算</div></div>';
 html+='<div class="tools"><div class="lefttools"><input class="search" id="asoSearch" placeholder="搜索单号 / 客户 / 设备 / 派工人员"><select id="asoStatusFilter" class="size-select"><option value="">全部状态</option>'+ASO_STATUSES.map(function(s){return'<option value="'+safe(s)+'">'+safe(s)+'</option>'}).join('')+'</select><button class="btn" id="asoReset">重置</button></div>';
 html+='<div><button class="btn" id="asoExport">导出 CSV</button> <button class="btn primary" id="asoAdd" type="button">＋ 新增维修工单</button></div></div>';
 html+='<div class="dual-scroll" id="asoDualScroll"><div class="table-scroll-top"><div class="table-scroll-inner"></div></div><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>维修单号</th><th>日期</th><th>客户</th><th>设备/机型</th><th>维修类型</th><th>派工人员</th><th>应收金额</th><th>未收金额</th><th>状态</th><th>最后更新</th><th>操作</th></tr></thead><tbody id="asoBody"></tbody></table></div></div>';
@@ -2066,6 +2068,168 @@ var addPart=document.getElementById('asoAddPart');if(addPart&&!addPart._asoWired
 }
 function initAfterSalesServiceOrderUi(){buildAfterSalesServiceOrderView()}
 if(document.getElementById('afterSalesServiceOrderView'))initAfterSalesServiceOrderUi();
+
+/* P3 业务出入库明细（随货配件 / 维修物料） */
+var BSD_SALES_LINE_TYPES=['随货配件','赠品','补发','退回'];
+var BSD_REPAIR_LINE_TYPES=['维修领用','维修退料','维修补领','维修换料'];
+var bsdState={sourceType:'',sourceId:'',sourceNo:'',mode:'sales',items:[],summary:null,editingId:null,editingUpdatedAt:''};
+
+function ensureBsdModals(){
+var root=ensureBizModalRoot();
+if(document.getElementById('bsdModal'))return;
+root.insertAdjacentHTML('beforeend',
+'<div class="modal biz-modal" id="bsdModal" aria-hidden="true"><div class="dialog" style="max-width:min(96vw,1080px)"><div class="dialoghead"><div class="dialogtitle" id="bsdTitle">随货配件明细</div><button type="button" class="close" id="bsdClose" aria-label="关闭">×</button></div>'+
+'<div class="biz-tip-blue" style="margin:0 23px 12px" id="bsdNotice">随货配件/赠品明细单独扣库存，不影响销售出库主产品数量。</div>'+
+'<div style="padding:0 23px 16px"><div class="arap-detail-summary" id="bsdSummary"></div>'+
+'<div class="tools" style="margin-bottom:10px"><button type="button" class="btn primary" id="bsdAddBtn">＋ 新增明细</button></div>'+
+'<div class="dual-scroll" id="bsdDualScroll"><div class="tablewrap"><table class="data-table biz-table biz-table-compact"><thead><tr><th>类型</th><th>物料</th><th>计划</th><th>领出/出库</th><th>退回</th><th>补发/补领</th><th>最终出库/耗用</th><th>金额</th><th>状态</th><th>操作</th></tr></thead><tbody id="bsdBody"></tbody></table></div></div></div>'+
+'<div class="dialogfoot"><button type="button" class="btn" id="bsdDone">关闭</button></div></div></div>'+
+'<div class="modal biz-modal" id="bsdEditModal" aria-hidden="true"><div class="dialog" style="max-width:min(96vw,720px)"><div class="dialoghead"><div class="dialogtitle" id="bsdEditTitle">新增明细</div><button type="button" class="close" id="bsdEditClose" aria-label="关闭">×</button></div>'+
+'<form id="bsdEditForm"><div class="form"><div class="grid">'+
+'<div class="field"><label class="req">明细类型</label><select id="bsdLineType"></select></div>'+
+'<div class="field"><label class="req">物料</label><select id="bsdMaterialId"></select></div>'+
+'<div class="field"><label>计划数量</label><input id="bsdPlannedQuantity" type="number" step="0.01" min="0" value="0"></div>'+
+'<div class="field"><label>领出数量</label><input id="bsdOutQuantity" type="number" step="0.01" min="0" value="0"></div>'+
+'<div class="field"><label>退回数量</label><input id="bsdReturnQuantity" type="number" step="0.01" min="0" value="0"></div>'+
+'<div class="field"><label>补发/补领数量</label><input id="bsdExtraQuantity" type="number" step="0.01" min="0" value="0"></div>'+
+'<div class="field"><label>单位成本</label><input id="bsdUnitCost" type="number" step="0.01" min="0" value="0"></div>'+
+'<div class="field full"><label>调整原因</label><input id="bsdReason" maxlength="200"></div>'+
+'<div class="field full"><label>备注</label><input id="bsdRemark" maxlength="200"></div>'+
+'</div></div><div class="dialogfoot"><button type="button" class="btn" id="bsdEditCancel">取消</button><button type="submit" class="btn primary">保存</button></div></form></div></div>');
+document.getElementById('bsdClose').onclick=closeBsdModal;
+document.getElementById('bsdDone').onclick=closeBsdModal;
+document.getElementById('bsdAddBtn').onclick=function(){openBsdEdit(null);};
+document.getElementById('bsdEditClose').onclick=closeBsdEditModal;
+document.getElementById('bsdEditCancel').onclick=closeBsdEditModal;
+document.getElementById('bsdEditForm').onsubmit=async function(e){e.preventDefault();await saveBsdEdit();};
+}
+
+function bsdCanEdit(){return bsdState.mode==='sales'?can('sales_outbound.edit'):asoCan('edit');}
+function bsdCanAdd(){return bsdState.mode==='sales'?can('sales_outbound.add'):asoCan('add');}
+function bsdLineTypes(){return bsdState.mode==='sales'?BSD_SALES_LINE_TYPES:BSD_REPAIR_LINE_TYPES;}
+
+function renderBsdModal(){
+var sum=bsdState.summary||{};
+var sumHtml='<span>计划合计：<b>'+bizQty(sum.PlannedQuantityTotal||0)+'</b></span>';
+sumHtml+='<span>领出合计：<b>'+bizQty(sum.OutQuantityTotal||0)+'</b></span>';
+sumHtml+='<span>退回合计：<b>'+bizQty(sum.ReturnQuantityTotal||0)+'</b></span>';
+sumHtml+='<span>补发/补领合计：<b>'+bizQty(sum.ExtraQuantityTotal||0)+'</b></span>';
+sumHtml+='<span>最终合计：<b>'+bizQty(sum.FinalQuantityTotal||0)+'</b></span>';
+sumHtml+='<span>金额合计：<b>'+money(sum.AmountTotal||0)+'</b></span>';
+document.getElementById('bsdSummary').innerHTML=sumHtml;
+document.getElementById('bsdAddBtn').style.display=bsdCanAdd()?'':'none';
+var body=document.getElementById('bsdBody');
+var list=bsdState.items||[];
+body.innerHTML=list.length?list.map(function(d){
+var acts='';
+if(d.Status==='草稿'&&bsdCanEdit()){acts+='<button type="button" class="action" onclick="openBsdEdit(\''+d.Id+'\')">编辑</button> ';acts+='<button type="button" class="action primary" onclick="bsdConfirm(\''+d.Id+'\')">确认</button> ';acts+='<button type="button" class="action del" onclick="bsdDelete(\''+d.Id+'\')">删除</button>';}
+else if(d.Status==='已确认'&&bsdCanEdit())acts+='<button type="button" class="action" onclick="bsdCancel(\''+d.Id+'\')">取消确认</button>';
+if(!acts)acts='-';
+return'<tr><td>'+safe(d.LineType||'-')+'</td><td>'+cellEllipsis((d.MaterialCode||'')+' '+safe(d.MaterialName||'-'),'col-company')+'</td><td>'+bizQty(d.PlannedQuantity)+'</td><td>'+bizQty(d.OutQuantity)+'</td><td>'+bizQty(d.ReturnQuantity)+'</td><td>'+bizQty(d.ExtraQuantity)+'</td><td><b>'+bizQty(d.FinalQuantity)+'</b></td><td>'+money(d.Amount||0)+'</td><td><span class="status">● '+safe(d.Status||'-')+'</span></td><td>'+acts+'</td></tr>';
+}).join(''):'<tr><td colspan="10" class="empty">暂无明细，请点击新增</td></tr>';
+if(typeof refreshPageDualScroll==='function')setTimeout(function(){refreshPageDualScroll('bsd-dual');},0);
+}
+
+async function refreshBsdList(){
+var st=bsdState;
+var res=await api('/api/business-stock-details?sourceType='+encodeURIComponent(st.sourceType)+'&sourceId='+encodeURIComponent(st.sourceId));
+bsdState.items=(res&&res.Items)||[];
+bsdState.summary=(res&&res.Summary)||{};
+renderBsdModal();
+}
+
+function closeBsdModal(){var m=document.getElementById('bsdModal');if(m)m.classList.remove('show');bsdState.editingId=null;}
+function closeBsdEditModal(){var m=document.getElementById('bsdEditModal');if(m)m.classList.remove('show');bsdState.editingId=null;bsdState.editingUpdatedAt='';}
+
+async function openBsdModal(mode,sourceType,sourceId,sourceNo,title){
+ensureBsdModals();
+bsdState.mode=mode;bsdState.sourceType=sourceType;bsdState.sourceId=sourceId;bsdState.sourceNo=sourceNo||'';
+document.getElementById('bsdTitle').textContent=title+' · '+safe(sourceNo||'');
+document.getElementById('bsdNotice').textContent=mode==='sales'?'随货配件/赠品/补发/退回明细单独扣库存，不影响销售出库主产品数量。':'维修领用/退料/补领/换料明细确认后联动库存；配件费明细仍仅记费用。';
+if(!bizRefs.materials.length)await bizLoadRefs();
+await refreshBsdList();
+document.getElementById('bsdModal').classList.add('show');
+}
+
+window.bizOpenSalesAccessoryDetails=function(id){
+var cfg=bizFindCfgByView('salesOutboundView');
+var item=(bizEnsureState('salesOutboundView').data||[]).find(function(x){return x.Id===id});
+if(!item)return;
+openBsdModal('sales','SalesOutbound',item.Id,item.Code,'随货配件/赠品明细');
+};
+window.asoOpenRepairStockDetails=function(id){
+var item=(asoState.data||[]).find(function(x){return x.Id===id});
+if(!item)return;
+openBsdModal('repair','RepairOrder',item.Id,item.ServiceNo,'维修物料明细');
+};
+
+function openBsdEdit(detailId){
+if(detailId&&!bsdCanEdit()){tip('无权限操作');return}
+if(!detailId&&!bsdCanAdd()){tip('无权限操作');return}
+var types=bsdLineTypes();
+var ltSel=document.getElementById('bsdLineType');
+ltSel.innerHTML=types.map(function(t){return'<option>'+safe(t)+'</option>'}).join('');
+var matSel=document.getElementById('bsdMaterialId');
+matSel.innerHTML='<option value="">请选择物料</option>'+(bizRefs.materials||[]).map(function(m){return'<option value="'+safe(m.Id)+'">'+safe((m.Code||'')+' '+m.NameSpec)+'</option>'}).join('');
+var item=detailId?(bsdState.items||[]).find(function(x){return x.Id===detailId}):null;
+bsdState.editingId=detailId;bsdState.editingUpdatedAt=item?item.UpdatedAt||'':'';
+document.getElementById('bsdEditTitle').textContent=item?'编辑明细':'新增明细';
+document.getElementById('bsdLineType').value=item?item.LineType:types[0];
+document.getElementById('bsdMaterialId').value=item?item.MaterialId||'':'';
+document.getElementById('bsdPlannedQuantity').value=item?item.PlannedQuantity||0:0;
+document.getElementById('bsdOutQuantity').value=item?item.OutQuantity||0:0;
+document.getElementById('bsdReturnQuantity').value=item?item.ReturnQuantity||0:0;
+document.getElementById('bsdExtraQuantity').value=item?item.ExtraQuantity||0:0;
+document.getElementById('bsdUnitCost').value=item?item.UnitCost||0:0;
+document.getElementById('bsdReason').value=item?item.Reason||'';
+document.getElementById('bsdRemark').value=item?item.Remark||'';
+document.getElementById('bsdEditModal').classList.add('show');
+}
+
+function bsdCollectEditBody(){
+return{
+SourceType:bsdState.sourceType,SourceId:bsdState.sourceId,
+LineType:document.getElementById('bsdLineType').value,
+MaterialId:document.getElementById('bsdMaterialId').value,
+PlannedQuantity:bizMoney2(document.getElementById('bsdPlannedQuantity').value||0),
+OutQuantity:bizMoney2(document.getElementById('bsdOutQuantity').value||0),
+ReturnQuantity:bizMoney2(document.getElementById('bsdReturnQuantity').value||0),
+ExtraQuantity:bizMoney2(document.getElementById('bsdExtraQuantity').value||0),
+UnitCost:bizMoney2(document.getElementById('bsdUnitCost').value||0),
+Reason:document.getElementById('bsdReason').value.trim(),
+Remark:document.getElementById('bsdRemark').value.trim(),
+UpdatedAt:bsdState.editingUpdatedAt||''
+};
+}
+
+async function saveBsdEdit(){
+var body=bsdCollectEditBody();
+if(!body.MaterialId){tip('请选择物料');return}
+try{
+if(bsdState.editingId)await api('/api/business-stock-details/'+bsdState.editingId,{method:'PUT',body:JSON.stringify(body)});
+else await api('/api/business-stock-details',{method:'POST',body:JSON.stringify(body)});
+closeBsdEditModal();await refreshBsdList();tip('已保存',2000);
+}catch(err){tip(err.message||'保存失败',4000);}
+}
+
+async function bsdConfirm(id){
+var item=(bsdState.items||[]).find(function(x){return x.Id===id});if(!item)return;
+if(!(await confirmAction('确认该明细？确认后将影响库存。')))return;
+try{await api('/api/business-stock-details/'+id+'/confirm',{method:'POST',body:JSON.stringify({UpdatedAt:item.UpdatedAt||''})});await refreshBsdList();tip('已确认',2000);}catch(err){tip(err.message||'确认失败',4000);}
+}
+async function bsdCancel(id){
+var item=(bsdState.items||[]).find(function(x){return x.Id===id});if(!item)return;
+if(!(await confirmAction('取消确认？将回滚该明细的库存影响。')))return;
+try{await api('/api/business-stock-details/'+id+'/cancel',{method:'POST',body:JSON.stringify({UpdatedAt:item.UpdatedAt||''})});await refreshBsdList();tip('已取消确认',2000);}catch(err){tip(err.message||'取消失败',4000);}
+}
+async function bsdDelete(id){
+var item=(bsdState.items||[]).find(function(x){return x.Id===id});if(!item)return;
+if(!(await confirmDelete({message:'确定删除该草稿明细？',code:item.MaterialCode||''})))return;
+try{await api('/api/business-stock-details/'+id,{method:'DELETE'});await refreshBsdList();tip('已删除',2000);}catch(err){tip(err.message||'删除失败',4000);}
+}
+window.openBsdEdit=openBsdEdit;window.bsdConfirm=bsdConfirm;window.bsdCancel=bsdCancel;window.bsdDelete=bsdDelete;
+console.log('ERP Ver2.9-rc19.1 P3 Business.html bsd');
+
 var _origInitBusinessUiAs=initBusinessUi;
 initBusinessUi=function(){_origInitBusinessUiAs();initAfterSalesServiceOrderUi()};
 window.loadAfterSalesServiceOrderPage=loadAfterSalesServiceOrderPage;

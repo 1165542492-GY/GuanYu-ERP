@@ -815,6 +815,7 @@ namespace SupplierErpApp
         static string ReceivableSequenceFile;
         static string PayablesFile;
         static string PayableSequenceFile;
+        static string BusinessStockDetailsFile;
         static string LogFile;
         const int Port = 8787;
         static readonly string DefaultListenUrl = "http://0.0.0.0:" + Port;
@@ -825,17 +826,19 @@ namespace SupplierErpApp
         [STAThread]
         public static void Main(string[] args)
         {
+            args = args ?? new string[0];
             bool created;
             using (var mutex = new Mutex(true, "SupplierErpApp_SingleInstance", out created))
             {
-                if (!created)
-                {
-                    MessageBox.Show("冠誉制造 ERP 已经在运行。\r\n\r\n请查看系统托盘图标，或先关闭已运行的程序后再启动。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
                 try
                 {
-                    ResolveDataDirectory(args ?? new string[0]);
+                    if (!created)
+                    {
+                        string runningMsg = "冠誉制造 ERP 已经在运行，无法并发启动第二个实例访问同一数据目录。请先关闭已运行的 ERP（含托盘图标），再重试。";
+                        MessageBox.Show(runningMsg + "\r\n\r\n请查看系统托盘图标，或先关闭已运行的程序后再启动。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    ResolveDataDirectory(args);
                     InitializeDataFilePaths();
                     LogDataDirectoryStartup();
                     EnsureDataDirectories();
@@ -873,6 +876,12 @@ namespace SupplierErpApp
                 }
                 catch (Exception ex)
                 {
+                    try
+                    {
+                        string logPath = Path.Combine(DataDir ?? DefaultDataDir, "_p3_start_exception.txt");
+                        File.WriteAllText(logPath, ex.ToString(), new UTF8Encoding(false));
+                    }
+                    catch { }
                     MessageBox.Show("系统启动失败：\r\n" + ex.Message + "\r\n\r\n请尝试右键选择“以管理员身份运行”。", "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 finally
@@ -1010,6 +1019,7 @@ namespace SupplierErpApp
             ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
             PayablesFile = Path.Combine(DataDir, "payables.json");
             PayableSequenceFile = Path.Combine(DataDir, "payable_sequence.json");
+            BusinessStockDetailsFile = Path.Combine(DataDir, "business_stock_details.json");
             LogFile = Path.Combine(DataDir, "operation.log");
         }
 
@@ -1399,6 +1409,8 @@ namespace SupplierErpApp
                 if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
                 if (path == "/api/operation-impact/preview" && ctx.Request.HttpMethod == "POST") { PreviewOperationImpact(ctx, user); return; }
                 if (path == "/api/operation-impact/log" && ctx.Request.HttpMethod == "POST") { LogOperationImpactCancel(ctx, user); return; }
+                if (TryHandleBusinessStockDetailRoutes(ctx, user, path)) return;
+                if (TryHandleRepairOrderAliasRoutes(ctx, user, path)) return;
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
             }
             catch (ImpactBusinessException ex)
@@ -1558,10 +1570,25 @@ namespace SupplierErpApp
         {
             lock (DataLock)
             {
-                string temp = UsersFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(Users), new UTF8Encoding(false));
-                if (File.Exists(UsersFile)) File.Replace(temp, UsersFile, Path.Combine(BackupDir, "users_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json"));
-                else File.Move(temp, UsersFile);
+                string temp = UsersFile + ".tmp_" + Guid.NewGuid().ToString("N");
+                try
+                {
+                    File.WriteAllText(temp, Json.Serialize(Users), new UTF8Encoding(false));
+                    if (File.Exists(UsersFile))
+                    {
+                        string backup = Path.Combine(BackupDir, "users_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                        SafeAtomicReplace(temp, UsersFile, backup);
+                        temp = null;
+                    }
+                    else File.Move(temp, UsersFile);
+                }
+                finally
+                {
+                    if (temp != null)
+                    {
+                        try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                    }
+                }
                 CleanBackups();
             }
         }
@@ -1788,15 +1815,26 @@ namespace SupplierErpApp
         {
             lock (DataLock)
             {
-                string temp = SystemSettingsFile + ".tmp";
-                File.WriteAllText(temp, Json.Serialize(settings), new UTF8Encoding(false));
-                if (File.Exists(SystemSettingsFile))
+                string temp = SystemSettingsFile + ".tmp_" + Guid.NewGuid().ToString("N");
+                try
                 {
-                    string backup = Path.Combine(BackupDir, "system_settings_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                    File.Replace(temp, SystemSettingsFile, backup);
+                    File.WriteAllText(temp, Json.Serialize(settings), new UTF8Encoding(false));
+                    if (File.Exists(SystemSettingsFile))
+                    {
+                        string backup = Path.Combine(BackupDir, "system_settings_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                        SafeAtomicReplace(temp, SystemSettingsFile, backup);
+                        temp = null;
+                    }
+                    else File.Move(temp, SystemSettingsFile);
+                    CleanBackups();
                 }
-                else File.Move(temp, SystemSettingsFile);
-                CleanBackups();
+                finally
+                {
+                    if (temp != null)
+                    {
+                        try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                    }
+                }
             }
         }
 
@@ -2630,6 +2668,15 @@ namespace SupplierErpApp
         {
             string dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    string existing = File.ReadAllText(path, Encoding.UTF8);
+                    if (string.Equals(existing, content, StringComparison.Ordinal)) return;
+                }
+                catch { }
+            }
             string temp = path + ".tmp_" + Guid.NewGuid().ToString("N");
             try
             {
@@ -2637,14 +2684,17 @@ namespace SupplierErpApp
                 if (File.Exists(path))
                 {
                     string backup = path + ".bak";
-                    File.Replace(temp, path, backup, ignoreMetadataErrors: true);
-                    try { if (File.Exists(backup)) File.Delete(backup); } catch { }
+                    SafeAtomicReplace(temp, path, backup);
+                    temp = null;
                 }
                 else File.Move(temp, path);
             }
             finally
             {
-                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                if (temp != null)
+                {
+                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                }
             }
         }
 
@@ -4697,6 +4747,7 @@ namespace SupplierErpApp
             EnsureJsonFile(ReceivableSequenceFile, "0");
             EnsureJsonFile(PayablesFile);
             EnsureJsonFile(PayableSequenceFile, "0");
+            EnsureJsonFile(BusinessStockDetailsFile);
         }
 
         static void EnsureJsonFile(string path, string defaultContent = "[]")
@@ -6405,6 +6456,12 @@ namespace SupplierErpApp
             }
             foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeProductionPickId))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
+            foreach (var x in LoadBusinessStockDetails().Where(x => string.Equals(NormalizeBusinessStockDetailStatus(x.Status), "已确认", StringComparison.Ordinal) && x.Id != options.ExcludeBusinessStockDetailId))
+            {
+                decimal net = CalcBusinessStockNetEffect(x);
+                if (Math.Abs(net) > 0.0001m)
+                    StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -net, x.UnitCost);
+            }
             return map;
         }
 

@@ -10,6 +10,7 @@ namespace SupplierErpApp
         {
             public string ExcludeSalesOutboundId;
             public string ExcludeProductionPickId;
+            public string ExcludeBusinessStockDetailId;
         }
 
         static bool IsAutoSource(string sourceType)

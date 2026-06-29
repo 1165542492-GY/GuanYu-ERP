@@ -104,6 +104,7 @@ namespace SupplierErpApp
             else if (action.IndexOf("生产领用", StringComparison.Ordinal) >= 0) { module = "生产领用"; entityType = "ProductionPick"; }
             else if (action.IndexOf("成品入库", StringComparison.Ordinal) >= 0) { module = "成品入库"; entityType = "FinishedInbound"; }
             else if (action.IndexOf("售后维修", StringComparison.Ordinal) >= 0) { module = "售后维修工单"; entityType = "AfterSalesServiceOrder"; }
+            else if (action.IndexOf("业务出入库明细", StringComparison.Ordinal) >= 0 || action.IndexOf("业务明细", StringComparison.Ordinal) >= 0) { module = "业务出入库"; entityType = "BusinessStockDetail"; }
             else if (action.IndexOf("应收", StringComparison.Ordinal) >= 0) { module = "应收款"; entityType = "Receivable"; }
             else if (action.IndexOf("应付", StringComparison.Ordinal) >= 0) { module = "应付款"; entityType = "Payable"; }
             else if (action.IndexOf("收款", StringComparison.Ordinal) >= 0) { module = "应收款"; entityType = "ReceiptDetail"; }
@@ -124,6 +125,8 @@ namespace SupplierErpApp
             else if (action.StartsWith("批量删除")) act = "批量删除";
             else if (action.StartsWith("导入")) act = "导入";
             else if (action.StartsWith("导出")) act = "导出";
+            else if (action.IndexOf("确认业务", StringComparison.Ordinal) >= 0) act = "确认";
+            else if (action.IndexOf("取消业务", StringComparison.Ordinal) >= 0) act = "取消确认";
             else if (action.IndexOf("状态流转", StringComparison.Ordinal) >= 0) act = "状态流转";
             else if (action.IndexOf("生成应收", StringComparison.Ordinal) >= 0) act = "生成应收";
             else if (action.StartsWith("登录")) act = action.IndexOf("失败", StringComparison.Ordinal) >= 0 ? "登录失败" : "登录";

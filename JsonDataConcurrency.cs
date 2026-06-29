@@ -20,17 +20,80 @@ namespace SupplierErpApp
             return Json.Deserialize<List<T>>(File.ReadAllText(file, Encoding.UTF8)) ?? new List<T>();
         }
 
+        static void ClearReadOnly(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+            try
+            {
+                var attrs = File.GetAttributes(path);
+                if ((attrs & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+            }
+            catch { }
+        }
+
+        static void SafeAtomicReplace(string temp, string target, string backupPath)
+        {
+            ClearReadOnly(target);
+            if (!File.Exists(target))
+            {
+                File.Move(temp, target);
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(backupPath))
+            {
+                try
+                {
+                    string backupDir = Path.GetDirectoryName(backupPath);
+                    if (!string.IsNullOrWhiteSpace(backupDir)) Directory.CreateDirectory(backupDir);
+                    if (File.Exists(backupPath)) File.Delete(backupPath);
+                }
+                catch { }
+            }
+            try
+            {
+                File.Replace(temp, target, backupPath, ignoreMetadataErrors: true);
+                if (!string.IsNullOrWhiteSpace(backupPath))
+                {
+                    try { if (File.Exists(backupPath)) File.Delete(backupPath); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    File.Copy(temp, target, true);
+                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                }
+                catch (Exception copyEx)
+                {
+                    throw new IOException("原子替换失败: target=" + target + " backup=" + (backupPath ?? "") + " " + ex.Message + " fallback=" + copyEx.Message, ex);
+                }
+            }
+        }
+
         static void WriteJsonListCore<T>(string file, string backupPrefix, List<T> items)
         {
-            string temp = file + ".tmp";
-            File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
-            if (File.Exists(file))
+            string temp = file + ".tmp_" + Guid.NewGuid().ToString("N");
+            try
             {
-                string backup = Path.Combine(BackupDir, backupPrefix + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
-                File.Replace(temp, file, backup);
+                File.WriteAllText(temp, Json.Serialize(items), new UTF8Encoding(false));
+                if (File.Exists(file))
+                {
+                    string backup = Path.Combine(BackupDir, backupPrefix + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".json");
+                    SafeAtomicReplace(temp, file, backup);
+                    temp = null;
+                }
+                else File.Move(temp, file);
+                CleanBackups();
             }
-            else File.Move(temp, file);
-            CleanBackups();
+            finally
+            {
+                if (temp != null)
+                {
+                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                }
+            }
         }
 
         /// <summary>在同一 DataLock 内完成读-改-写，避免并发丢失更新。</summary>
