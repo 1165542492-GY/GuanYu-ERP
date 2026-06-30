@@ -827,14 +827,16 @@ namespace SupplierErpApp
         public static void Main(string[] args)
         {
             args = args ?? new string[0];
+            string startupDataDir = PeekStartupDataDirectory(args);
+            string mutexName = BuildSingleInstanceMutexName(startupDataDir);
             bool created;
-            using (var mutex = new Mutex(true, "SupplierErpApp_SingleInstance", out created))
+            using (var mutex = new Mutex(true, mutexName, out created))
             {
                 try
                 {
                     if (!created)
                     {
-                        string runningMsg = "冠誉制造 ERP 已经在运行，无法并发启动第二个实例访问同一数据目录。请先关闭已运行的 ERP（含托盘图标），再重试。";
+                        string runningMsg = BuildAlreadyRunningMessage(startupDataDir, mutexName);
                         MessageBox.Show(runningMsg + "\r\n\r\n请查看系统托盘图标，或先关闭已运行的程序后再启动。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
@@ -879,7 +881,15 @@ namespace SupplierErpApp
                     try
                     {
                         string logPath = Path.Combine(DataDir ?? DefaultDataDir, "_p3_start_exception.txt");
-                        File.WriteAllText(logPath, ex.ToString(), new UTF8Encoding(false));
+                        var sb = new StringBuilder();
+                        sb.AppendLine("data-dir: " + (DataDir ?? DefaultDataDir));
+                        sb.AppendLine("data-dir-source: " + (DataDirectorySource ?? "unknown"));
+                        sb.AppendLine("mutex: " + mutexName);
+                        sb.AppendLine("listen-url-requested: " + ResolveListenUrl());
+                        sb.AppendLine("is-default-data-dir: " + IsDefaultDataDirectory);
+                        sb.AppendLine("---");
+                        sb.AppendLine(ex.ToString());
+                        File.WriteAllText(logPath, sb.ToString(), new UTF8Encoding(false));
                     }
                     catch { }
                     MessageBox.Show("系统启动失败：\r\n" + ex.Message + "\r\n\r\n请尝试右键选择“以管理员身份运行”。", "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -907,6 +917,56 @@ namespace SupplierErpApp
                     return args[i].Substring(prefix.Length);
             }
             return null;
+        }
+
+        static string PeekStartupDataDirectory(string[] args)
+        {
+            string argPath = ParseDataDirArgument(args);
+            string envPath = Environment.GetEnvironmentVariable("ERP_DATA_DIR");
+            string sourcePath = !string.IsNullOrWhiteSpace(argPath) ? argPath
+                : !string.IsNullOrWhiteSpace(envPath) ? envPath : null;
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                return NormalizeDirectoryPath(DefaultDataDir) ?? DefaultDataDir;
+            return NormalizeDirectoryPath(sourcePath) ?? DefaultDataDir;
+        }
+
+        static string BuildSingleInstanceMutexName(string dataDir)
+        {
+            string normalized = NormalizeDirectoryPath(dataDir) ?? NormalizeDirectoryPath(DefaultDataDir) ?? DefaultDataDir;
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(normalized.ToUpperInvariant()));
+                return "SupplierErpApp_SingleInstance_" + BitConverter.ToString(hash, 0, 8).Replace("-", "");
+            }
+        }
+
+        static string TryGetOtherErpProcessInfo(string dataDir)
+        {
+            var matches = new List<string>();
+            foreach (var p in Process.GetProcesses())
+            {
+                try
+                {
+                    string name = p.ProcessName ?? "";
+                    if (name.IndexOf("ERP", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    string path = null;
+                    try { path = p.MainModule != null ? p.MainModule.FileName : null; } catch { }
+                    matches.Add("PID=" + p.Id + " Name=" + name + (string.IsNullOrWhiteSpace(path) ? "" : " Path=" + path));
+                }
+                catch { }
+            }
+            if (matches.Count == 0) return "none (no ERP process found; mutex may be stale or held in another session)";
+            return string.Join("; ", matches.ToArray());
+        }
+
+        static string BuildAlreadyRunningMessage(string dataDir, string mutexName)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("冠誉制造 ERP 已经在运行，无法并发启动第二个实例访问同一数据目录。请先关闭已运行的 ERP（含托盘图标），再重试。");
+            sb.AppendLine("data-dir: " + (NormalizeDirectoryPath(dataDir) ?? dataDir));
+            sb.AppendLine("mutex: " + mutexName);
+            sb.AppendLine("process: " + TryGetOtherErpProcessInfo(dataDir));
+            return sb.ToString().TrimEnd();
         }
 
         static string NormalizeDirectoryPath(string path)
@@ -1176,9 +1236,22 @@ namespace SupplierErpApp
             {
                 var url = env.Trim().TrimEnd('/');
                 if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    return url;
+                    return NormalizeListenUrlForHttpSys(url);
             }
             return DefaultListenUrl;
+        }
+
+        static string NormalizeListenUrlForHttpSys(string url)
+        {
+            url = (url ?? string.Empty).Trim().TrimEnd('/');
+            string localhost = "http://localhost:" + Port;
+            string loopback = "http://127.0.0.1:" + Port;
+            if (url.Equals(localhost, StringComparison.OrdinalIgnoreCase) ||
+                url.StartsWith(localhost + "/", StringComparison.OrdinalIgnoreCase) ||
+                url.Equals(loopback, StringComparison.OrdinalIgnoreCase) ||
+                url.StartsWith(loopback + "/", StringComparison.OrdinalIgnoreCase))
+                return DefaultListenUrl;
+            return url;
         }
 
         static string ToHttpListenerPrefix(string listenUrl)
@@ -1188,6 +1261,50 @@ namespace SupplierErpApp
             return url
                 .Replace("http://0.0.0.0:", "http://+:", StringComparison.OrdinalIgnoreCase)
                 .Replace("http://*:", "http://+:", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static string LocalhostListenPrefix()
+        {
+            return "http://127.0.0.1:" + Port + "/";
+        }
+
+        static List<string[]> BuildListenPrefixAttempts(string listenUrl)
+        {
+            var primary = ToHttpListenerPrefix(listenUrl);
+            var attempts = new List<string[]>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Action<string[]> addAttempt = prefixes =>
+            {
+                var key = string.Join("|", prefixes);
+                if (seen.Add(key)) attempts.Add(prefixes);
+            };
+            addAttempt(new[] { primary });
+            return attempts;
+        }
+
+        static void LogListenStartup(string requestedUrl, string[] activePrefixes)
+        {
+            try
+            {
+                var line = "[ERP Startup] HttpListener requested=" + requestedUrl + " active=" + string.Join(", ", activePrefixes);
+                Console.WriteLine(line);
+                if (!string.IsNullOrWhiteSpace(LogFile) && Directory.Exists(Path.GetDirectoryName(LogFile) ?? ""))
+                    File.AppendAllText(LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + line + Environment.NewLine, new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        static void LogListenLoopException(Exception ex)
+        {
+            try
+            {
+                if (ex == null) return;
+                var line = "[ERP Startup] HttpListener loop error: " + ex.GetType().FullName + " " + ex.Message;
+                Console.WriteLine(line);
+                if (!string.IsNullOrWhiteSpace(LogFile) && Directory.Exists(Path.GetDirectoryName(LogFile) ?? ""))
+                    File.AppendAllText(LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + line + Environment.NewLine, new UTF8Encoding(false));
+            }
+            catch { }
         }
 
         static void OpenBrowser()
@@ -1201,32 +1318,54 @@ namespace SupplierErpApp
 
         static void StartServer()
         {
-            Listener = new HttpListener();
             string listenUrl = ResolveListenUrl();
-            Listener.Prefixes.Add(ToHttpListenerPrefix(listenUrl));
-            try
+            var attempts = BuildListenPrefixAttempts(listenUrl);
+            HttpListenerException lastEx = null;
+            string lastPrefixes = null;
+            foreach (var prefixes in attempts)
             {
-                Listener.Start();
-            }
-            catch (HttpListenerException ex)
-            {
-                string hint = ex.ErrorCode == 5
-                    ? "请以管理员身份运行「冠誉制造ERP.exe」。"
-                    : "端口 " + Port + " 已被占用，或当前用户无权监听该地址。\r\n\r\n请关闭已运行的「冠誉制造ERP」或其他占用该端口的程序后重试。";
-                throw new InvalidOperationException("ERP Web 服务启动失败（" + listenUrl + "）。\r\n\r\n" + hint + "\r\n\r\n详细信息：" + ex.Message, ex);
-            }
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                while (Listener.IsListening)
+                var listener = new HttpListener();
+                foreach (var prefix in prefixes)
+                    listener.Prefixes.Add(prefix);
+                try
                 {
-                    try
+                    listener.Start();
+                    Listener = listener;
+                    LogListenStartup(listenUrl, prefixes);
+                    var activeListener = listener;
+                    var listenThread = new Thread(delegate()
                     {
-                        var context = Listener.GetContext();
-                        ThreadPool.QueueUserWorkItem(delegate { Handle(context); });
-                    }
-                    catch { if (!Listener.IsListening) return; }
+                        while (activeListener.IsListening)
+                        {
+                            try
+                            {
+                                var context = activeListener.GetContext();
+                                ThreadPool.QueueUserWorkItem(delegate { Handle(context); });
+                            }
+                            catch (Exception ex)
+                            {
+                                if (!activeListener.IsListening) return;
+                                LogListenLoopException(ex);
+                                Thread.Sleep(100);
+                            }
+                        }
+                    });
+                    listenThread.IsBackground = true;
+                    listenThread.Name = "ERP HttpListener";
+                    listenThread.Start();
+                    return;
                 }
-            });
+                catch (HttpListenerException ex)
+                {
+                    lastEx = ex;
+                    lastPrefixes = string.Join(", ", prefixes);
+                    try { listener.Close(); } catch { }
+                }
+            }
+            string hint = lastEx != null && lastEx.ErrorCode == 5
+                ? "请以管理员身份运行「冠誉制造ERP.exe」。"
+                : "端口 " + Port + " 已被占用，或当前用户无权监听该地址。\r\n\r\n请关闭已运行的「冠誉制造ERP」或其他占用该端口的程序后重试。";
+            throw new InvalidOperationException("ERP Web 服务启动失败（" + listenUrl + "，最后尝试：" + (lastPrefixes ?? "none") + "）。\r\n\r\n" + hint + "\r\n\r\n详细信息：" + (lastEx != null ? lastEx.Message : "unknown"), lastEx);
         }
 
         static void Handle(HttpListenerContext ctx)

@@ -96,13 +96,15 @@ namespace SupplierErpApp
                 WriteFinanceSheet(wb);
                 WriteFinanceOpeningSheet(wb);
                 WriteStockReferenceSheet(wb);
+                byte[] bytes;
                 using (var ms = new MemoryStream())
                 {
                     wb.SaveAs(ms);
-                    WriteXlsxDownload(ctx, "ERP测试数据总表" + DateTime.Now.ToString("yyyyMMdd") + ".xlsx", ms.ToArray());
+                    bytes = ms.ToArray();
                 }
+                Audit(user, "导出测试数据总表", "ERP测试数据总表");
+                WriteXlsxDownload(ctx, "ERP测试数据总表" + DateTime.Now.ToString("yyyyMMdd") + ".xlsx", bytes);
             }
-            Audit(user, "导出测试数据总表", "ERP测试数据总表");
         }
 
         static void ImportTestDataPreview(HttpListenerContext ctx, UserSession user)
@@ -750,6 +752,20 @@ namespace SupplierErpApp
         {
             res.Failed++;
             if (errors.Count < 30) errors.Add("第" + rowNo + "行：" + msg);
+        }
+
+        static bool IsTestDataSheetNoteRow(Dictionary<string, string> row)
+        {
+            foreach (var kv in row)
+            {
+                string v = (kv.Value ?? "").Trim();
+                if (string.IsNullOrEmpty(v)) continue;
+                if (v.StartsWith("说明", StringComparison.Ordinal) ||
+                    v.StartsWith("（仅供参考", StringComparison.Ordinal) ||
+                    v.StartsWith("注：", StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
         }
 
         static TestDataModuleResult ImportSuppliersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
@@ -1432,6 +1448,7 @@ namespace SupplierErpApp
             foreach (var row in rows)
             {
                 rowNo++;
+                if (IsTestDataSheetNoteRow(row)) { res.Skipped++; continue; }
                 try
                 {
                     string code = Cell(row, "应收编号");
@@ -1478,6 +1495,7 @@ namespace SupplierErpApp
             foreach (var row in rows)
             {
                 rowNo++;
+                if (IsTestDataSheetNoteRow(row)) { res.Skipped++; continue; }
                 try
                 {
                     string code = Cell(row, "应付编号");
