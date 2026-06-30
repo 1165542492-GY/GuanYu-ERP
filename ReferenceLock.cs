@@ -70,9 +70,6 @@ namespace SupplierErpApp
             if (LoadSalesOrders().Any(x => MatchesCustomerRef(x.CustomerId, x.CustomerCode, x.CustomerName, customerId, customerCode, customerCompany))) return true;
             if (LoadSalesOutbounds().Any(x => string.Equals((x.CustomerName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase))) return true;
             if (LoadReceivables().Any(x => string.Equals((x.CustomerName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase))) return true;
-            if (LoadContracts().Any(x =>
-                string.Equals((x.PartyBName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(customerCode) && string.Equals((x.CustomerCode ?? "").Trim(), customerCode, StringComparison.OrdinalIgnoreCase)))) return true;
             return false;
         }
 
@@ -125,6 +122,8 @@ namespace SupplierErpApp
         static void EnsureSalesOrderReferenceLockForEdit(SalesOrder existing, SalesOrder input, List<SalesOutbound> outbounds, List<Receivable> receivables)
         {
             if (existing == null || input == null) return;
+            EnsureSalesOrderItemsForRead(existing);
+            EnsureSalesOrderItemsForRead(input);
             bool hasOutbound = outbounds.Any(x => x.SalesOrderId == existing.Id);
             bool hasAutoReceivable = receivables.Any(x => x.SalesOrderId == existing.Id);
             if (!hasOutbound && !hasAutoReceivable) return;
@@ -135,13 +134,16 @@ namespace SupplierErpApp
                 existing.Quantity != input.Quantity ||
                 existing.TaxExcludedSalePrice != input.TaxExcludedSalePrice ||
                 existing.TaxIncludedSalePrice != input.TaxIncludedSalePrice ||
-                existing.Amount != input.Amount;
+                existing.Amount != input.Amount ||
+                SalesOrderLineSignature(existing) != SalesOrderLineSignature(input);
             if (keyChanged) BizFail(ReferenceLockMessage, 409);
         }
 
         static void EnsurePurchaseOrderReferenceLockForEdit(PurchaseOrder existing, PurchaseOrder input, List<PurchaseInbound> inbounds, List<Payable> payables)
         {
             if (existing == null || input == null) return;
+            EnsurePurchaseOrderItemsForRead(existing);
+            EnsurePurchaseOrderItemsForRead(input);
             bool hasInbound = inbounds.Any(x => x.PurchaseOrderId == existing.Id);
             bool hasAutoPayable = payables.Any(x => x.PurchaseOrderId == existing.Id);
             if (!hasInbound && !hasAutoPayable) return;
@@ -151,8 +153,49 @@ namespace SupplierErpApp
                 !string.Equals(existing.MaterialCode ?? "", input.MaterialCode ?? "", StringComparison.OrdinalIgnoreCase) ||
                 existing.Quantity != input.Quantity ||
                 existing.UnitPrice != input.UnitPrice ||
-                existing.Amount != input.Amount;
+                existing.Amount != input.Amount ||
+                PurchaseOrderLineSignature(existing) != PurchaseOrderLineSignature(input);
             if (keyChanged) BizFail(ReferenceLockMessage, 409);
+        }
+
+        static string SalesOrderLineSignature(SalesOrder order)
+        {
+            var lines = (order.Items ?? new List<SalesOrderLine>())
+                .Select(x => string.Join("|", new[]
+                {
+                    x.LineId ?? "",
+                    x.ItemType ?? "",
+                    x.ModelCostId ?? "",
+                    x.BomId ?? "",
+                    x.MaterialId ?? "",
+                    x.MaterialCode ?? "",
+                    x.MaterialName ?? "",
+                    x.Quantity.ToString("0.####"),
+                    x.TaxExcludedSalePrice.ToString("0.####"),
+                    x.TaxIncludedSalePrice.ToString("0.####"),
+                    x.Amount.ToString("0.####")
+                }))
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToArray();
+            return string.Join(";", lines);
+        }
+
+        static string PurchaseOrderLineSignature(PurchaseOrder order)
+        {
+            var lines = (order.Items ?? new List<PurchaseOrderLine>())
+                .Select(x => string.Join("|", new[]
+                {
+                    x.LineId ?? "",
+                    x.MaterialId ?? "",
+                    x.MaterialCode ?? "",
+                    x.MaterialName ?? "",
+                    x.Quantity.ToString("0.####"),
+                    x.UnitPrice.ToString("0.####"),
+                    x.Amount.ToString("0.####")
+                }))
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToArray();
+            return string.Join(";", lines);
         }
 
         static void EnsureConfirmedInventoryDocDeleteBlocked(string status, string docLabel)

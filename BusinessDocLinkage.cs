@@ -6,6 +6,301 @@ namespace SupplierErpApp
 {
     public static partial class Program
     {
+        static SalesOrderLine BuildLegacySalesOrderLine(SalesOrder order)
+        {
+            if (order == null) return null;
+            if (string.IsNullOrWhiteSpace(order.MaterialId) && string.IsNullOrWhiteSpace(order.MaterialName)
+                && string.IsNullOrWhiteSpace(order.ModelCostId) && order.Quantity <= 0)
+                return null;
+            return new SalesOrderLine
+            {
+                LineId = Guid.NewGuid().ToString("N"),
+                ItemType = NormalizeSalesItemType(order.ItemType),
+                ModelCostId = order.ModelCostId,
+                BomId = order.BomId,
+                MaterialId = order.MaterialId,
+                MaterialCode = order.MaterialCode,
+                MaterialName = order.MaterialName,
+                Quantity = order.Quantity,
+                TaxExcludedSalePrice = order.TaxExcludedSalePrice > 0 ? order.TaxExcludedSalePrice : order.UnitPrice,
+                TaxIncludedSalePrice = order.TaxIncludedSalePrice,
+                TaxExcludedSaleAmount = order.TaxExcludedSaleAmount,
+                TaxIncludedSaleAmount = order.TaxIncludedSaleAmount,
+                UnitPrice = order.UnitPrice,
+                Amount = order.Amount,
+                Note = ""
+            };
+        }
+
+        static PurchaseOrderLine BuildLegacyPurchaseOrderLine(PurchaseOrder order)
+        {
+            if (order == null) return null;
+            if (string.IsNullOrWhiteSpace(order.MaterialId) && string.IsNullOrWhiteSpace(order.MaterialName) && order.Quantity <= 0)
+                return null;
+            return new PurchaseOrderLine
+            {
+                LineId = Guid.NewGuid().ToString("N"),
+                MaterialId = order.MaterialId,
+                MaterialCode = order.MaterialCode,
+                MaterialName = order.MaterialName,
+                Quantity = order.Quantity,
+                UnitPrice = order.UnitPrice,
+                PriceType = order.PriceType,
+                Amount = order.Amount,
+                Note = ""
+            };
+        }
+
+        static void EnsureSalesOrderItemsForRead(SalesOrder order)
+        {
+            if (order == null) return;
+            if (order.Items == null || order.Items.Count == 0)
+            {
+                var legacy = BuildLegacySalesOrderLine(order);
+                order.Items = legacy == null ? new List<SalesOrderLine>() : new List<SalesOrderLine> { legacy };
+            }
+            foreach (var line in order.Items)
+                if (string.IsNullOrWhiteSpace(line.LineId)) line.LineId = Guid.NewGuid().ToString("N");
+            ApplySalesOrderAggregateFromLines(order);
+        }
+
+        static void EnsurePurchaseOrderItemsForRead(PurchaseOrder order)
+        {
+            if (order == null) return;
+            if (order.Items == null || order.Items.Count == 0)
+            {
+                var legacy = BuildLegacyPurchaseOrderLine(order);
+                order.Items = legacy == null ? new List<PurchaseOrderLine>() : new List<PurchaseOrderLine> { legacy };
+            }
+            foreach (var line in order.Items)
+                if (string.IsNullOrWhiteSpace(line.LineId)) line.LineId = Guid.NewGuid().ToString("N");
+            ApplyPurchaseOrderAggregateFromLines(order);
+        }
+
+        static void ApplySalesOrderLineDefaults(SalesOrderLine line)
+        {
+            if (line == null) BizFail("Sales order line cannot be empty");
+            line.LineId = string.IsNullOrWhiteSpace(line.LineId) ? Guid.NewGuid().ToString("N") : line.LineId.Trim();
+            line.ItemType = NormalizeSalesItemType(line.ItemType);
+            line.ModelCostId = (line.ModelCostId ?? "").Trim();
+            line.BomId = (line.BomId ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(line.ModelCostId)) line.ItemType = "FinishedProduct";
+            if (line.ItemType == "FinishedProduct")
+            {
+                if (string.IsNullOrWhiteSpace(line.ModelCostId)) BizFail("Finished product line must choose model cost");
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == line.ModelCostId);
+                if (mc == null) BizFail("Selected model cost does not exist");
+                if ((mc.Status ?? "启用") != "启用") BizFail("Selected model cost is disabled");
+                line.BomId = mc.BomId ?? "";
+                line.MaterialCode = mc.ModelCode ?? "";
+                line.MaterialName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : mc.ModelName;
+                line.MaterialId = "";
+            }
+            else
+            {
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(line.MaterialId, line.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                line.MaterialId = mid;
+                line.MaterialCode = mcode;
+                line.MaterialName = mname;
+                line.ModelCostId = "";
+                line.BomId = "";
+                if (string.IsNullOrWhiteSpace(line.MaterialName)) BizFail("Please choose material for every sales order line");
+            }
+            if (line.Quantity <= 0) BizFail("Sales order line quantity must be greater than 0");
+            if (line.TaxExcludedSalePrice <= 0 && line.TaxIncludedSalePrice <= 0 && line.UnitPrice > 0)
+                line.TaxExcludedSalePrice = line.UnitPrice;
+            if (line.TaxExcludedSalePrice < 0 || line.TaxIncludedSalePrice < 0)
+                BizFail("Sales order line price cannot be negative");
+            line.TaxExcludedSaleAmount = CalcLineAmount(line.Quantity, line.TaxExcludedSalePrice);
+            line.TaxIncludedSaleAmount = CalcLineAmount(line.Quantity, line.TaxIncludedSalePrice);
+            line.UnitPrice = line.TaxExcludedSalePrice;
+            line.Amount = line.TaxExcludedSaleAmount > 0 ? line.TaxExcludedSaleAmount : line.TaxIncludedSaleAmount;
+            line.Note = (line.Note ?? "").Trim();
+        }
+
+        static void ApplyPurchaseOrderLineDefaults(PurchaseOrderLine line)
+        {
+            if (line == null) BizFail("Purchase order line cannot be empty");
+            line.LineId = string.IsNullOrWhiteSpace(line.LineId) ? Guid.NewGuid().ToString("N") : line.LineId.Trim();
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(line.MaterialId, line.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+            line.MaterialId = mid;
+            line.MaterialCode = mcode;
+            line.MaterialName = mname;
+            if (string.IsNullOrWhiteSpace(line.MaterialName)) BizFail("Please choose material for every purchase order line");
+            if (line.UnitPrice <= 0 && !string.IsNullOrWhiteSpace(line.MaterialId))
+            {
+                var material = LoadMaterials().FirstOrDefault(x => x.Id == line.MaterialId);
+                if (material != null)
+                {
+                    line.UnitPrice = MaterialDisplayUnitPrice(material);
+                    if (string.IsNullOrWhiteSpace(line.PriceType)) line.PriceType = NormalizePriceType(material.PriceType);
+                }
+            }
+            line.PriceType = NormalizePriceType(line.PriceType);
+            if (line.Quantity <= 0) BizFail("Purchase order line quantity must be greater than 0");
+            if (line.UnitPrice < 0) BizFail("Purchase order line price cannot be negative");
+            line.Amount = CalcLineAmount(line.Quantity, line.UnitPrice);
+            line.Note = (line.Note ?? "").Trim();
+        }
+
+        static void ApplySalesOrderAggregateFromLines(SalesOrder order)
+        {
+            if (order == null) return;
+            var lines = order.Items ?? new List<SalesOrderLine>();
+            order.Quantity = RoundMoney(lines.Sum(x => x.Quantity));
+            order.TaxExcludedSaleAmount = RoundMoney(lines.Sum(x => x.TaxExcludedSaleAmount));
+            order.TaxIncludedSaleAmount = RoundMoney(lines.Sum(x => x.TaxIncludedSaleAmount));
+            order.Amount = order.TaxExcludedSaleAmount > 0 ? order.TaxExcludedSaleAmount : order.TaxIncludedSaleAmount;
+            if (lines.Count == 1)
+            {
+                var line = lines[0];
+                order.ItemType = line.ItemType;
+                order.ModelCostId = line.ModelCostId;
+                order.BomId = line.BomId;
+                order.MaterialId = line.MaterialId;
+                order.MaterialCode = line.MaterialCode;
+                order.MaterialName = line.MaterialName;
+                order.TaxExcludedSalePrice = line.TaxExcludedSalePrice;
+                order.TaxIncludedSalePrice = line.TaxIncludedSalePrice;
+                order.UnitPrice = line.UnitPrice;
+            }
+            else if (lines.Count > 1)
+            {
+                order.ItemType = "Material";
+                order.ModelCostId = "";
+                order.BomId = "";
+                order.MaterialId = "";
+                order.MaterialCode = "";
+                order.MaterialName = "多明细 " + lines.Count + " 行";
+                order.TaxExcludedSalePrice = 0;
+                order.TaxIncludedSalePrice = 0;
+                order.UnitPrice = 0;
+            }
+        }
+
+        static void ApplyPurchaseOrderAggregateFromLines(PurchaseOrder order)
+        {
+            if (order == null) return;
+            var lines = order.Items ?? new List<PurchaseOrderLine>();
+            order.Quantity = RoundMoney(lines.Sum(x => x.Quantity));
+            order.Amount = RoundMoney(lines.Sum(x => x.Amount));
+            if (lines.Count == 1)
+            {
+                var line = lines[0];
+                order.MaterialId = line.MaterialId;
+                order.MaterialCode = line.MaterialCode;
+                order.MaterialName = line.MaterialName;
+                order.UnitPrice = line.UnitPrice;
+                order.PriceType = line.PriceType;
+            }
+            else if (lines.Count > 1)
+            {
+                order.MaterialId = "";
+                order.MaterialCode = "";
+                order.MaterialName = "多明细 " + lines.Count + " 行";
+                order.UnitPrice = 0;
+                order.PriceType = "";
+            }
+        }
+
+        static void NormalizeSalesOrderItemsForSave(SalesOrder order)
+        {
+            if (order.Items == null || order.Items.Count == 0)
+            {
+                var legacy = BuildLegacySalesOrderLine(order);
+                order.Items = legacy == null ? new List<SalesOrderLine>() : new List<SalesOrderLine> { legacy };
+            }
+            if (order.Items.Count == 0) BizFail("Sales order must contain at least one line");
+            foreach (var line in order.Items) ApplySalesOrderLineDefaults(line);
+            ApplySalesOrderAggregateFromLines(order);
+        }
+
+        static void NormalizePurchaseOrderItemsForSave(PurchaseOrder order)
+        {
+            if (order.Items == null || order.Items.Count == 0)
+            {
+                var legacy = BuildLegacyPurchaseOrderLine(order);
+                order.Items = legacy == null ? new List<PurchaseOrderLine>() : new List<PurchaseOrderLine> { legacy };
+            }
+            if (order.Items.Count == 0) BizFail("Purchase order must contain at least one line");
+            foreach (var line in order.Items) ApplyPurchaseOrderLineDefaults(line);
+            ApplyPurchaseOrderAggregateFromLines(order);
+        }
+
+        static List<SalesOrderLine> ParseSalesOrderLinesJson(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try
+            {
+                var lines = Json.Deserialize<List<SalesOrderLine>>(json.Trim());
+                return lines == null || lines.Count == 0 ? null : lines;
+            }
+            catch (Exception ex)
+            {
+                BizFail("Sales order Items JSON is invalid: " + ex.Message);
+                return null;
+            }
+        }
+
+        static List<PurchaseOrderLine> ParsePurchaseOrderLinesJson(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try
+            {
+                var lines = Json.Deserialize<List<PurchaseOrderLine>>(json.Trim());
+                return lines == null || lines.Count == 0 ? null : lines;
+            }
+            catch (Exception ex)
+            {
+                BizFail("Purchase order Items JSON is invalid: " + ex.Message);
+                return null;
+            }
+        }
+
+        static SalesOrderLine SelectSalesOrderLineForOutbound(SalesOrder order, SalesOutbound item)
+        {
+            EnsureSalesOrderItemsForRead(order);
+            var lines = order.Items ?? new List<SalesOrderLine>();
+            if (lines.Count == 0) return null;
+            string lineId = (item.SalesOrderLineId ?? "").Trim();
+            SalesOrderLine line = null;
+            if (!string.IsNullOrWhiteSpace(lineId))
+                line = lines.FirstOrDefault(x => string.Equals(x.LineId ?? "", lineId, StringComparison.OrdinalIgnoreCase));
+            if (line == null && lines.Count == 1) line = lines[0];
+            if (line == null && !string.IsNullOrWhiteSpace(item.ModelCostId))
+                line = lines.FirstOrDefault(x => string.Equals(x.ModelCostId ?? "", item.ModelCostId, StringComparison.OrdinalIgnoreCase));
+            if (line == null && !string.IsNullOrWhiteSpace(item.MaterialId))
+                line = lines.FirstOrDefault(x => string.Equals(x.MaterialId ?? "", item.MaterialId, StringComparison.OrdinalIgnoreCase));
+            if (line == null && !string.IsNullOrWhiteSpace(item.MaterialName))
+                line = lines.FirstOrDefault(x => string.Equals(x.MaterialName ?? "", item.MaterialName, StringComparison.OrdinalIgnoreCase));
+            if (line == null && lines.Count > 1) BizFail("Sales order has multiple lines; choose a source line before outbound");
+            if (line == null) BizFail("Sales order line does not exist");
+            item.SalesOrderLineId = line.LineId ?? "";
+            return line;
+        }
+
+        static PurchaseOrderLine SelectPurchaseOrderLineForInbound(PurchaseOrder order, PurchaseInbound item)
+        {
+            EnsurePurchaseOrderItemsForRead(order);
+            var lines = order.Items ?? new List<PurchaseOrderLine>();
+            if (lines.Count == 0) return null;
+            string lineId = (item.PurchaseOrderLineId ?? "").Trim();
+            PurchaseOrderLine line = null;
+            if (!string.IsNullOrWhiteSpace(lineId))
+                line = lines.FirstOrDefault(x => string.Equals(x.LineId ?? "", lineId, StringComparison.OrdinalIgnoreCase));
+            if (line == null && lines.Count == 1) line = lines[0];
+            if (line == null && !string.IsNullOrWhiteSpace(item.MaterialId))
+                line = lines.FirstOrDefault(x => string.Equals(x.MaterialId ?? "", item.MaterialId, StringComparison.OrdinalIgnoreCase));
+            if (line == null && !string.IsNullOrWhiteSpace(item.MaterialName))
+                line = lines.FirstOrDefault(x => string.Equals(x.MaterialName ?? "", item.MaterialName, StringComparison.OrdinalIgnoreCase));
+            if (line == null && lines.Count > 1) BizFail("Purchase order has multiple lines; choose a source line before inbound");
+            if (line == null) BizFail("Purchase order line does not exist");
+            item.PurchaseOrderLineId = line.LineId ?? "";
+            return line;
+        }
+
         class ImportBatchContext
         {
             readonly List<SalesOutbound> _pendingConfirmedOutbounds = new List<SalesOutbound>();
@@ -17,22 +312,24 @@ namespace SupplierErpApp
                 _stockMap = BuildStockMap();
             }
 
-            public decimal GetPendingOutboundQty(string salesOrderId, string excludeOutboundId = null)
+            public decimal GetPendingOutboundQty(string salesOrderId, string salesOrderLineId = null, string excludeOutboundId = null)
             {
                 if (string.IsNullOrWhiteSpace(salesOrderId)) return 0;
                 return _pendingConfirmedOutbounds
                     .Where(x => IsConfirmedStatus(x.Status)
                         && string.Equals(x.SalesOrderId ?? "", salesOrderId, StringComparison.OrdinalIgnoreCase)
+                        && (string.IsNullOrWhiteSpace(salesOrderLineId) || string.Equals(x.SalesOrderLineId ?? "", salesOrderLineId, StringComparison.OrdinalIgnoreCase))
                         && (excludeOutboundId == null || !string.Equals(x.Id, excludeOutboundId, StringComparison.OrdinalIgnoreCase)))
                     .Sum(x => x.Quantity);
             }
 
-            public decimal GetPendingInboundQty(string purchaseOrderId, string excludeInboundId = null)
+            public decimal GetPendingInboundQty(string purchaseOrderId, string purchaseOrderLineId = null, string excludeInboundId = null)
             {
                 if (string.IsNullOrWhiteSpace(purchaseOrderId)) return 0;
                 return _pendingConfirmedInbounds
                     .Where(x => IsConfirmedStatus(x.Status)
                         && string.Equals(x.PurchaseOrderId ?? "", purchaseOrderId, StringComparison.OrdinalIgnoreCase)
+                        && (string.IsNullOrWhiteSpace(purchaseOrderLineId) || string.Equals(x.PurchaseOrderLineId ?? "", purchaseOrderLineId, StringComparison.OrdinalIgnoreCase))
                         && (excludeInboundId == null || !string.Equals(x.Id, excludeInboundId, StringComparison.OrdinalIgnoreCase)))
                     .Sum(x => x.Quantity);
             }
@@ -61,22 +358,24 @@ namespace SupplierErpApp
             }
         }
 
-        static decimal GetConfirmedOutboundQtyForSalesOrder(string salesOrderId, string excludeOutboundId = null)
+        static decimal GetConfirmedOutboundQtyForSalesOrder(string salesOrderId, string salesOrderLineId = null, string excludeOutboundId = null)
         {
             if (string.IsNullOrWhiteSpace(salesOrderId)) return 0;
             return LoadSalesOutbounds()
                 .Where(x => IsConfirmedStatus(x.Status)
                     && string.Equals(x.SalesOrderId ?? "", salesOrderId, StringComparison.OrdinalIgnoreCase)
+                    && (string.IsNullOrWhiteSpace(salesOrderLineId) || string.Equals(x.SalesOrderLineId ?? "", salesOrderLineId, StringComparison.OrdinalIgnoreCase))
                     && (excludeOutboundId == null || !string.Equals(x.Id, excludeOutboundId, StringComparison.OrdinalIgnoreCase)))
                 .Sum(x => x.Quantity);
         }
 
-        static decimal GetConfirmedInboundQtyForPurchaseOrder(string purchaseOrderId, string excludeInboundId = null)
+        static decimal GetConfirmedInboundQtyForPurchaseOrder(string purchaseOrderId, string purchaseOrderLineId = null, string excludeInboundId = null)
         {
             if (string.IsNullOrWhiteSpace(purchaseOrderId)) return 0;
             return LoadPurchaseInbounds()
                 .Where(x => IsConfirmedStatus(x.Status)
                     && string.Equals(x.PurchaseOrderId ?? "", purchaseOrderId, StringComparison.OrdinalIgnoreCase)
+                    && (string.IsNullOrWhiteSpace(purchaseOrderLineId) || string.Equals(x.PurchaseOrderLineId ?? "", purchaseOrderLineId, StringComparison.OrdinalIgnoreCase))
                     && (excludeInboundId == null || !string.Equals(x.Id, excludeInboundId, StringComparison.OrdinalIgnoreCase)))
                 .Sum(x => x.Quantity);
         }
@@ -87,9 +386,12 @@ namespace SupplierErpApp
             var order = orderOverride ?? LoadSalesOrders().FirstOrDefault(x => x.Id == item.SalesOrderId);
             if (order == null) return;
             if (!IsConfirmedStatus(order.Status)) BizFail("来源销售订单尚未确认，不能出库");
-            decimal shipped = GetConfirmedOutboundQtyForSalesOrder(item.SalesOrderId, excludeOutboundId);
-            if (batch != null) shipped += batch.GetPendingOutboundQty(item.SalesOrderId, excludeOutboundId);
-            decimal remaining = RoundMoney(order.Quantity - shipped);
+            var line = SelectSalesOrderLineForOutbound(order, item);
+            string lineId = line == null ? null : line.LineId;
+            decimal orderQty = line == null ? order.Quantity : line.Quantity;
+            decimal shipped = GetConfirmedOutboundQtyForSalesOrder(item.SalesOrderId, lineId, excludeOutboundId);
+            if (batch != null) shipped += batch.GetPendingOutboundQty(item.SalesOrderId, lineId, excludeOutboundId);
+            decimal remaining = RoundMoney(orderQty - shipped);
             if (item.Quantity > remaining + 0.0001m)
                 BizFail("本次出库数量不能超过未出库数量（剩余 " + remaining.ToString("0.##") + "）");
         }
@@ -100,9 +402,12 @@ namespace SupplierErpApp
             var order = orderOverride ?? LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
             if (order == null) return;
             if (!IsConfirmedStatus(order.Status)) BizFail("来源采购单尚未确认，不能入库");
-            decimal received = GetConfirmedInboundQtyForPurchaseOrder(item.PurchaseOrderId, excludeInboundId);
-            if (batch != null) received += batch.GetPendingInboundQty(item.PurchaseOrderId, excludeInboundId);
-            decimal remaining = RoundMoney(order.Quantity - received);
+            var line = SelectPurchaseOrderLineForInbound(order, item);
+            string lineId = line == null ? null : line.LineId;
+            decimal orderQty = line == null ? order.Quantity : line.Quantity;
+            decimal received = GetConfirmedInboundQtyForPurchaseOrder(item.PurchaseOrderId, lineId, excludeInboundId);
+            if (batch != null) received += batch.GetPendingInboundQty(item.PurchaseOrderId, lineId, excludeInboundId);
+            decimal remaining = RoundMoney(orderQty - received);
             if (item.Quantity > remaining + 0.0001m)
                 BizFail("本次入库数量不能超过未入库数量（剩余 " + remaining.ToString("0.##") + "）");
         }

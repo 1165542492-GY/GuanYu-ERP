@@ -604,10 +604,10 @@ namespace SupplierErpApp
 
         static void WriteSalesOrderSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "销售订单", new[] { "订单编号", "订单日期", "客户编号", "客户名称", "物料编号", "物料名称", "数量", "不含税销售单价", "含税销售单价", "不含税销售金额", "含税销售金额", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "销售订单", new[] { "订单编号", "订单日期", "客户编号", "客户名称", "物料编号", "物料名称", "数量", "不含税销售单价", "含税销售单价", "不含税销售金额", "含税销售金额", "状态", "备注", "明细JSON", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadSalesOrders())
-                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.CustomerCode, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.TaxExcludedSalePrice), Money2(x.TaxIncludedSalePrice), Money2(x.TaxExcludedSaleAmount), Money2(x.TaxIncludedSaleAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.CustomerCode, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.TaxExcludedSalePrice), Money2(x.TaxIncludedSalePrice), Money2(x.TaxExcludedSaleAmount), Money2(x.TaxIncludedSaleAmount), x.Status, x.Note, Json.Serialize(x.Items ?? new List<SalesOrderLine>()), x.UpdatedAt, x.UpdatedBy);
         }
 
         static void WriteSalesOutboundSheet(XLWorkbook wb)
@@ -620,10 +620,10 @@ namespace SupplierErpApp
 
         static void WritePurchaseOrderSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "采购单", new[] { "采购编号", "订单日期", "供应商名称", "物料编号", "物料名称", "数量", "采购单价", "采购金额", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "采购单", new[] { "采购编号", "订单日期", "供应商名称", "物料编号", "物料名称", "数量", "采购单价", "采购金额", "状态", "备注", "明细JSON", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadPurchaseOrders())
-                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.SupplierName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.UnitPrice), Money2(x.Amount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.SupplierName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.UnitPrice), Money2(x.Amount), x.Status, x.Note, Json.Serialize(x.Items ?? new List<PurchaseOrderLine>()), x.UpdatedAt, x.UpdatedBy);
         }
 
         static void WritePurchaseInboundSheet(XLWorkbook wb)
@@ -1004,6 +1004,8 @@ namespace SupplierErpApp
                         TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")),
                         OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
+                    var salesItemsJson = Cell(row, "明细JSON", "ItemsJSON", "Items");
+                    if (!Placeholder(salesItemsJson)) item.Items = ParseSalesOrderLinesJson(salesItemsJson);
                     if (Placeholder(item.CustomerName) && Placeholder(item.CustomerCode)) { AddErr(res, errors, rowNo, "请选择客户"); continue; }
                     if (!excelCtx.CustomerExists(item.CustomerCode, item.CustomerName)) { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
                     if (item.Quantity < 0) { AddErr(res, errors, rowNo, "数量不能为负数"); continue; }
@@ -1101,6 +1103,8 @@ namespace SupplierErpApp
                         UnitPrice = Money(Cell(row, "采购单价", "单价")), OrderDate = Cell(row, "订单日期", "采购日期"),
                         Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
+                    var purchaseItemsJson = Cell(row, "明细JSON", "ItemsJSON", "Items");
+                    if (!Placeholder(purchaseItemsJson)) item.Items = ParsePurchaseOrderLinesJson(purchaseItemsJson);
                     if (item.Quantity < 0 || item.UnitPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplyPurchaseOrder(item);
                     if (previewOnly) { res.Added++; continue; }

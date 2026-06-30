@@ -425,7 +425,7 @@ if(/Quantity|Qty|数量/.test(f.key||'')||/数量/.test(f.label||''))return 'col
 return '';
 }
 function bizListFields(cfg){
-var keepKeys={'sales-order':['OrderDate','CustomerName','MaterialName','Quantity','MaterialUnit','TaxIncludedSaleAmount','Status'],'sales-outbound':['OutboundDate','SalesOrderNo','CustomerName','MaterialName','Quantity','CostAmount','Status'],'purchase-order':['OrderDate','SupplierName','MaterialName','Quantity','MaterialUnit','UnitPrice','Amount','Status'],'purchase-inbound':['InboundDate','PurchaseNo','SupplierName','MaterialName','Quantity','Amount','Status'],'production-pick':['PickDate','BomName','MaterialName','Quantity','CostAmount','Status'],'finished-inbound':['InboundDate','ProductName','Quantity','Amount','Status'],'receivable':['DueDate','SalesOrderNo','CustomerName','ReceivableAmount','ReceivedAmount','UnreceivedAmount','Status'],'payable':['DueDate','PurchaseNo','SupplierName','PayableAmount','PaidAmount','UnpaidAmount','Status']};
+var keepKeys={'sales-order':['OrderDate','CustomerName','MaterialName','Quantity','MaterialUnit','TaxIncludedSaleAmount','Status',],'sales-outbound':['OutboundDate','SalesOrderNo','CustomerName','MaterialName','Quantity','CostAmount','Status'],'purchase-order':['OrderDate','SupplierName','MaterialName','Quantity','MaterialUnit','UnitPrice','Amount','Status'],'purchase-inbound':['InboundDate','PurchaseNo','SupplierName','MaterialName','Quantity','Amount','Status'],'production-pick':['PickDate','BomName','MaterialName','Quantity','CostAmount','Status'],'finished-inbound':['InboundDate','ProductName','Quantity','Amount','Status'],'receivable':['DueDate','SalesOrderNo','CustomerName','ReceivableAmount','ReceivedAmount','UnreceivedAmount','Status'],'payable':['DueDate','PurchaseNo','SupplierName','PayableAmount','PaidAmount','UnpaidAmount','Status']};
 var page=null;for(var pk in bizModules){if(bizModules[pk]===cfg){page=pk;break}}
 var keys=keepKeys[page];
 if(keys)return cfg.fields.filter(function(f){return keys.indexOf(f.key)>=0});
@@ -833,6 +833,7 @@ secFields.forEach(function(f){if(!f.costHidden)html+=buildBizFieldHtml(cfg,f);})
 if(cfg.view==='salesOutboundView'||cfg.view==='productionPickView')html+='<div class="biz-stock-hint" id="'+p+'StockHint"></div>';
 if(cfg.view==='purchaseInboundView')html+='<div class="biz-stock-hint" id="'+p+'InboundTypeHint"></div>';
 if(cfg.view==='finishedInboundView')html+='<div class="biz-stock-hint" id="'+p+'FinishedHint"></div>';
+if(cfg.view==='salesOrderView'||cfg.view==='purchaseOrderView')html+='<div class="biz-section-title">多明细行</div><div class="field full"><label>明细JSON（可选）</label><textarea id="'+p+'ItemsJson" rows="5" placeholder="留空时按上方单行物料保存；填写时使用 Items 数组保存一张单多行明细"></textarea><div class="biz-field-hint" id="'+p+'ItemsSummary">留空=单行模式；填写 JSON=多明细模式。</div></div>';
 return '<div class="modal biz-modal" id="'+p+'Modal" aria-hidden="true">'+
 '<div class="dialog" role="dialog" aria-modal="true">'+
 '<div class="dialoghead"><div class="dialogtitle" id="'+p+'ModalTitle">'+safe(cfg.addLabel)+'</div><button type="button" class="close" id="'+p+'Close" aria-label="关闭">×</button></div>'+
@@ -886,6 +887,8 @@ if(form&&!form._bizWired){
 form._bizWired=1;
 form.onsubmit=async function(e){
 e.preventDefault();var st=bizEnsureState(cfg.view),body=bizCollectRow(cfg),isEdit=!!st.editing;
+if(body.ItemsJsonError){tip(body.ItemsJsonError);return}
+if(body.ItemsJsonError!==undefined)delete body.ItemsJsonError;
 if(cfg.view==='salesOrderView'){
 if(typeof body.CustomerCode!=='string'||typeof body.CustomerName!=='string'){tip('客户编号或客户名称格式异常，请重新选择客户');return}
 if(!body.CustomerId&&!body.CustomerCode&&!body.CustomerName){tip('请选择客户');return}
@@ -946,6 +949,8 @@ try{await erpSaveSubmit(form,async function(){await api(isEdit?cfg.api+'/'+st.ed
 var closeBtn=document.getElementById(p+'Close'),cancelBtn=document.getElementById(p+'Cancel');
 if(closeBtn&&!closeBtn._bizWired){closeBtn._bizWired=1;closeBtn.onclick=function(){closeBizModal(cfg)};}
 if(cancelBtn&&!cancelBtn._bizWired){cancelBtn._bizWired=1;cancelBtn.onclick=function(){closeBizModal(cfg)};}
+var itemsJsonEl=document.getElementById(p+'ItemsJson');
+if(itemsJsonEl&&!itemsJsonEl._bizWired){itemsJsonEl._bizWired=1;itemsJsonEl.oninput=function(){bizUpdateItemsJsonSummary(cfg);};}
 var costToggle=document.getElementById(p+'CostToggle');
 if(costToggle&&!costToggle._bizWired){costToggle._bizWired=1;costToggle.onclick=function(){var panel=document.getElementById(p+'CostPanel');if(!panel)return;var open=panel.classList.toggle('open');costToggle.textContent=(open?'▼':'▶')+' 内部成本信息（系统核算，普通录入无需填写）';};}
 cfg.fields.forEach(function(f){
@@ -1028,7 +1033,22 @@ if(cfg.view==='purchaseOrderView'&&item&&item.SupplierId)bizApplySupplierUiField
 if(cfg.view==='productionPickView')bizRefreshPickMaterialList(cfg);
 if(cfg.view==='receivableView'||cfg.view==='payableView')bizToggleArapLinkedReadonly(cfg);
 bizUpdateStockHint(cfg);
+var itemsElFill=document.getElementById(p+'ItemsJson');
+if(itemsElFill){itemsElFill.value=item&&item.Items&&item.Items.length?JSON.stringify(item.Items,null,2):'';bizUpdateItemsJsonSummary(cfg);}
 if(cfg.view==='finishedInboundView')bizUpdateFinishedInboundHint(cfg);
+}
+function bizUpdateItemsJsonSummary(cfg){
+var el=document.getElementById(cfg.prefix+'ItemsJson'),sum=document.getElementById(cfg.prefix+'ItemsSummary');
+if(!el||!sum)return;
+var v=el.value.trim();
+if(!v){sum.textContent='留空=单行模式；填写 JSON=多明细模式。';return}
+try{
+var arr=JSON.parse(v);
+if(!Array.isArray(arr))throw new Error('Items must be an array');
+var qty=arr.reduce(function(s,x){return s+numVal(x.Quantity)},0);
+var amt=arr.reduce(function(s,x){return s+numVal(x.Amount||x.TaxExcludedSaleAmount||x.TaxIncludedSaleAmount)},0);
+sum.textContent='明细 '+arr.length+' 行，数量合计 '+bizQty(qty)+'，金额合计 '+money(amt);
+}catch(e){sum.textContent='JSON 格式有误：'+(e.message||e);}
 }
 function bizApplySalesOutboundFields(row){
 var order=(bizRefs.salesOrders||[]).find(function(x){return bizStr(x.Id)===bizStr(row.SalesOrderId)});
@@ -1082,6 +1102,11 @@ else if(f.type==='number'||(f.readonly&&bizIsMoneyField(f)))row[f.key]=bizMoney2
 else row[f.key]=bizStr(el.value);
 });
 if(cfg.view==='purchaseInboundView'&&row.SupplierId&&!row.SupplierName){var sup=bizFindSupplier(row.SupplierId,'','');if(sup)row.SupplierName=bizStr(sup.Company);}
+var itemsEl=document.getElementById(cfg.prefix+'ItemsJson');
+if(itemsEl&&itemsEl.value.trim()){
+try{row.Items=JSON.parse(itemsEl.value.trim());}
+catch(e){row.ItemsJsonError='明细JSON格式不正确：'+(e.message||e);}
+}
 if(cfg.view==='receivableView'){row.Status=bizRecStatus(row.ReceivableAmount,row.ReceivedAmount);row.UnreceivedAmount=bizMoney2(row.ReceivableAmount-row.ReceivedAmount);}
 if(cfg.view==='payableView'){row.Status=bizPayStatus(row.PayableAmount,row.PaidAmount);row.UnpaidAmount=bizMoney2(row.PayableAmount-row.PaidAmount);}
 return bizNormalizeRow(cfg,row);

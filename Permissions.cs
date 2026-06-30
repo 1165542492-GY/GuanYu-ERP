@@ -14,8 +14,6 @@ namespace SupplierErpApp
             "finance.view","finance.add","finance.edit","finance.delete","finance.import","finance.export","finance.opening_view","finance.opening_edit",
             "bom.view","bom.add","bom.edit","bom.delete","bom.export","bom.import",
             "model_cost.view","model_cost.add","model_cost.edit","model_cost.delete","model_cost.export","model_cost.import",
-            "contract.view","contract.add","contract.edit","contract.delete","contract.preview","contract.print","contract.void",
-            "contract_setting.view","contract_setting.add","contract_setting.edit","contract_setting.delete",
             "settings.view","settings.account","settings.password","settings.tax_rate","settings.dictionary",
             "sales_order.view","sales_order.add","sales_order.edit","sales_order.delete","sales_order.import","sales_order.export",
             "sales_outbound.view","sales_outbound.add","sales_outbound.edit","sales_outbound.delete","sales_outbound.import","sales_outbound.export",
@@ -50,7 +48,6 @@ namespace SupplierErpApp
             { "payable.payment_add", new[] { "payable.edit" } },
             { "payable.payment_edit", new[] { "payable.edit" } },
             { "payable.payment_delete", new[] { "payable.edit" } },
-            { "contract.void", new[] { "contract.edit" } }
         };
 
         static string[] NormalizePermissions(string[] permissions)
@@ -151,21 +148,6 @@ namespace SupplierErpApp
                     new PermissionItem { Key = "model_cost.delete", Label = "删除" },
                     new PermissionItem { Key = "model_cost.export", Label = "导出" },
                     new PermissionItem { Key = "model_cost.import", Label = "导入" }
-                }},
-                new PermissionGroup { Module = "合同管理", Items = new[] {
-                    new PermissionItem { Key = "contract.view", Label = "查看合同" },
-                    new PermissionItem { Key = "contract.add", Label = "新增合同" },
-                    new PermissionItem { Key = "contract.edit", Label = "修改合同" },
-                    new PermissionItem { Key = "contract.delete", Label = "删除合同" },
-                    new PermissionItem { Key = "contract.preview", Label = "预览合同" },
-                    new PermissionItem { Key = "contract.print", Label = "打印合同" },
-                    new PermissionItem { Key = "contract.void", Label = "作废合同" }
-                }},
-                new PermissionGroup { Module = "合同资料", Items = new[] {
-                    new PermissionItem { Key = "contract_setting.view", Label = "查看" },
-                    new PermissionItem { Key = "contract_setting.add", Label = "新增" },
-                    new PermissionItem { Key = "contract_setting.edit", Label = "修改" },
-                    new PermissionItem { Key = "contract_setting.delete", Label = "删除" }
                 }},
                 new PermissionGroup { Module = "销售订单", Items = new[] {
                     new PermissionItem { Key = "sales_order.view", Label = "查看" },

@@ -146,8 +146,6 @@ namespace SupplierErpApp
                 case "material": return ImpactMaterial(operation, id, payload);
                 case "bom": return ImpactBom(operation, id, payload);
                 case "modelcost": return ImpactModelCost(operation, id, payload);
-                case "contract": return ImpactContract(operation, id, payload);
-                case "contractsetting": return ImpactContractSetting(operation, id, payload);
                 case "user": return ImpactUser(operation, id, payload, user);
                 case "dictionary": return ImpactDictionary(operation, id, payload);
                 case "taxrate": return ImpactTaxRate(operation, id, payload);
@@ -625,7 +623,7 @@ namespace SupplierErpApp
                 }
                 if (IsCustomerReferenced(item.Id, item.Code, item.Company))
                 {
-                    blocking.Add("该客户已被销售订单、应收款或合同等业务引用，不能删除。");
+                    blocking.Add("该客户已被销售订单或应收款等业务引用，不能删除。");
                     AddImpact(items, "reference", "业务引用", 1, "存在关联业务单据");
                 }
                 if (blocking.Count == 0) { r.Level = "warning"; warnings.Add("删除客户后不可恢复。"); }
@@ -789,58 +787,6 @@ namespace SupplierErpApp
             return r;
         }
 
-        static OperationImpactResultDto ImpactContract(string operation, string id, JsonObject payload)
-        {
-            var item = LoadContracts().FirstOrDefault(x => x.Id == id);
-            var label = item != null ? item.Code : id;
-            var r = NewImpact("合同影响预检", label);
-            var items = new List<OperationImpactItemDto>();
-            var blocking = new List<string>();
-            var warnings = new List<string>();
-            if (item == null && operation == "delete") { blocking.Add("合同不存在"); FinalizeImpact(r, items, blocking, warnings); return r; }
-            if (operation == "delete" && item != null)
-            {
-                if (string.Equals(item.Status ?? "", "已生效", StringComparison.OrdinalIgnoreCase))
-                {
-                    r.Level = "danger";
-                    warnings.Add("删除已生效合同前请确认，删除后不可恢复。");
-                }
-                if (string.Equals(item.Status ?? "", "作废", StringComparison.OrdinalIgnoreCase))
-                    r.Level = "warning";
-            }
-            else if (operation == "void" && item != null)
-            {
-                r.Level = "warning";
-                warnings.Add("作废后该合同不再作为有效合同使用。");
-                AddImpact(items, "audit", "操作记录", 1, "将记录合同作废");
-            }
-            FinalizeImpact(r, items, blocking, warnings);
-            return r;
-        }
-
-        static OperationImpactResultDto ImpactContractSetting(string operation, string id, JsonObject payload)
-        {
-            var item = LoadContractSettings().FirstOrDefault(x => x.Id == id);
-            var label = item != null ? (item.Code + " " + item.Name) : id;
-            var r = NewImpact("合同资料影响预检", label);
-            var items = new List<OperationImpactItemDto>();
-            var blocking = new List<string>();
-            var warnings = new List<string>();
-            if (item == null && operation == "delete") { blocking.Add("合同资料不存在"); FinalizeImpact(r, items, blocking, warnings); return r; }
-            if (operation == "delete" && item != null)
-            {
-                var contracts = LoadContracts();
-                int refCount = contracts.Count(c => c.TemplateId == id);
-                if (refCount > 0)
-                {
-                    blocking.Add("该合同资料已被 " + refCount + " 份合同引用为模板，不能删除。");
-                    AddImpact(items, "contract", "合同", refCount, "被合同引用为模板");
-                }
-            }
-            FinalizeImpact(r, items, blocking, warnings);
-            return r;
-        }
-
         static OperationImpactResultDto ImpactUser(string operation, string id, JsonObject payload, UserSession actor)
         {
             var username = (id ?? "").Trim();
@@ -915,9 +861,9 @@ namespace SupplierErpApp
             var r = NewImpact("清空全部业务数据影响预检");
             r.Level = "danger";
             var items = new List<OperationImpactItemDto>();
-            string[] modules = { "供应商", "客户", "物料", "BOM", "机型成本", "销售订单", "销售出库", "采购单", "采购入库", "生产领用", "成品入库", "库存", "应收款", "应付款", "合同", "合同资料", "财务收支", "财务期初余额", "测试数据" };
+            string[] modules = { "供应商", "客户", "物料", "BOM", "机型成本", "销售订单", "销售出库", "采购单", "采购入库", "生产领用", "成品入库", "库存", "应收款", "应付款", "财务收支", "财务期初余额", "测试数据" };
             foreach (var m in modules) AddImpact(items, "module", m, 1, "将被清空");
-            AddImpact(items, "retain", "保留项", 1, "admin、系统配置、权限、字典、合同范本、操作记录将保留");
+            AddImpact(items, "retain", "保留项", 1, "admin、系统配置、权限、字典、操作记录将保留");
             AddImpact(items, "backup", "自动备份", 1, "清空前系统将自动备份；备份失败则禁止继续");
             var warnings = new List<string> { "此操作会清空全部业务数据，系统会先自动备份。备份失败将禁止继续清空。" };
             FinalizeImpact(r, items, new List<string>(), warnings);
@@ -929,19 +875,19 @@ namespace SupplierErpApp
             var r = NewImpact("深度初始化空库影响预检");
             r.Level = "danger";
             var items = new List<OperationImpactItemDto>();
-            string[] modules = { "供应商", "客户", "物料", "BOM", "机型成本", "销售订单", "销售出库", "采购单", "采购入库", "生产领用", "成品入库", "库存", "应收款", "应付款", "合同业务", "财务收支", "财务期初余额" };
+            string[] modules = { "供应商", "客户", "物料", "BOM", "机型成本", "销售订单", "销售出库", "采购单", "采购入库", "生产领用", "成品入库", "库存", "应收款", "应付款", "财务收支", "财务期初余额" };
             foreach (var m in modules) AddImpact(items, "module", m, 1, "将被清空");
             AddImpact(items, "operationLogs", "操作记录", 1, "将被清空，仅保留一条初始化记录");
             AddImpact(items, "backupRecords", "备份恢复记录", 1, "将被清空");
             AddImpact(items, "oldBackups", "历史备份文件夹", 1, "默认清理，保留本次最终备份");
             AddImpact(items, "testArtifacts", "测试与导入导出痕迹", 1, "将被清理");
-            AddImpact(items, "retain", "保留项", 1, "admin、用户、权限、系统设置、二次密码、字典、税率、编号规则、合同模板将保留");
+            AddImpact(items, "retain", "保留项", 1, "admin、用户、权限、系统设置、二次密码、字典、税率、编号规则将保留");
             AddImpact(items, "backup", "最终备份", 1, "执行前自动创建 backup_before_deep_initialize_*；备份失败则禁止继续");
             var warnings = new List<string>
             {
                 "此操作会清空全部业务数据、操作记录、备份恢复记录、测试痕迹和历史备份记录。",
                 "系统会先自动创建最终备份；备份失败将禁止继续初始化。",
-                "不会清空 admin、用户账号、权限、系统设置、二次密码、字典、税率、编号规则、合同模板。"
+                "不会清空 admin、用户账号、权限、系统设置、二次密码、字典、税率、编号规则。"
             };
             FinalizeImpact(r, items, new List<string>(), warnings);
             return r;
