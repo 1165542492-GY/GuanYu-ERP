@@ -770,49 +770,55 @@ namespace SupplierErpApp
         const string DefaultAdminPasswordHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
 
         static readonly string AppRoot = @"D:\冠誉制造ERP";
+        static readonly string DefaultDataDir = Path.Combine(AppRoot, "Data");
+        static readonly string DefaultBackupDir = Path.Combine(AppRoot, "Backups");
+        static readonly string DefaultExportsDir = Path.Combine(AppRoot, "Exports");
+        static readonly string DefaultImportsDir = Path.Combine(AppRoot, "Imports");
         static readonly string LegacyDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "智造ERP供应商管理");
-        static readonly string DataDir = Path.Combine(AppRoot, "Data");
-        static readonly string BackupDir = Path.Combine(AppRoot, "Backups");
-        static readonly string ExportsDir = Path.Combine(AppRoot, "Exports");
-        static readonly string ImportsDir = Path.Combine(AppRoot, "Imports");
-        static readonly string UsersFile = Path.Combine(DataDir, "users.json");
-        static readonly string DataFile = Path.Combine(DataDir, "suppliers.json");
-        static readonly string SupplierSequenceFile = Path.Combine(DataDir, "supplier_sequence.json");
-        static readonly string CustomerFile = Path.Combine(DataDir, "customers.json");
-        static readonly string CustomerSequenceFile = Path.Combine(DataDir, "customer_sequence.json");
-        static readonly string MaterialFile = Path.Combine(DataDir, "materials.json");
-        static readonly string MaterialSequenceFile = Path.Combine(DataDir, "material_sequence.json");
-        static readonly string FinanceFile = Path.Combine(DataDir, "finance.json");
-        static readonly string OpeningFile = Path.Combine(DataDir, "finance_opening.json");
-        static readonly string BomFile = Path.Combine(DataDir, "bom.json");
-        static readonly string BomSequenceFile = Path.Combine(DataDir, "bom_sequence.json");
-        static readonly string ModelCostFile = Path.Combine(DataDir, "model_costs.json");
-        static readonly string ModelCostSequenceFile = Path.Combine(DataDir, "model_cost_sequence.json");
-        static readonly string SystemSettingsFile = Path.Combine(DataDir, "system_settings.json");
-        static readonly string ContractSettingsFile = Path.Combine(DataDir, "contract_settings.json");
-        static readonly string ContractSettingSequenceFile = Path.Combine(DataDir, "contract_setting_sequence.json");
-        static readonly string ContractsFile = Path.Combine(DataDir, "contracts.json");
-        static readonly string ContractSequenceFile = Path.Combine(DataDir, "contract_sequence.json");
-        static readonly string DictionaryOptionsFile = Path.Combine(DataDir, "dictionary_options.json");
-        static readonly string SalesOrdersFile = Path.Combine(DataDir, "sales_orders.json");
-        static readonly string SalesOrderSequenceFile = Path.Combine(DataDir, "sales_order_sequence.json");
-        static readonly string SalesOutboundsFile = Path.Combine(DataDir, "sales_outbounds.json");
-        static readonly string SalesOutboundSequenceFile = Path.Combine(DataDir, "sales_outbound_sequence.json");
-        static readonly string PurchaseOrdersFile = Path.Combine(DataDir, "purchase_orders.json");
-        static readonly string PurchaseOrderSequenceFile = Path.Combine(DataDir, "purchase_order_sequence.json");
-        static readonly string PurchaseInboundsFile = Path.Combine(DataDir, "purchase_inbounds.json");
-        static readonly string PurchaseInboundSequenceFile = Path.Combine(DataDir, "purchase_inbound_sequence.json");
-        static readonly string ProductionPicksFile = Path.Combine(DataDir, "production_picks.json");
-        static readonly string ProductionPickSequenceFile = Path.Combine(DataDir, "production_pick_sequence.json");
-        static readonly string FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
-        static readonly string FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
-        static readonly string ProductionWorkOrdersFile = Path.Combine(DataDir, "production-work-orders.json");
-        static readonly string AfterSalesServiceOrdersFile = Path.Combine(DataDir, "after-sales-service-orders.json");
-        static readonly string ReceivablesFile = Path.Combine(DataDir, "receivables.json");
-        static readonly string ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
-        static readonly string PayablesFile = Path.Combine(DataDir, "payables.json");
-        static readonly string PayableSequenceFile = Path.Combine(DataDir, "payable_sequence.json");
-        static readonly string LogFile = Path.Combine(DataDir, "operation.log");
+        static string DataDir;
+        static string DataDirectorySource = "Default";
+        static bool IsDefaultDataDirectory = true;
+        static string BackupDir;
+        static string ExportsDir;
+        static string ImportsDir;
+        static string UsersFile;
+        static string DataFile;
+        static string SupplierSequenceFile;
+        static string CustomerFile;
+        static string CustomerSequenceFile;
+        static string MaterialFile;
+        static string MaterialSequenceFile;
+        static string FinanceFile;
+        static string OpeningFile;
+        static string BomFile;
+        static string BomSequenceFile;
+        static string ModelCostFile;
+        static string ModelCostSequenceFile;
+        static string SystemSettingsFile;
+        static string ContractSettingsFile;
+        static string ContractSettingSequenceFile;
+        static string ContractsFile;
+        static string ContractSequenceFile;
+        static string DictionaryOptionsFile;
+        static string SalesOrdersFile;
+        static string SalesOrderSequenceFile;
+        static string SalesOutboundsFile;
+        static string SalesOutboundSequenceFile;
+        static string PurchaseOrdersFile;
+        static string PurchaseOrderSequenceFile;
+        static string PurchaseInboundsFile;
+        static string PurchaseInboundSequenceFile;
+        static string ProductionPicksFile;
+        static string ProductionPickSequenceFile;
+        static string FinishedInboundsFile;
+        static string FinishedInboundSequenceFile;
+        static string ProductionWorkOrdersFile;
+        static string AfterSalesServiceOrdersFile;
+        static string ReceivablesFile;
+        static string ReceivableSequenceFile;
+        static string PayablesFile;
+        static string PayableSequenceFile;
+        static string LogFile;
         const int Port = 8787;
         static readonly string DefaultListenUrl = "http://0.0.0.0:" + Port;
         static HttpListener Listener;
@@ -820,7 +826,7 @@ namespace SupplierErpApp
         static bool StartupBrowserOpened;
 
         [STAThread]
-        public static void Main()
+        public static void Main(string[] args)
         {
             bool created;
             using (var mutex = new Mutex(true, "SupplierErpApp_SingleInstance", out created))
@@ -832,8 +838,10 @@ namespace SupplierErpApp
                 }
                 try
                 {
+                    ResolveDataDirectory(args ?? new string[0]);
+                    LogDataDirectoryStartup();
                     EnsureDataDirectories();
-                    TryMigrateLegacyData();
+                    if (IsDefaultDataDirectory) TryMigrateLegacyData();
                     if (!File.Exists(DataFile)) File.WriteAllText(DataFile, "[]", new UTF8Encoding(false));
                     if (!File.Exists(SupplierSequenceFile)) File.WriteAllText(SupplierSequenceFile, "0", new UTF8Encoding(false));
                     if (!File.Exists(CustomerFile)) File.WriteAllText(CustomerFile, "[]", new UTF8Encoding(false));
@@ -877,9 +885,197 @@ namespace SupplierErpApp
             }
         }
 
+        static string NormalizeDirectoryPath(string path)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string root = Path.GetPathRoot(fullPath);
+            string normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedRoot = string.IsNullOrWhiteSpace(root)
+                ? null
+                : root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!string.IsNullOrWhiteSpace(normalizedRoot)
+                && string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                return root;
+            return normalizedPath;
+        }
+
+        static bool SamePath(string left, string right)
+        {
+            return string.Equals(NormalizeDirectoryPath(left), NormalizeDirectoryPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool SameOrChildPath(string path, string parent)
+        {
+            string normalizedPath = NormalizeDirectoryPath(path);
+            string normalizedParent = NormalizeDirectoryPath(parent);
+            return string.Equals(normalizedPath, normalizedParent, StringComparison.OrdinalIgnoreCase)
+                || normalizedPath.StartsWith(normalizedParent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || normalizedPath.StartsWith(normalizedParent + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool IsRootDirectory(string path)
+        {
+            string cleanPath = CleanDataDirectoryInput(path);
+            if (!string.IsNullOrWhiteSpace(cleanPath) && cleanPath.Length == 2 && cleanPath[1] == ':') return true;
+            string normalizedPath = NormalizeDirectoryPath(path);
+            string root = Path.GetPathRoot(normalizedPath);
+            if (string.IsNullOrWhiteSpace(root)) return false;
+            return SamePath(normalizedPath, root);
+        }
+
+        static string ParseDataDirArgument(string[] args)
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                string arg = args[i];
+                if (string.Equals(arg, "--data-dir", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 >= args.Length) throw new InvalidOperationException("--data-dir 缺少目录参数。");
+                    return args[i + 1];
+                }
+                if (arg != null && arg.StartsWith("--data-dir=", StringComparison.OrdinalIgnoreCase))
+                    return arg.Substring("--data-dir=".Length);
+            }
+            return null;
+        }
+
+        static string CleanDataDirectoryInput(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            return path.Trim().Trim('"');
+        }
+
+        static void ValidateSandboxDataDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) throw new InvalidOperationException("沙盒数据目录不能为空。");
+            if (IsRootDirectory(path)) throw new InvalidOperationException("沙盒数据目录不能是磁盘根目录：" + path);
+            if (File.Exists(path)) throw new InvalidOperationException("沙盒数据目录不能指向文件：" + path);
+            if (SamePath(path, AppRoot)) throw new InvalidOperationException("沙盒数据目录不能是正式应用根目录：" + AppRoot);
+
+            string[] blockedDirectories = new string[]
+            {
+                DefaultDataDir,
+                Path.Combine(AppRoot, "App"),
+                DefaultBackupDir,
+                DefaultExportsDir,
+                DefaultImportsDir
+            };
+
+            foreach (string blockedDirectory in blockedDirectories)
+            {
+                if (SameOrChildPath(path, blockedDirectory))
+                    throw new InvalidOperationException("沙盒数据目录不能位于正式 ERP 目录内：" + path);
+            }
+        }
+
+        static void ConfigureDataFilePaths()
+        {
+            UsersFile = Path.Combine(DataDir, "users.json");
+            DataFile = Path.Combine(DataDir, "suppliers.json");
+            SupplierSequenceFile = Path.Combine(DataDir, "supplier_sequence.json");
+            CustomerFile = Path.Combine(DataDir, "customers.json");
+            CustomerSequenceFile = Path.Combine(DataDir, "customer_sequence.json");
+            MaterialFile = Path.Combine(DataDir, "materials.json");
+            MaterialSequenceFile = Path.Combine(DataDir, "material_sequence.json");
+            FinanceFile = Path.Combine(DataDir, "finance.json");
+            OpeningFile = Path.Combine(DataDir, "finance_opening.json");
+            BomFile = Path.Combine(DataDir, "bom.json");
+            BomSequenceFile = Path.Combine(DataDir, "bom_sequence.json");
+            ModelCostFile = Path.Combine(DataDir, "model_costs.json");
+            ModelCostSequenceFile = Path.Combine(DataDir, "model_cost_sequence.json");
+            SystemSettingsFile = Path.Combine(DataDir, "system_settings.json");
+            ContractSettingsFile = Path.Combine(DataDir, "contract_settings.json");
+            ContractSettingSequenceFile = Path.Combine(DataDir, "contract_setting_sequence.json");
+            ContractsFile = Path.Combine(DataDir, "contracts.json");
+            ContractSequenceFile = Path.Combine(DataDir, "contract_sequence.json");
+            DictionaryOptionsFile = Path.Combine(DataDir, "dictionary_options.json");
+            SalesOrdersFile = Path.Combine(DataDir, "sales_orders.json");
+            SalesOrderSequenceFile = Path.Combine(DataDir, "sales_order_sequence.json");
+            SalesOutboundsFile = Path.Combine(DataDir, "sales_outbounds.json");
+            SalesOutboundSequenceFile = Path.Combine(DataDir, "sales_outbound_sequence.json");
+            PurchaseOrdersFile = Path.Combine(DataDir, "purchase_orders.json");
+            PurchaseOrderSequenceFile = Path.Combine(DataDir, "purchase_order_sequence.json");
+            PurchaseInboundsFile = Path.Combine(DataDir, "purchase_inbounds.json");
+            PurchaseInboundSequenceFile = Path.Combine(DataDir, "purchase_inbound_sequence.json");
+            ProductionPicksFile = Path.Combine(DataDir, "production_picks.json");
+            ProductionPickSequenceFile = Path.Combine(DataDir, "production_pick_sequence.json");
+            FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
+            FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
+            ProductionWorkOrdersFile = Path.Combine(DataDir, "production-work-orders.json");
+            AfterSalesServiceOrdersFile = Path.Combine(DataDir, "after-sales-service-orders.json");
+            ReceivablesFile = Path.Combine(DataDir, "receivables.json");
+            ReceivableSequenceFile = Path.Combine(DataDir, "receivable_sequence.json");
+            PayablesFile = Path.Combine(DataDir, "payables.json");
+            PayableSequenceFile = Path.Combine(DataDir, "payable_sequence.json");
+            LogFile = Path.Combine(DataDir, "operation.log");
+        }
+
+        static void ResolveDataDirectory(string[] args)
+        {
+            string argumentDataDir = CleanDataDirectoryInput(ParseDataDirArgument(args ?? new string[0]));
+            string environmentDataDir = CleanDataDirectoryInput(Environment.GetEnvironmentVariable("ERP_DATA_DIR"));
+
+            if (!string.IsNullOrWhiteSpace(argumentDataDir))
+            {
+                DataDir = NormalizeDirectoryPath(argumentDataDir);
+                DataDirectorySource = "Argument:--data-dir";
+                IsDefaultDataDirectory = false;
+            }
+            else if (!string.IsNullOrWhiteSpace(environmentDataDir))
+            {
+                DataDir = NormalizeDirectoryPath(environmentDataDir);
+                DataDirectorySource = "Environment:ERP_DATA_DIR";
+                IsDefaultDataDirectory = false;
+            }
+            else
+            {
+                DataDir = NormalizeDirectoryPath(DefaultDataDir);
+                DataDirectorySource = "Default";
+                IsDefaultDataDirectory = true;
+            }
+
+            if (!IsDefaultDataDirectory) ValidateSandboxDataDirectory(DataDir);
+            if (IsDefaultDataDirectory)
+            {
+                BackupDir = DefaultBackupDir;
+                ExportsDir = DefaultExportsDir;
+                ImportsDir = DefaultImportsDir;
+            }
+            else
+            {
+                BackupDir = Path.Combine(DataDir, "_Backups");
+                ExportsDir = Path.Combine(DataDir, "_Exports");
+                ImportsDir = Path.Combine(DataDir, "_Imports");
+            }
+            ConfigureDataFilePaths();
+        }
+
+        static object GetDataDirectoryInfo()
+        {
+            return new
+            {
+                dataDirectory = DataDir,
+                dataDir = DataDir,
+                dataDirectorySource = DataDirectorySource,
+                isDefaultDataDirectory = IsDefaultDataDirectory,
+                backupDirectory = BackupDir,
+                exportsDirectory = ExportsDir,
+                importsDirectory = ImportsDir,
+                isSandbox = !IsDefaultDataDirectory
+            };
+        }
+
+        static void LogDataDirectoryStartup()
+        {
+            Console.WriteLine("ERP data directory: " + DataDir);
+            Console.WriteLine("ERP data directory source: " + DataDirectorySource);
+            Console.WriteLine("ERP default data directory: " + DefaultDataDir);
+            if (!IsDefaultDataDirectory) Console.WriteLine("ERP is running with sandbox data directory.");
+        }
+
         static void EnsureDataDirectories()
         {
-            Directory.CreateDirectory(AppRoot);
+            if (IsDefaultDataDirectory) Directory.CreateDirectory(AppRoot);
             Directory.CreateDirectory(DataDir);
             Directory.CreateDirectory(BackupDir);
             Directory.CreateDirectory(ExportsDir);
@@ -1077,7 +1273,8 @@ namespace SupplierErpApp
                 if (path == "/api/users" && ctx.Request.HttpMethod == "POST") { if (!RequireAdmin(ctx, user)) return; CreateUser(ctx, user); return; }
                 if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "PUT") { if (!RequireAdmin(ctx, user)) return; UpdateUser(ctx, user, path.Substring("/api/users/".Length)); return; }
                 if (path.StartsWith("/api/users/") && ctx.Request.HttpMethod == "DELETE") { if (!RequireAdmin(ctx, user)) return; DeleteUser(ctx, user, path.Substring("/api/users/".Length)); return; }
-                if (path == "/api/info") { WriteJson(ctx, new { ip = GetLanIp(), port = Port, dataDir = DataDir }); return; }
+                if (path == "/api/info") { WriteJson(ctx, new { ip = GetLanIp(), port = Port, dataDir = DataDir, dataDirectory = DataDir, dataDirectorySource = DataDirectorySource, isDefaultDataDirectory = IsDefaultDataDirectory, isSandbox = !IsDefaultDataDirectory }); return; }
+                if (path == "/api/system/data-dir" && ctx.Request.HttpMethod == "GET") { WriteJson(ctx, GetDataDirectoryInfo()); return; }
                 if (path == "/api/dashboard/business" && ctx.Request.HttpMethod == "GET") { GetBusinessDashboard(ctx, user); return; }
                 if (path == "/api/dashboard/owner-summary" && ctx.Request.HttpMethod == "GET") { GetOwnerDashboardSummary(ctx, user); return; }
                 if (path == "/api/suppliers" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "supplier.view")) return; WriteJson(ctx, LoadSuppliers()); return; }
