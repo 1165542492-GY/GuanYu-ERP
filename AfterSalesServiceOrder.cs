@@ -79,6 +79,41 @@ namespace SupplierErpApp
                 || line.CostAmount != 0;
         }
 
+        static bool RequireAfterSalesPartActionPermissions(HttpListenerContext ctx, UserSession user, AfterSalesServiceOrder item)
+        {
+            if (item == null || item.Parts == null) return true;
+            foreach (var line in item.Parts.Where(x => x != null))
+            {
+                string action = string.IsNullOrWhiteSpace(line.ActionType) ? "" : NormalizeAfterSalesPartActionType(line.ActionType);
+                if ((line.PickedQuantity > 0 || action == "领料") && !RequirePermission(ctx, user, "after_sales.pick")) return false;
+                if ((line.ReturnedQuantity > 0 || action == "退料") && !RequirePermission(ctx, user, "after_sales.return")) return false;
+                if ((line.ExtraQuantity > 0 || action == "补领") && !RequirePermission(ctx, user, "after_sales.extra_pick")) return false;
+            }
+            return true;
+        }
+
+        static AfterSalesServiceOrder FilterAfterSalesPartsForPermission(AfterSalesServiceOrder item, UserSession user)
+        {
+            if (item == null) return null;
+            var copy = CloneAfterSalesServiceOrder(item);
+            if (!HasPermission(user, "after_sales.parts_view"))
+            {
+                copy.Parts = new List<AfterSalesPartLine>();
+                return copy;
+            }
+            if (!HasPermission(user, "after_sales.final_usage") && copy.Parts != null)
+            {
+                foreach (var part in copy.Parts.Where(x => x != null))
+                    part.FinalUsedQuantity = 0;
+            }
+            return copy;
+        }
+
+        static List<AfterSalesServiceOrder> FilterAfterSalesPartsForPermission(IEnumerable<AfterSalesServiceOrder> items, UserSession user)
+        {
+            return (items ?? Enumerable.Empty<AfterSalesServiceOrder>()).Select(x => FilterAfterSalesPartsForPermission(x, user)).ToList();
+        }
+
         static decimal ComputeAfterSalesPartFinalUsedQuantity(AfterSalesPartLine line)
         {
             if (line == null) return 0;
@@ -322,12 +357,13 @@ namespace SupplierErpApp
         {
             var item = LoadAfterSalesServiceOrders().FirstOrDefault(x => x.Id == id);
             if (item == null) throw new BusinessException("售后维修工单不存在", 404);
-            WriteJson(ctx, item);
+            WriteJson(ctx, FilterAfterSalesPartsForPermission(item, user));
         }
 
         static void AddAfterSalesServiceOrder(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<AfterSalesServiceOrder>(ReadBody(ctx.Request));
+            if (!RequireAfterSalesPartActionPermissions(ctx, user, item)) return;
             ApplyAfterSalesServiceOrder(item, false);
             ValidateStockForAfterSalesServiceOrder(item);
             string now = BizUpdatedAtNow();
@@ -350,6 +386,7 @@ namespace SupplierErpApp
         static void UpdateAfterSalesServiceOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<AfterSalesServiceOrder>(ReadBody(ctx.Request));
+            if (!RequireAfterSalesPartActionPermissions(ctx, user, input)) return;
             var saved = MutateJsonList<AfterSalesServiceOrder, AfterSalesServiceOrder>(AfterSalesServiceOrdersFile, "after_sales_service_orders", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
@@ -360,6 +397,8 @@ namespace SupplierErpApp
                 var before = CloneAfterSalesServiceOrder(item);
                 string receivableId = item.ReceivableId;
                 string receivableNo = item.ReceivableNo;
+                if (!HasPermission(user, "after_sales.parts_view"))
+                    input.Parts = before == null ? item.Parts : before.Parts;
                 CopyAfterSalesServiceEditableFields(item, input, coreEditable);
                 item.ReceivableId = receivableId;
                 item.ReceivableNo = receivableNo;

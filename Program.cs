@@ -1449,22 +1449,22 @@ namespace SupplierErpApp
                 if (path == "/api/production-picks" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionPick(ctx, user); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
                 if (path.StartsWith("/api/production-picks/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionPick(ctx, user, path.Substring("/api/production-picks/".Length)); return; }
-                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; WriteJson(ctx, LoadProductionWorkOrders()); return; }
-                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.add")) return; AddProductionWorkOrder(ctx, user); return; }
-                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/start") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; StartProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/start".Length)); return; }
-                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/finish") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; FinishProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/finish".Length)); return; }
-                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; CancelProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/cancel".Length)); return; }
-                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_pick.view")) return; GetProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
-                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_pick.edit")) return; UpdateProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
-                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_pick.delete")) return; DeleteProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
-                if (path == "/api/after-sales-service-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "after_sales.view")) return; WriteJson(ctx, LoadAfterSalesServiceOrders()); return; }
+                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_work_order.view")) return; WriteJson(ctx, LoadProductionWorkOrders()); return; }
+                if (path == "/api/production-work-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_work_order.add")) return; AddProductionWorkOrder(ctx, user); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/start") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_work_order.status")) return; StartProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/start".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/finish") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_work_order.status")) return; FinishProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/finish".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "production_work_order.delete")) return; CancelProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length, path.Length - "/api/production-work-orders/".Length - "/cancel".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "production_work_order.view")) return; GetProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "production_work_order.edit")) return; UpdateProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path.StartsWith("/api/production-work-orders/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "production_work_order.delete")) return; DeleteProductionWorkOrder(ctx, user, path.Substring("/api/production-work-orders/".Length)); return; }
+                if (path == "/api/after-sales-service-orders" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "after_sales.view")) return; WriteJson(ctx, FilterAfterSalesPartsForPermission(LoadAfterSalesServiceOrders(), user)); return; }
                 if (path == "/api/after-sales-service-orders" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.add")) return; AddAfterSalesServiceOrder(ctx, user); return; }
                 if (path == "/api/after-sales-service-orders/export") { if (!RequirePermission(ctx, user, "after_sales.view")) return; ExportAfterSalesServiceOrdersCsv(ctx); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/confirm-dispatch") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; ConfirmDispatchAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/confirm-dispatch".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/start") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; StartAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/start".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/finish") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; FinishAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/finish".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/settle") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; SettleAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/settle".Length)); return; }
-                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; CancelAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/cancel".Length)); return; }
+                if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/cancel") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.cancel")) return; CancelAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/cancel".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && path.EndsWith("/generate-receivable") && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; GenerateReceivableForAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length, path.Length - "/api/after-sales-service-orders/".Length - "/generate-receivable".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "after_sales.view")) return; GetAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length)); return; }
                 if (path.StartsWith("/api/after-sales-service-orders/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "after_sales.edit")) return; UpdateAfterSalesServiceOrder(ctx, user, path.Substring("/api/after-sales-service-orders/".Length)); return; }
@@ -1473,14 +1473,14 @@ namespace SupplierErpApp
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finished_inbound.add")) return; AddFinishedInbound(ctx, user); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finished_inbound.edit")) return; UpdateFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finished_inbound.delete")) return; DeleteFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
-                if (path == "/api/inventory-movements" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ListInventoryMovements(ctx); return; }
-                if (path == "/api/inventory-movements/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ExportInventoryMovementsCsv(ctx, user); return; }
-                if (path.StartsWith("/api/inventory-movements/") && path.EndsWith("/source") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; GetInventoryMovementSource(ctx, path.Substring("/api/inventory-movements/".Length, path.Length - "/api/inventory-movements/".Length - "/source".Length)); return; }
-                if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
-                if (path == "/api/stocks/detail" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; GetStockDetail(ctx); return; }
-                if (path.StartsWith("/api/stocks/") && path.EndsWith("/movements") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ListStockMovements(ctx, path.Substring("/api/stocks/".Length, path.Length - "/api/stocks/".Length - "/movements".Length)); return; }
-                if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
-                if (path == "/api/stocks/export") { if (!RequirePermission(ctx, user, "stock.view")) return; ExportStocksCsv(ctx); return; }
+                if (path == "/api/inventory-movements" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "inventory_movement.view")) return; ListInventoryMovements(ctx); return; }
+                if (path == "/api/inventory-movements/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "inventory_movement.view")) return; ExportInventoryMovementsCsv(ctx, user); return; }
+                if (path.StartsWith("/api/inventory-movements/") && path.EndsWith("/source") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "source_trace.view")) return; GetInventoryMovementSource(ctx, path.Substring("/api/inventory-movements/".Length, path.Length - "/api/inventory-movements/".Length - "/source".Length)); return; }
+                if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock_summary.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
+                if (path == "/api/stocks/detail" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock_detail.view")) return; GetStockDetail(ctx); return; }
+                if (path.StartsWith("/api/stocks/") && path.EndsWith("/movements") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock_detail.view")) return; ListStockMovements(ctx, path.Substring("/api/stocks/".Length, path.Length - "/api/stocks/".Length - "/movements".Length)); return; }
+                if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock_summary.view")) return; WriteJson(ctx, BuildStockItems()); return; }
+                if (path == "/api/stocks/export") { if (!RequirePermission(ctx, user, "stock_summary.view")) return; ExportStocksCsv(ctx); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
                 if (path == "/api/reconciliation/customers" && ctx.Request.HttpMethod == "GET") { ListReconciliationCustomers(ctx, user); return; }
                 if (path == "/api/reconciliation/customer/export" && ctx.Request.HttpMethod == "GET") { ExportCustomerReconciliation(ctx, user); return; }
@@ -1501,9 +1501,9 @@ namespace SupplierErpApp
                 if (path == "/api/operation-logs/export" && ctx.Request.HttpMethod == "GET") { ExportOperationLogsCsv(ctx, user); return; }
                 if (path == "/api/operation-logs" && ctx.Request.HttpMethod == "GET") { ListOperationLogs(ctx, user); return; }
                 if (path.StartsWith("/api/operation-logs/") && ctx.Request.HttpMethod == "GET") { GetOperationLogDetail(ctx, user, path.Substring("/api/operation-logs/".Length)); return; }
-                if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user)) return; ExportTestDataAll(ctx, user); return; }
-                if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataPreview(ctx, user); return; }
-                if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user)) return; ImportTestDataRun(ctx, user); return; }
+                if (path == "/api/test-data/export-all" && ctx.Request.HttpMethod == "GET") { if (!RequireTestDataAccess(ctx, user, "test_data.export")) return; ExportTestDataAll(ctx, user); return; }
+                if (path == "/api/test-data/import-preview" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user, "test_data.import_preview")) return; ImportTestDataPreview(ctx, user); return; }
+                if (path == "/api/test-data/import-run" && ctx.Request.HttpMethod == "POST") { if (!RequireTestDataAccess(ctx, user, "test_data.import_run")) return; ImportTestDataRun(ctx, user); return; }
                 if (path == "/api/operation-impact/preview" && ctx.Request.HttpMethod == "POST") { PreviewOperationImpact(ctx, user); return; }
                 if (path == "/api/operation-impact/log" && ctx.Request.HttpMethod == "POST") { LogOperationImpactCancel(ctx, user); return; }
                 WriteJson(ctx, new { error = "接口不存在" }, 404);
@@ -2453,7 +2453,7 @@ namespace SupplierErpApp
                 SaveUsers();
                 saved = ToPublic(user);
             });
-            Audit(actor, "新增子账号", saved.Username);
+            Audit(actor, "新增子账号权限", saved.Username + " 权限" + (saved.Permissions == null ? 0 : saved.Permissions.Length) + "项");
             WriteJson(ctx, saved, 201);
         }
 
@@ -2479,7 +2479,7 @@ namespace SupplierErpApp
                 saved = ToPublic(user);
             });
             InvalidateUserSessions(sessionUser);
-            Audit(actor, "编辑子账号", saved.Username);
+            Audit(actor, "修改子账号权限", saved.Username + " 权限" + (saved.Permissions == null ? 0 : saved.Permissions.Length) + "项");
             WriteJson(ctx, saved);
         }
 
@@ -5170,6 +5170,41 @@ namespace SupplierErpApp
                 if (line != null) line.ParentOutboundId = item.Id ?? "";
         }
 
+        static bool IsSalesOutboundAccessoryLine(SalesOutboundLine line)
+        {
+            string type = NormalizeSalesOutboundLineType(line == null ? "" : line.LineType);
+            return type == "随货配件" || type == "赠品";
+        }
+
+        static bool SalesOutboundLineHasQuantityAdjustment(SalesOutboundLine line)
+        {
+            if (line == null) return false;
+            if (!string.IsNullOrWhiteSpace(line.AdjustReason)) return true;
+            if (line.ReturnedQuantity != 0) return true;
+            if (line.PlannedQuantity > 0 && Math.Abs(line.ActualQuantity - line.PlannedQuantity) > 0.0001m) return true;
+            return false;
+        }
+
+        static bool RequireSalesOutboundLinePermissions(HttpListenerContext ctx, UserSession user, SalesOutbound item, string mode)
+        {
+            var lines = SalesOutboundLinesForUse(item);
+            if (lines.Count > 0)
+            {
+                string detailPerm = mode == "add" ? "sales_outbound_detail.add" : (mode == "delete" ? "sales_outbound_detail.delete" : "sales_outbound_detail.edit");
+                if (!RequirePermission(ctx, user, detailPerm)) return false;
+            }
+            if (lines.Any(IsSalesOutboundAccessoryLine))
+            {
+                string accessoryPerm = mode == "add" ? "sales_outbound_accessory.add" : (mode == "delete" ? "sales_outbound_accessory.delete" : "sales_outbound_accessory.edit");
+                if (!RequirePermission(ctx, user, accessoryPerm)) return false;
+            }
+            if (mode != "delete" && lines.Any(SalesOutboundLineHasQuantityAdjustment))
+            {
+                if (!RequirePermission(ctx, user, "sales_outbound.adjust_quantity")) return false;
+            }
+            return true;
+        }
+
         static void ResolvePurchaseOrderLink(PurchaseInbound item)
         {
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
@@ -5614,6 +5649,7 @@ namespace SupplierErpApp
         static void AddSalesOutbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(item);
+            if (!RequireSalesOutboundLinePermissions(ctx, user, item, "add")) return;
             ValidateStockForConfirmedOutbound(item);
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
             {
@@ -5635,6 +5671,7 @@ namespace SupplierErpApp
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input, id);
+            if (!RequireSalesOutboundLinePermissions(ctx, user, input, "edit")) return;
             ValidateSalesOutboundRemainingQty(input, id);
             ValidateStockForConfirmedOutbound(input, id);
             string previousStatus = null;
@@ -5672,12 +5709,15 @@ namespace SupplierErpApp
         static void DeleteSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            SalesOutbound existingForPermission = null;
             RunUnderDataLock(() =>
             {
                 var item = ReadJsonListCore<SalesOutbound>(SalesOutboundsFile).FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 auditCode = item.Code;
+                existingForPermission = CloneSalesOutbound(item);
             });
+            if (!RequireSalesOutboundLinePermissions(ctx, user, existingForPermission, "delete")) return;
             EnforceDeleteImpact("salesOutbound", id, user, ctx, auditCode);
             MutateJsonList<SalesOutbound, object>(SalesOutboundsFile, "sales_outbounds", list =>
             {

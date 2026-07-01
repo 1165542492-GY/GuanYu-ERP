@@ -148,12 +148,12 @@ var acts='',id=safe(x.Id);
 if(cfg.view==='salesOrderView'){
 if(numVal(x.RemainingQuantity)>0.0001&&can('sales_outbound.view'))acts+=bizNextBtn('转出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
 if(x.ItemType==='FinishedProduct'){
-if(can('production_pick.view'))acts+=bizNextBtn('下一步：生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
+if(can('production_work_order.view'))acts+=bizNextBtn('下一步：生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
 }else if(x.ItemType==='Material'){
 if(!acts&&can('sales_outbound.view'))acts+=bizNextBtn('下一步：销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
 }else{
 if(!acts&&can('sales_outbound.view'))acts+=bizNextBtn('前往销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
-if(can('production_pick.view'))acts+=bizNextBtn('前往生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
+if(can('production_work_order.view'))acts+=bizNextBtn('前往生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
 if(!detailMode)acts+='<span class="mini" style="display:block;margin-top:4px;color:var(--muted)">现货/配件直接出库；需要车间生产的设备先建生产工单。</span>';
 }
 }
@@ -178,8 +178,8 @@ if(action==='outbound'){
 if(!can('sales_outbound.view')){tip('无权限访问销售出库');return}
 bizGoNextPage('sales-outbound',{search:code,openAdd:!!can('sales_outbound.add'),prefill:{SalesOrderId:order.Id,Status:'草稿'}});
 }else if(action==='pwo'){
-if(!can('production_pick.view')){tip('无权限访问生产工单');return}
-bizGoNextPage('production-work-order',{search:code,openAdd:!!can('production_pick.add'),prefill:{SourceType:'销售订单',SalesOrderId:order.Id}});
+if(!can('production_work_order.view')){tip('无权限访问生产工单');return}
+bizGoNextPage('production-work-order',{search:code,openAdd:!!can('production_work_order.add'),prefill:{SourceType:'销售订单',SalesOrderId:order.Id}});
 }
 };
 window.bizNextFromPurchaseOrder=async function(poId){
@@ -751,8 +751,8 @@ if(can('bom.view')||can('model_cost.view'))bizRefs.boms=await api('/api/bom')||[
 if(can('model_cost.view'))bizRefs.modelCosts=await api('/api/model-costs')||[];
 if(can('customer.view'))bizRefs.customers=await api('/api/customers')||[];
 if(can('supplier.view'))bizRefs.suppliers=await api('/api/suppliers')||[];
-if(can('stock.view'))bizRefs.stockItems=await api('/api/stocks')||[];
-if(can('production_pick.view')||can('finished_inbound.view')){try{bizRefs.workOrders=await api('/api/production-work-orders')||[]}catch(e){bizRefs.workOrders=[]}}
+if(can('stock_summary.view'))bizRefs.stockItems=await api('/api/stocks')||[];
+if(can('production_work_order.view')||can('production_pick.view')||can('finished_inbound.view')){try{bizRefs.workOrders=await api('/api/production-work-orders')||[]}catch(e){bizRefs.workOrders=[]}}
 bizRefs.pickMaterials=bizRefs.materials.slice();
 }catch(e){}
 }
@@ -1008,7 +1008,7 @@ if(cancelBtn&&!cancelBtn._bizWired){cancelBtn._bizWired=1;cancelBtn.onclick=func
 var costToggle=document.getElementById(p+'CostToggle');
 if(costToggle&&!costToggle._bizWired){costToggle._bizWired=1;costToggle.onclick=function(){var panel=document.getElementById(p+'CostPanel');if(!panel)return;var open=panel.classList.toggle('open');costToggle.textContent=(open?'▼':'▶')+' 内部成本信息（系统核算，普通录入无需填写）';};}
 if(cfg.view==='salesOutboundView'){
-[['soutAddAccessory','随货配件'],['soutAddGift','赠品'],['soutAddAdjust','调整项']].forEach(function(pair){var btn=document.getElementById(pair[0]);if(btn&&!btn._bizWired){btn._bizWired=1;btn.onclick=function(){soutAddLine(pair[1]);};}});
+[['soutAddAccessory','随货配件','sales_outbound_accessory.add'],['soutAddGift','赠品','sales_outbound_accessory.add'],['soutAddAdjust','调整项','sales_outbound.adjust_quantity']].forEach(function(pair){var btn=document.getElementById(pair[0]);if(btn){btn.style.display=can(pair[2])?'':'none';if(!btn._bizWired){btn._bizWired=1;btn.onclick=function(){if(!can(pair[2])){tip('无权限操作');return}soutAddLine(pair[1]);};}}});
 }
 cfg.fields.forEach(function(f){
 if(f.calc||f.computed){
@@ -1059,8 +1059,8 @@ function wireStockPageTools(){
 if(document.getElementById('stockSearch')&&!document.getElementById('stockSearch')._wired){document.getElementById('stockSearch')._wired=1;document.getElementById('stockSearch').oninput=renderStockList;}
 ['stockTypeFilter','stockStatusFilter','stockInvFilter'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._wired){el._wired=1;el.onchange=function(){renderStockList();};}});
 if(document.getElementById('stockReset')&&!document.getElementById('stockReset')._wired){document.getElementById('stockReset')._wired=1;document.getElementById('stockReset').onclick=function(){document.getElementById('stockSearch').value='';['stockTypeFilter','stockStatusFilter','stockInvFilter'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});renderStockList();};}
-if(document.getElementById('stockMovementPageBtn')&&!document.getElementById('stockMovementPageBtn')._wired){document.getElementById('stockMovementPageBtn')._wired=1;document.getElementById('stockMovementPageBtn').onclick=function(){if(!can('stock.view')){tip('无权限操作');return}if(typeof openPage==='function')openPage('inventory-movements');};}
-if(document.getElementById('stockExportBtn')&&!document.getElementById('stockExportBtn')._wired){document.getElementById('stockExportBtn')._wired=1;document.getElementById('stockExportBtn').onclick=function(){if(!can('stock.view')){tip('无权限操作');return}if(typeof downloadCsvExport==='function')downloadCsvExport('/api/stocks/export',typeof buildExportFileName==='function'?buildExportFileName('库存汇总','.csv'):'库存汇总.csv');};}
+if(document.getElementById('stockMovementPageBtn')&&!document.getElementById('stockMovementPageBtn')._wired){document.getElementById('stockMovementPageBtn')._wired=1;document.getElementById('stockMovementPageBtn').onclick=function(){if(!can('inventory_movement.view')){tip('无权限操作');return}if(typeof openPage==='function')openPage('inventory-movements');};}
+if(document.getElementById('stockExportBtn')&&!document.getElementById('stockExportBtn')._wired){document.getElementById('stockExportBtn')._wired=1;document.getElementById('stockExportBtn').onclick=function(){if(!can('stock_summary.view')){tip('无权限操作');return}if(typeof downloadCsvExport==='function')downloadCsvExport('/api/stocks/export',typeof buildExportFileName==='function'?buildExportFileName('库存汇总','.csv'):'库存汇总.csv');};}
 }
 function stockIsInventoryItem(x){return!(x.IsInventoryItem===false||x.IsInventoryItem==='0'||x.IsInventoryItem===0)}
 window.onBusinessLoginDone=function(){initBusinessUi();bizLoadRefs().then(function(){Object.keys(bizModules).forEach(function(page){bizLoad(bizModules[page])});loadStockPage();});};
@@ -1374,7 +1374,7 @@ var STOCK_TABLE_COLS=12;
 function renderStockList(){
 var rows=stockVisibleRows(),body=document.getElementById('stockBody');
 var guide=document.getElementById('stockEmptyGuide');if(guide)guide.style.display=stockData.length?'none':'block';
-if(!can('stock.view')){if(body)body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(STOCK_TABLE_COLS,'perm'):'<tr><td colspan="'+STOCK_TABLE_COLS+'" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!can('stock_summary.view')){if(body)body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(STOCK_TABLE_COLS,'perm'):'<tr><td colspan="'+STOCK_TABLE_COLS+'" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
 if(body)body.innerHTML=rows.length?rows.map(function(x){
 var qty=numVal(x.CurrentQuantity!=null?x.CurrentQuantity:x.Quantity);
 var neg=qty<0;
@@ -1391,7 +1391,7 @@ if(document.getElementById('stockAmountSum'))document.getElementById('stockAmoun
 if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('warehouse-stock');else if(typeof refreshAllDualScroll==='function')setTimeout(refreshAllDualScroll,0);
 }
 async function loadStockPage(){
-if(!can('stock.view')){stockData=[];renderStockList();return}
+if(!can('stock_summary.view')){stockData=[];renderStockList();return}
 try{
 var items=await api('/api/stocks'),summary=await api('/api/stocks/summary');
 stockData=items||[];
@@ -1410,11 +1410,11 @@ return p.toString();
 function wireInventoryMovementTools(){
 ['invMoveKeyword','invMoveSourceNo','invMoveWarehouse','invMoveSourceType','invMoveDirection','invMoveDateFrom','invMoveDateTo'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._wired){el._wired=1;el.oninput=loadInventoryMovementPage;el.onchange=loadInventoryMovementPage;}});
 var reset=document.getElementById('invMoveReset');if(reset&&!reset._wired){reset._wired=1;reset.onclick=function(){['invMoveKeyword','invMoveSourceNo','invMoveWarehouse','invMoveSourceType','invMoveDirection','invMoveDateFrom','invMoveDateTo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});loadInventoryMovementPage();};}
-var exp=document.getElementById('invMoveExportBtn');if(exp&&!exp._wired){exp._wired=1;exp.onclick=function(){if(!can('stock.view')){tip('无权限操作');return}var qs=invMoveQueryString();downloadCsvExport('/api/inventory-movements/export'+(qs?'?'+qs:''),typeof buildExportFileName==='function'?buildExportFileName('库存流水','.csv'):'库存流水.csv');};}
+var exp=document.getElementById('invMoveExportBtn');if(exp&&!exp._wired){exp._wired=1;exp.onclick=function(){if(!can('inventory_movement.view')){tip('无权限操作');return}var qs=invMoveQueryString();downloadCsvExport('/api/inventory-movements/export'+(qs?'?'+qs:''),typeof buildExportFileName==='function'?buildExportFileName('库存流水','.csv'):'库存流水.csv');};}
 }
 function renderInventoryMovementList(){
 var body=document.getElementById('invMoveBody');if(!body)return;
-if(!can('stock.view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(17,'perm'):'<tr><td colspan="17" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
+if(!can('inventory_movement.view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(17,'perm'):'<tr><td colspan="17" class="empty">当前账号没有权限查看此页面。</td></tr>';return}
 body.innerHTML=inventoryMovementData.length?inventoryMovementData.map(function(x){
 var id=String(x.Id||x.MovementNo||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 return'<tr><td>'+formatDateTime(x.OccurredAt)+'</td><td>'+safe(x.DirectionLabel||x.Direction||'-')+'</td><td><b>'+safe(x.MaterialCode||'-')+'</b></td><td class="company">'+cellEllipsis(x.MaterialName||'-','col-company')+'</td><td>'+safe(x.WarehouseName||'-')+'</td><td>'+bizQty(x.ChangeQuantity)+'</td><td>'+bizQty(x.BeforeQuantity)+'</td><td>'+bizQty(x.AfterQuantity)+'</td><td>'+safe(x.Unit||'-')+'</td><td>'+money(x.UnitCost||0)+'</td><td>'+money(x.ChangeAmount||0)+'</td><td>'+safe(x.SourceType||'-')+'</td><td><button class="action" onclick="bizOpenInventoryMovementSource(\''+id+'\')">'+safe(x.SourceNo||'-')+'</button></td><td>'+safe(x.SourceStatus||'-')+'</td><td>'+safe(x.Operator||'-')+'</td><td>'+cellEllipsis(x.Remark||'-','col-note')+'</td><td><button class="action" onclick="bizOpenInventoryMovementSource(\''+id+'\')">来源</button></td></tr>';
@@ -1423,7 +1423,7 @@ if(document.getElementById('invMoveCount'))document.getElementById('invMoveCount
 if(typeof refreshPageDualScroll==='function')refreshPageDualScroll('inventory-movements');else if(typeof refreshAllDualScroll==='function')setTimeout(refreshAllDualScroll,0);
 }
 async function loadInventoryMovementPage(){
-if(!can('stock.view')){inventoryMovementData=[];renderInventoryMovementList();return}
+if(!can('inventory_movement.view')){inventoryMovementData=[];renderInventoryMovementList();return}
 wireInventoryMovementTools();
 try{var qs=invMoveQueryString();inventoryMovementData=await api('/api/inventory-movements'+(qs?'?'+qs:''))||[];renderInventoryMovementList();}catch(e){inventoryMovementData=[];renderInventoryMovementList();}
 }
@@ -1637,7 +1637,7 @@ ensureArapDetailModals();
 
 var PWO_STATUSES=['草稿','待生产','生产中','部分完工','已完成','已取消'];
 var pwoState={data:[],editing:null,editingUpdatedAt:null};
-function pwoCan(act){return can('production_pick.'+act)}
+function pwoCan(act){return can('production_work_order.'+act)}
 function pwoToday(){return bizToday()}
 function pwoStr(v){return bizStr(v)}
 function pwoMoney(v){return money(v)}
@@ -1709,10 +1709,10 @@ body.innerHTML=rows.length?rows.map(function(x){
 var acts='';
 if(pwoCan('view'))acts+='<button class="action" onclick="pwoOpenDetail(\''+x.Id+'\')">查看详情</button>';
 if(pwoCan('edit')&&(x.Status==='草稿'||x.Status==='待生产'||x.Status==='生产中'||x.Status==='部分完工'))acts+='<button class="action" onclick="pwoOpenEdit(\''+x.Id+'\')">编辑</button>';
-if(pwoCan('edit')&&(x.Status==='草稿'||x.Status==='待生产'))acts+='<button class="action" onclick="pwoStart(\''+x.Id+'\')">开始生产</button>';
-if(pwoCan('edit')&&(x.Status==='生产中'||x.Status==='部分完工'))acts+='<button class="action" onclick="pwoOpenFinish(\''+x.Id+'\')">登记完工</button>';
+if(pwoCan('status')&&(x.Status==='草稿'||x.Status==='待生产'))acts+='<button class="action" onclick="pwoStart(\''+x.Id+'\')">开始生产</button>';
+if(pwoCan('status')&&(x.Status==='生产中'||x.Status==='部分完工'))acts+='<button class="action" onclick="pwoOpenFinish(\''+x.Id+'\')">登记完工</button>';
 acts+=pwoBuildListNextActions(x);
-if(pwoCan('edit')&&x.Status!=='已完成'&&x.Status!=='已取消')acts+='<button class="action" onclick="pwoCancelWo(\''+x.Id+'\')">取消工单</button>';
+if(pwoCan('delete')&&x.Status!=='已完成'&&x.Status!=='已取消')acts+='<button class="action" onclick="pwoCancelWo(\''+x.Id+'\')">取消工单</button>';
 if(pwoCan('delete')&&(x.Status==='草稿'||x.Status==='已取消'))acts+='<button class="action del" onclick="pwoDelete(\''+x.Id+'\')">删除</button>';
 if(!acts)acts='-';
 return'<tr><td><b>'+safe(x.WorkOrderNo||'-')+'</b></td><td>'+safe(x.SalesOrderNo||'-')+'</td><td>'+pwoCell(x.CustomerName||'-','col-company')+'</td><td>'+pwoCell(x.ProductName||'-','col-company')+'</td><td>'+bizMoney2(x.Quantity)+'</td><td>'+bizMoney2(x.PickedQuantity||0)+'</td><td>'+bizMoney2(x.FinishedQuantity!=null?x.FinishedQuantity:x.ProducedQuantity)+'</td><td>'+bizMoney2(x.UnproducedQuantity)+'</td><td>'+safe((x.PlannedFinishDate||'').slice(0,10)||'-')+'</td><td><span class="status">● '+safe(x.Status||'-')+'</span></td><td>'+pwoFmtDate(x.UpdatedAt)+'</td><td>'+acts+'</td></tr>';
@@ -1943,13 +1943,13 @@ document.getElementById('pwoFinishModal').classList.add('show');
 window.pwoOpenFinish=pwoOpenFinish;
 function closePwoFinishModal(){var m=document.getElementById('pwoFinishModal');if(m)m.classList.remove('show');pwoFinishId=null}
 async function pwoStart(id){
-if(!pwoCan('edit')){tip('无权限操作');return}
+if(!pwoCan('status')){tip('无权限操作');return}
 if(!(await confirmAction({title:'确认开始生产',message:'确定要开始生产该工单吗？\n开始后系统将记录生产进度。',confirmText:'确认'})))return;
 try{await api('/api/production-work-orders/'+id+'/start',{method:'POST',body:'{}'});await loadProductionWorkOrderPage();tip('已开始生产')}catch(e){tip(e.message||'操作失败')}
 }
 window.pwoStart=pwoStart;
 async function pwoCancelWo(id){
-if(!pwoCan('edit')){tip('无权限操作');return}
+if(!pwoCan('delete')){tip('无权限操作');return}
 if(!(await confirmAction({title:'确认取消工单',message:'确定要取消该生产工单吗？\n取消后工单数据将保留，但不再继续生产。',level:'warning',confirmText:'确认取消'})))return;
 try{await api('/api/production-work-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadProductionWorkOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}
 }
@@ -1979,7 +1979,7 @@ var cust=document.getElementById('pwoCustomerId');if(cust&&!cust._pwoWired){cust
 var bom=document.getElementById('pwoBomId');if(bom&&!bom._pwoWired){bom._pwoWired=1;bom.onchange=function(){pwoApplyBomFill(bom.value)}}
 var mc=document.getElementById('pwoModelCostId');if(mc&&!mc._pwoWired){mc._pwoWired=1;mc.onchange=function(){pwoApplyModelCostFill(mc.value)}}
 var ff=document.getElementById('pwoFinishForm');
-if(ff&&!ff._pwoWired){ff._pwoWired=1;ff.onsubmit=async function(e){e.preventDefault();if(!pwoFinishId)return;var qty=bizMoney2(document.getElementById('pwoFinishQty').value);if(qty<=0){tip('本次完工数量必须大于 0');return}try{await erpSaveSubmit(ff,async function(){await api('/api/production-work-orders/'+pwoFinishId+'/finish',{method:'POST',body:JSON.stringify({FinishQuantity:qty,UpdatedAt:pwoFinishUpdatedAt||''})});closePwoFinishModal();await loadProductionWorkOrderPage();tip('已登记完工')})}catch(err){tip(err.message||'操作失败')}}}
+if(ff&&!ff._pwoWired){ff._pwoWired=1;ff.onsubmit=async function(e){e.preventDefault();if(!pwoCan('status')){tip('无权限操作');return}if(!pwoFinishId)return;var qty=bizMoney2(document.getElementById('pwoFinishQty').value);if(qty<=0){tip('本次完工数量必须大于 0');return}try{await erpSaveSubmit(ff,async function(){await api('/api/production-work-orders/'+pwoFinishId+'/finish',{method:'POST',body:JSON.stringify({FinishQuantity:qty,UpdatedAt:pwoFinishUpdatedAt||''})});closePwoFinishModal();await loadProductionWorkOrderPage();tip('已登记完工')})}catch(err){tip(err.message||'操作失败')}}}
 ['pwoFinishClose','pwoFinishCancel'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._pwoWired){el._pwoWired=1;el.onclick=closePwoFinishModal}});
 }
 function initProductionWorkOrderUi(){buildProductionWorkOrderView()}
@@ -2025,6 +2025,8 @@ return{PartsAmount:partsTotal,LaborAmount:labor,OtherAmount:other,DiscountAmount
 }
 function asoRenderParts(){
 var body=document.getElementById('asoPartsBody');if(!body)return;
+var addPartBtn=document.getElementById('asoAddPart');if(addPartBtn)addPartBtn.style.display=asoCan('pick')?'':'none';
+if(!asoCan('parts_view')){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(14,'perm'):'<tr><td colspan="14" class="empty">当前账号没有权限查看维修物料明细。</td></tr>';asoRecalcSummaryFromForm();return}
 var rows=asoState.partRows||[];
 if(!rows.length){body.innerHTML='<tr><td colspan="14" class="empty">可点击「添加配件行」从物料管理选择维修物料</td></tr>';asoRecalcSummaryFromForm();return}
 body.innerHTML=rows.map(function(r,i){
@@ -2124,7 +2126,7 @@ if(asoCan('edit')&&x.Status==='维修中')acts+='<button class="action" onclick=
 if(asoCan('edit')&&x.Status==='已完成')acts+='<button class="action" onclick="asoSettle(\''+id+'\')">结算</button>';
 if(asoCan('edit')&&(x.Status==='已完成'||x.Status==='已结算')&&numVal(x.ReceivableAmount)>0&&!x.ReceivableId)acts+='<button class="action" onclick="asoGenerateReceivable(\''+id+'\')">生成应收款</button>';
 if(x.ReceivableId&&can('receivable.view'))acts+='<button class="action" onclick="asoViewReceivable(\''+safe(x.ReceivableNo||'')+'\')">查看应收款</button>';
-if(asoCan('edit')&&x.Status!=='已完成'&&x.Status!=='已结算'&&x.Status!=='已取消')acts+='<button class="action" onclick="asoCancelOrder(\''+id+'\')">取消</button>';
+if(asoCan('cancel')&&x.Status!=='已完成'&&x.Status!=='已结算'&&x.Status!=='已取消')acts+='<button class="action" onclick="asoCancelOrder(\''+id+'\')">取消</button>';
 if(asoCan('delete')&&(x.Status==='草稿'||x.Status==='已取消'))acts+='<button class="action del" onclick="asoDelete(\''+id+'\')">删除</button>';
 return acts||'-';
 }
@@ -2169,8 +2171,8 @@ var item=(asoState.data||[]).find(function(x){return x.Id===id});if(!item)return
 document.getElementById('asoDetailTitle').textContent='维修工单 · '+safe(item.ServiceNo||'');
 var html=asoDetailRow('维修单号',safe(item.ServiceNo||'-'))+asoDetailRow('登记日期',safe((item.ServiceDate||'').slice(0,10)||'-'))+asoDetailRow('客户',asoCell(item.CustomerName||'-','col-company'))+asoDetailRow('联系人',safe(item.ContactName||'-'))+asoDetailRow('电话',safe(item.ContactPhone||'-'))+asoDetailRow('设备/机型',asoCell(item.MachineName||'-','col-company'))+asoDetailRow('规格型号',safe(item.MachineSpec||'-'))+asoDetailRow('维修类型',safe(item.ServiceType||'-'))+asoDetailRow('派工人员',safe(item.AssignedWorker||'-'))+asoDetailRow('上门日期',safe((item.VisitDate||'').slice(0,10)||'-'))+asoDetailRow('故障描述',safe(item.FaultDescription||'-'),1)+asoDetailRow('维修结果',safe(item.RepairResult||'-'),1)+asoDetailRow('配件费',asoMoney(item.PartsAmount))+asoDetailRow('人工费',asoMoney(item.LaborAmount))+asoDetailRow('其他费用',asoMoney(item.OtherAmount))+asoDetailRow('优惠减免',asoMoney(item.DiscountAmount))+asoDetailRow('应收合计',asoMoney(item.ReceivableAmount))+asoDetailRow('已收',asoMoney(item.ReceivedAmount))+asoDetailRow('未收',asoMoney(item.UnreceivedAmount))+asoDetailRow('关联应收',safe(item.ReceivableNo||'-'))+asoDetailRow('状态',safe(item.Status||'-'))+asoDetailRow('创建',asoFmtDate(item.CreatedAt)+' '+safe(item.CreatedBy||''))+asoDetailRow('更新',asoFmtDate(item.UpdatedAt)+' '+safe(item.UpdatedBy||''));
 if(item.Remark)html+=asoDetailRow('备注',safe(item.Remark),1);
-if(item.Parts&&item.Parts.length){
-var pt='<table class="data-table biz-table-compact"><thead><tr><th>动作</th><th>编号</th><th>名称</th><th>领出</th><th>退回</th><th>补领</th><th>最终耗用</th><th>收费</th><th>成本</th></tr></thead><tbody>'+item.Parts.map(function(p){return'<tr><td>'+safe(p.ActionType||'费用')+'</td><td>'+safe(p.MaterialCode||'-')+'</td><td>'+safe(p.MaterialName||'-')+'</td><td>'+bizMoney2(p.PickedQuantity||0)+'</td><td>'+bizMoney2(p.ReturnedQuantity||0)+'</td><td>'+bizMoney2(p.ExtraQuantity||0)+'</td><td>'+bizMoney2(p.FinalUsedQuantity||p.Quantity||0)+'</td><td>'+asoMoney(p.Amount)+'</td><td>'+asoMoney(p.CostAmount||0)+'</td></tr>'}).join('')+'</tbody></table>';
+if(asoCan('parts_view')&&item.Parts&&item.Parts.length){
+var pt='<table class="data-table biz-table-compact"><thead><tr><th>动作</th><th>编号</th><th>名称</th><th>领出</th><th>退回</th><th>补领</th><th>最终耗用</th><th>收费</th><th>成本</th></tr></thead><tbody>'+item.Parts.map(function(p){return'<tr><td>'+safe(p.ActionType||'费用')+'</td><td>'+safe(p.MaterialCode||'-')+'</td><td>'+safe(p.MaterialName||'-')+'</td><td>'+bizMoney2(p.PickedQuantity||0)+'</td><td>'+bizMoney2(p.ReturnedQuantity||0)+'</td><td>'+bizMoney2(p.ExtraQuantity||0)+'</td><td>'+(asoCan('final_usage')?bizMoney2(p.FinalUsedQuantity||p.Quantity||0):'-')+'</td><td>'+asoMoney(p.Amount)+'</td><td>'+asoMoney(p.CostAmount||0)+'</td></tr>'}).join('')+'</tbody></table>';
 html+=asoDetailRow('维修物料明细',pt,1);
 }
 html+=asoBuildDetailNextHtml(item);
@@ -2197,7 +2199,7 @@ async function asoConfirmDispatch(id){if(!asoCan('edit'))return;try{await api('/
 async function asoStart(id){if(!asoCan('edit'))return;try{await api('/api/after-sales-service-orders/'+id+'/start',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已开始维修')}catch(e){tip(e.message||'操作失败')}}
 async function asoFinish(id){if(!asoCan('edit'))return;try{await api('/api/after-sales-service-orders/'+id+'/finish',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已完成维修')}catch(e){tip(e.message||'操作失败')}}
 async function asoSettle(id){if(!asoCan('edit'))return;if(!(await confirmAction({title:'确认结算',message:'确定要结算该维修单吗？\n结算后未收金额将归零，请确认费用已核对。',level:'warning',confirmText:'确认结算'})))return;try{await api('/api/after-sales-service-orders/'+id+'/settle',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已结算')}catch(e){tip(e.message||'操作失败')}}
-async function asoCancelOrder(id){if(!asoCan('edit'))return;if(!(await confirmAction({title:'确认取消',message:'确定要取消该维修单吗？\n取消后工单将停止处理。',level:'warning',confirmText:'确认取消'})))return;try{await api('/api/after-sales-service-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}}
+async function asoCancelOrder(id){if(!asoCan('cancel'))return;if(!(await confirmAction({title:'确认取消',message:'确定要取消该维修单吗？\n取消后工单将停止处理。',level:'warning',confirmText:'确认取消'})))return;try{await api('/api/after-sales-service-orders/'+id+'/cancel',{method:'POST',body:'{}'});await loadAfterSalesServiceOrderPage();tip('已取消')}catch(e){tip(e.message||'操作失败')}}
 async function asoGenerateReceivable(id){
 if(!asoCan('edit'))return;
 if(!(await confirmAction({title:'生成应收款',message:'确定要为该维修单生成应收款吗？\n生成后不可重复生成，请确认维修费用无误。',level:'warning',confirmText:'确认生成'})))return;
@@ -2228,7 +2230,7 @@ if(form&&!form._asoWired){form._asoWired=1;form.onsubmit=async function(e){e.pre
 ['asoClose','asoModalCancel'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._asoWired){el._asoWired=1;el.onclick=function(){if(window.erpUiLock&&!window.erpUiLock.guardClose())return;closeAsoModal()}}});
 ['asoDetailClose','asoDetailOk'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._asoWired){el._asoWired=1;el.onclick=closeAsoDetail}});
 var cust=document.getElementById('asoCustomerId');if(cust&&!cust._asoWired){cust._asoWired=1;cust.onchange=function(){asoApplyCustomerFill(cust.value)}}
-var addPart=document.getElementById('asoAddPart');if(addPart&&!addPart._asoWired){addPart._asoWired=1;addPart.onclick=function(){asoAddPartLine()}}
+var addPart=document.getElementById('asoAddPart');if(addPart){addPart.style.display=asoCan('pick')?'':'none';if(!addPart._asoWired){addPart._asoWired=1;addPart.onclick=function(){if(!asoCan('pick')){tip('无权限操作');return}asoAddPartLine()}}}
 ['asoLaborAmount','asoOtherAmount','asoDiscountAmount','asoReceivedAmount'].forEach(function(id){var el=document.getElementById(id);if(el&&!el._asoWired){el._asoWired=1;el.oninput=function(){asoRecalcSummaryFromForm()}}});
 }
 function initAfterSalesServiceOrderUi(){buildAfterSalesServiceOrderView()}

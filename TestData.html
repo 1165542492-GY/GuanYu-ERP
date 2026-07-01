@@ -66,6 +66,9 @@ var placeholder=document.getElementById('systemSettingPlaceholderPanel');
 if(panel&&detail){if(placeholder&&placeholder.parentNode)placeholder.parentNode.insertBefore(panel,placeholder);else detail.appendChild(panel);}
 var state={fileName:'',data:'',fileHash:'',previewPassed:false,totalFailed:0,lastPreview:null,lastRun:null};
 var importTaskActive=false,_execMode=null;
+function canTestDataExport(){return typeof can==='function'&&can('test_data.export')}
+function canTestDataPreview(){return typeof can==='function'&&can('test_data.import_preview')}
+function canTestDataRun(){return typeof can==='function'&&can('test_data.import_run')}
 function isTestDataImportTaskActive(){return importTaskActive}
 function activateImportTask(){
 if(importTaskActive)return;
@@ -149,10 +152,10 @@ var importBtn=document.getElementById('testDataImportBtn');
 var pickBtn=document.getElementById('testDataPickBtn');
 var exportBtn=document.getElementById('testDataExportBtn');
 var cancelBtn=document.getElementById('testDataCancelBtn');
-if(exportBtn)exportBtn.disabled=busy;
-if(pickBtn)pickBtn.disabled=busy&&_execMode==='import';
-if(previewBtn)previewBtn.disabled=busy||!state.data;
-if(importBtn)importBtn.disabled=busy||!(state.data&&state.previewPassed&&state.totalFailed===0);
+if(exportBtn){exportBtn.style.display=canTestDataExport()?'':'none';exportBtn.disabled=busy||!canTestDataExport();}
+if(pickBtn){pickBtn.style.display=canTestDataPreview()?'':'none';pickBtn.disabled=!canTestDataPreview()||(busy&&_execMode==='import');}
+if(previewBtn){previewBtn.style.display=canTestDataPreview()?'':'none';previewBtn.disabled=!canTestDataPreview()||busy||!state.data;}
+if(importBtn){importBtn.style.display=canTestDataRun()?'':'none';importBtn.disabled=!canTestDataRun()||busy||!(state.data&&state.previewPassed&&state.totalFailed===0);}
 if(cancelBtn){
 cancelBtn.style.display=importTaskActive?'inline-block':'none';
 cancelBtn.disabled=busy;
@@ -310,19 +313,19 @@ reader.readAsDataURL(file);
 }
 var exportBtn=document.getElementById('testDataExportBtn');
 if(exportBtn)exportBtn.onclick=async function(){
-if(!isAdminUser()){tip('仅管理员可操作');return}
+if(!canTestDataExport()){tip('无权限操作');return}
 return runSubmitOnce(this,async function(){
 if(typeof downloadBinaryExport==='function')await downloadBinaryExport('/api/test-data/export-all',buildExportFileName('ERP测试数据总表','.xlsx'));
 else tip('导出功能未就绪');
 },'导出中...','正在导出测试总表，请稍候...');
 };
 var pickBtn=document.getElementById('testDataPickBtn');
-if(pickBtn)pickBtn.onclick=function(){if(!isAdminUser()){tip('仅管理员可操作');return}if(_execMode==='import'){tip(window.erpUiLock?window.erpUiLock.LOCK_MSG:'正在导入，请勿切换页面或关闭窗口...');return}document.getElementById('testDataImportFile').click();};
+if(pickBtn)pickBtn.onclick=function(){if(!canTestDataPreview()){tip('无权限操作');return}if(_execMode==='import'){tip(window.erpUiLock?window.erpUiLock.LOCK_MSG:'正在导入，请勿切换页面或关闭窗口...');return}document.getElementById('testDataImportFile').click();};
 var fileInput=document.getElementById('testDataImportFile');
 if(fileInput)fileInput.onchange=function(){var f=this.files[0];if(!f)return;if(!/\.xlsx$/i.test(f.name)){tip('请选择 .xlsx 文件');this.value='';return}readSelectedFile(f,function(){tip('已选择：'+f.name+'，请先执行预检查')});this.value='';};
 var previewBtn=document.getElementById('testDataPreviewBtn');
 if(previewBtn)previewBtn.onclick=async function(){
-if(!isAdminUser()){tip('仅管理员可操作');return}
+if(!canTestDataPreview()){tip('无权限操作');return}
 if(!state.data){tip('请先选择 Excel 文件');return}
 return runSubmitOnce(this,async function(){
 setTestDataBusy(true,'预检查中，请稍候...');
@@ -343,7 +346,7 @@ setTestDataBusy(false);
 };
 var importBtn=document.getElementById('testDataImportBtn');
 if(importBtn)importBtn.onclick=async function(){
-if(!isAdminUser()){tip('仅管理员可操作');return}
+if(!canTestDataRun()){tip('无权限操作');return}
 if(!state.data){tip('请先选择 Excel 文件');return}
 if(!state.previewPassed||state.totalFailed>0){tip('请先完成预检查，确认无错误后再正式导入');return}
 if(!confirm('测试数据正式导入会写入多张表。建议先在「数据备份恢复」中立即备份。确认已经备份或确认继续导入吗？'))return

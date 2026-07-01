@@ -171,9 +171,9 @@ async function loadLogs(page){
   }catch(e){body.innerHTML=window.erpEmptyHtml?window.erpEmptyHtml(8,'error'):'<tr><td colspan="8" class="empty">页面加载失败，请刷新后重试。</td></tr>';tip(e.message||'加载失败','error');refreshOplogScroll()}
 }
 window.loadOperationLogs=function(page){return loadLogs(page||1)};
-if(qs('oplogSearchBtn'))qs('oplogSearchBtn').onclick=function(){loadLogs(1)};
-if(qs('oplogResetBtn'))qs('oplogResetBtn').onclick=function(){['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';closeOplogDetailModal();loadLogs(1)};
-if(qs('oplogExportBtn'))qs('oplogExportBtn').onclick=function(){window.open('/api/operation-logs/export?'+buildQuery(oplogPage),'_blank')};
+if(qs('oplogSearchBtn')){qs('oplogSearchBtn').style.display=can('operation_log.query')?'':'none';qs('oplogSearchBtn').onclick=function(){if(!can('operation_log.query')){tip('无权限操作');return}loadLogs(1)};}
+if(qs('oplogResetBtn')){qs('oplogResetBtn').style.display=can('operation_log.query')?'':'none';qs('oplogResetBtn').onclick=function(){if(!can('operation_log.query')){tip('无权限操作');return}['oplogFrom','oplogTo','oplogUsername','oplogModule','oplogAction','oplogKeyword'].forEach(function(id){var el=qs(id);if(el)el.value=''});if(qs('oplogResult'))qs('oplogResult').value='';closeOplogDetailModal();loadLogs(1)};}
+if(qs('oplogExportBtn')){qs('oplogExportBtn').style.display=can('operation_log.export')?'':'none';qs('oplogExportBtn').onclick=function(){if(!can('operation_log.export')){tip('无权限操作');return}window.open('/api/operation-logs/export?'+buildQuery(oplogPage),'_blank')};}
 if(qs('oplogPrevBtn'))qs('oplogPrevBtn').onclick=function(){if(oplogPage>1)loadLogs(oplogPage-1)};
 if(qs('oplogNextBtn'))qs('oplogNextBtn').onclick=function(){var pages=Math.max(1,Math.ceil(oplogTotal/oplogPageSize));if(oplogPage<pages)loadLogs(oplogPage+1)};
 if(qs('oplogDetailClose'))qs('oplogDetailClose').onclick=closeOplogDetailModal;

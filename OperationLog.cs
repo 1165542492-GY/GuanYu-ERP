@@ -407,8 +407,13 @@ namespace SupplierErpApp
 
         static void ListOperationLogs(HttpListenerContext ctx, UserSession user)
         {
-            if (!IsAdminUser(user)) { LogOperationFailure(ctx, user, "无权限查看操作记录", 403); WriteJson(ctx, new { error = "无权限操作" }, 403); return; }
+            if (!RequireOperationLogAccess(ctx, user, "operation_log.view")) return;
             var q = ctx.Request.QueryString;
+            bool hasFilter = !string.IsNullOrWhiteSpace(q["from"]) || !string.IsNullOrWhiteSpace(q["to"]) ||
+                !string.IsNullOrWhiteSpace(q["username"]) || !string.IsNullOrWhiteSpace(q["module"]) ||
+                !string.IsNullOrWhiteSpace(q["action"]) || !string.IsNullOrWhiteSpace(q["result"]) ||
+                !string.IsNullOrWhiteSpace(q["keyword"]);
+            if (hasFilter && !RequireOperationLogAccess(ctx, user, "operation_log.query")) return;
             int page = 1, pageSize = 50;
             int.TryParse(q["page"], out page);
             int.TryParse(q["pageSize"], out pageSize);
@@ -418,7 +423,7 @@ namespace SupplierErpApp
 
         static void GetOperationLogDetail(HttpListenerContext ctx, UserSession user, string id)
         {
-            if (!IsAdminUser(user)) { LogOperationFailure(ctx, user, "无权限查看操作记录", 403); WriteJson(ctx, new { error = "无权限操作" }, 403); return; }
+            if (!RequireOperationLogAccess(ctx, user, "operation_log.view")) return;
             var item = LoadOperationLogs().FirstOrDefault(x => x.Id == id);
             if (item == null) { WriteJson(ctx, new { error = "操作记录不存在" }, 404); return; }
             NormalizeOperationLogEntry(item);
@@ -427,7 +432,7 @@ namespace SupplierErpApp
 
         static void ExportOperationLogsCsv(HttpListenerContext ctx, UserSession user)
         {
-            if (!IsAdminUser(user)) { LogOperationFailure(ctx, user, "无权限导出操作记录", 403); WriteJson(ctx, new { error = "无权限操作" }, 403); return; }
+            if (!RequireOperationLogAccess(ctx, user, "operation_log.export")) return;
             var q = ctx.Request.QueryString;
             var result = QueryOperationLogs(q["from"], q["to"], q["username"], q["module"], q["action"], q["result"], q["keyword"], 1, 10000);
             var sb = new StringBuilder();
@@ -460,10 +465,10 @@ namespace SupplierErpApp
             ctx.Response.Close();
         }
 
-        static bool RequireOperationLogAccess(HttpListenerContext ctx, UserSession user)
+        static bool RequireOperationLogAccess(HttpListenerContext ctx, UserSession user, string permission)
         {
-            if (IsAdminUser(user)) return true;
-            LogOperationFailure(ctx, user, "非管理员访问操作记录", 403);
+            if (HasPermission(user, permission)) return true;
+            LogOperationFailure(ctx, user, "无权限访问操作记录", 403);
             WriteJson(ctx, new { error = "无权限操作" }, 403);
             return false;
         }

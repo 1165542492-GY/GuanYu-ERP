@@ -23,6 +23,10 @@ namespace SupplierErpApp
             { "机型成本", "modelCosts" },
             { "销售订单", "salesOrders" },
             { "销售出库", "salesOutbounds" },
+            { "销售出库明细", "salesOutboundLines" },
+            { "销售出库多明细", "salesOutboundLines" },
+            { "销售赠品随货配件", "salesOutboundAccessories" },
+            { "销售出库配件明细", "salesOutboundAccessories" },
             { "采购单", "purchaseOrders" },
             { "采购入库", "purchaseInbounds" },
             { "生产工单", "productionWorkOrders" },
@@ -30,11 +34,21 @@ namespace SupplierErpApp
             { "成品入库", "finishedInbounds" },
             { "售后维修工单", "afterSalesServiceOrders" },
             { "AfterSalesServiceOrders", "afterSalesServiceOrders" },
+            { "维修物料明细", "afterSalesPartLines" },
             { "应收款", "receivables" },
+            { "应收收款明细", "receivableReceiptDetails" },
+            { "应收/收款明细", "receivableReceiptDetails" },
             { "应付款", "payables" },
+            { "应付付款明细", "payablePaymentDetails" },
+            { "应付/付款明细", "payablePaymentDetails" },
             { "财务收支", "financeTransactions" },
             { "财务期初余额", "financeOpening" },
             { "库存汇总", "stockReference" },
+            { "库存详情", "stockDetails" },
+            { "库存流水", "inventoryMovements" },
+            { "来源追溯", "sourceTrace" },
+            { "操作记录", "operationLogs" },
+            { "子账号权限", "userPermissions" },
             { "异常测试数据", "testValidation" }
         };
 
@@ -47,19 +61,49 @@ namespace SupplierErpApp
             { "modelCosts", "机型成本" },
             { "salesOrders", "销售订单" },
             { "salesOutbounds", "销售出库" },
+            { "salesOutboundLines", "销售出库明细" },
+            { "salesOutboundAccessories", "销售赠品随货配件" },
             { "purchaseOrders", "采购单" },
             { "purchaseInbounds", "采购入库" },
             { "productionWorkOrders", "生产工单" },
             { "productionPicks", "生产领用" },
             { "finishedInbounds", "成品入库" },
             { "afterSalesServiceOrders", "售后维修工单" },
+            { "afterSalesPartLines", "维修物料明细" },
             { "receivables", "应收款" },
+            { "receivableReceiptDetails", "应收收款明细" },
             { "payables", "应付款" },
+            { "payablePaymentDetails", "应付付款明细" },
             { "financeTransactions", "财务收支" },
             { "financeOpening", "财务期初余额" },
             { "stockReference", "库存汇总" },
+            { "stockDetails", "库存详情" },
+            { "inventoryMovements", "库存流水" },
+            { "sourceTrace", "来源追溯" },
+            { "operationLogs", "操作记录" },
+            { "userPermissions", "子账号权限" },
             { "testValidation", "异常测试数据" }
         };
+
+        static readonly HashSet<string> TestDataReferenceOnlyModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "stockReference", "stockDetails", "inventoryMovements", "sourceTrace", "operationLogs", "userPermissions", "testValidation"
+        };
+
+        static readonly HashSet<string> TestDataChildSheetModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "salesOutboundLines", "salesOutboundAccessories", "afterSalesPartLines", "receivableReceiptDetails", "payablePaymentDetails"
+        };
+
+        static bool IsTestDataReferenceOnlyModule(string moduleKey)
+        {
+            return TestDataReferenceOnlyModules.Contains(moduleKey ?? "");
+        }
+
+        static bool IsTestDataStandaloneImportModule(string moduleKey)
+        {
+            return !IsTestDataReferenceOnlyModule(moduleKey) && !TestDataChildSheetModules.Contains(moduleKey ?? "");
+        }
 
         static readonly string[] TestDataImportOrder = {
             "suppliers", "customers", "materials", "boms", "modelCosts",
@@ -73,10 +117,10 @@ namespace SupplierErpApp
         static readonly System.Collections.Concurrent.ConcurrentDictionary<string, TestDataPreviewApproval> TestDataPreviewApprovals =
             new System.Collections.Concurrent.ConcurrentDictionary<string, TestDataPreviewApproval>(StringComparer.OrdinalIgnoreCase);
 
-        static bool RequireTestDataAccess(HttpListenerContext ctx, UserSession user)
+        static bool RequireTestDataAccess(HttpListenerContext ctx, UserSession user, string permission)
         {
             if (user == null) { WriteJson(ctx, new { error = "请先登录" }, 401); return false; }
-            if (!IsAdminUser(user)) { WriteJson(ctx, new { error = "仅管理员可操作测试数据导入导出" }, 403); return false; }
+            if (!HasPermission(user, permission)) { WriteJson(ctx, new { error = "无权限操作" }, 403); return false; }
             return true;
         }
 
@@ -92,16 +136,26 @@ namespace SupplierErpApp
                 WriteProductionWorkOrderSheet(wb);
                 WriteSalesOrderSheet(wb);
                 WriteSalesOutboundSheet(wb);
+                WriteSalesOutboundLineSheet(wb);
+                WriteSalesOutboundAccessorySheet(wb);
                 WritePurchaseOrderSheet(wb);
                 WritePurchaseInboundSheet(wb);
                 WriteProductionPickSheet(wb);
                 WriteFinishedInboundSheet(wb);
                 WriteAfterSalesServiceOrderSheet(wb);
+                WriteAfterSalesPartLineSheet(wb);
                 WriteReceivableSheet(wb);
+                WriteReceivableReceiptDetailSheet(wb);
                 WritePayableSheet(wb);
+                WritePayablePaymentDetailSheet(wb);
                 WriteFinanceSheet(wb);
                 WriteFinanceOpeningSheet(wb);
                 WriteStockReferenceSheet(wb);
+                WriteStockDetailSheet(wb);
+                WriteInventoryMovementSheet(wb);
+                WriteSourceTraceSheet(wb);
+                WriteOperationLogSheet(wb);
+                WriteUserPermissionSheet(wb);
                 using (var ms = new MemoryStream())
                 {
                     wb.SaveAs(ms);
@@ -177,21 +231,22 @@ namespace SupplierErpApp
                     unknown.Add(kv.Key);
                     continue;
                 }
-                bool reference = moduleKey == "stockReference" || moduleKey == "testValidation";
-                var preview = reference ? null : ImportModuleRows(moduleKey, kv.Value, null, true, excelCtx);
+                bool standalone = IsTestDataStandaloneImportModule(moduleKey);
+                bool reference = !standalone;
+                var preview = standalone ? ImportModuleRows(moduleKey, kv.Value, null, true, excelCtx) : null;
                 var info = new TestDataSheetInfo
                 {
                     SheetName = kv.Key,
                     ModuleKey = moduleKey,
                     ModuleLabel = TestDataModuleLabels.ContainsKey(moduleKey) ? TestDataModuleLabels[moduleKey] : kv.Key,
-                    Importable = !reference,
+                    Importable = standalone,
                     ReferenceOnly = reference,
                     RowCount = kv.Value.Count,
                     Added = preview != null ? preview.Added : 0,
                     Updated = preview != null ? preview.Updated : 0,
                     Skipped = preview != null ? preview.Skipped : 0,
                     Failed = preview != null ? preview.Failed : 0,
-                    Errors = reference ? new string[0] : (preview.Errors ?? new string[0]).Take(20).ToArray()
+                    Errors = standalone ? (preview.Errors ?? new string[0]).Take(20).ToArray() : new string[0]
                 };
                 sheets.Add(info);
             }
@@ -272,7 +327,7 @@ namespace SupplierErpApp
                 {
                     string moduleKey;
                     if (!TestDataSheetMap.TryGetValue(kv.Key, out moduleKey)) continue;
-                    if (moduleKey == "stockReference" || moduleKey == "testValidation") continue;
+                    if (IsTestDataReferenceOnlyModule(moduleKey)) continue;
                     if (!ctx._moduleRows.ContainsKey(moduleKey)) ctx._moduleRows[moduleKey] = new List<Dictionary<string, string>>();
                     ctx._moduleRows[moduleKey].AddRange(kv.Value);
                     ctx.IndexModuleRows(moduleKey, kv.Value);
@@ -329,6 +384,15 @@ namespace SupplierErpApp
             {
                 List<Dictionary<string, string>> rows;
                 return _moduleRows.TryGetValue(moduleKey, out rows) ? rows : new List<Dictionary<string, string>>();
+            }
+
+            public List<Dictionary<string, string>> GetChildRows(string moduleKey, string documentNo, params string[] parentHeaders)
+            {
+                documentNo = Placeholder(documentNo) ? "" : documentNo.Trim();
+                if (string.IsNullOrWhiteSpace(documentNo)) return new List<Dictionary<string, string>>();
+                return GetModuleRows(moduleKey)
+                    .Where(row => parentHeaders.Any(h => string.Equals((Cell(row, h) ?? "").Trim(), documentNo, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
             }
 
             public bool SupplierExists(string company)
@@ -727,10 +791,17 @@ namespace SupplierErpApp
 
         static void WriteSalesOrderSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "销售订单", new[] { "订单编号", "订单日期", "客户编号", "客户名称", "物料编号", "物料名称", "数量", "不含税销售单价", "含税销售单价", "不含税销售金额", "含税销售金额", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "销售订单", new[] { "订单编号", "订单日期", "客户编号", "客户名称", "项目类型", "机型成本编号", "BOM编号", "物料编号", "物料名称", "数量", "不含税销售单价", "含税销售单价", "不含税销售金额", "含税销售金额", "状态", "备注", "最后更新", "操作人" });
+            var modelCosts = LoadModelCosts();
+            var boms = LoadBom();
             int r = 2;
             foreach (var x in LoadSalesOrders())
-                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.CustomerCode, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.TaxExcludedSalePrice), Money2(x.TaxIncludedSalePrice), Money2(x.TaxExcludedSaleAmount), Money2(x.TaxIncludedSaleAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            {
+                var modelCost = modelCosts.FirstOrDefault(m => string.Equals(m.Id ?? "", x.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
+                var bom = boms.FirstOrDefault(b => string.Equals(b.Id ?? "", x.BomId ?? "", StringComparison.OrdinalIgnoreCase));
+                WriteRow(ws, r++, x.Code, DateOnly(x.OrderDate), x.CustomerCode, x.CustomerName, x.ItemType, modelCost != null ? modelCost.ModelCode : "", bom != null ? bom.Code : "",
+                    x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.TaxExcludedSalePrice), Money2(x.TaxIncludedSalePrice), Money2(x.TaxExcludedSaleAmount), Money2(x.TaxIncludedSaleAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            }
         }
 
         static void WriteSalesOutboundSheet(XLWorkbook wb)
@@ -741,6 +812,46 @@ namespace SupplierErpApp
             {
                 string linesJson = (x.Lines == null || x.Lines.Count == 0) ? "" : Json.Serialize(x.Lines);
                 WriteRow(ws, r++, x.Code, DateOnly(x.OutboundDate), x.SalesOrderNo, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.CostPrice), Money2(x.CostAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy, linesJson);
+            }
+        }
+
+        static void WriteSalesOutboundLineSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "销售出库明细", new[] {
+                "出库编号", "出库日期", "销售订单号", "客户名称", "行号", "类型", "物料编号", "物料名称", "规格", "单位",
+                "计划数量", "实际出库数量", "退回数量", "最终出库数量", "成本单价", "成本金额", "销售金额", "参考金额",
+                "仓库", "调整原因", "来源类型", "来源单号", "来源明细行", "备注"
+            });
+            int r = 2;
+            foreach (var x in LoadSalesOutbounds())
+            {
+                foreach (var line in SalesOutboundLinesForUse(x).OrderBy(l => l.LineNo))
+                {
+                    if (line == null) continue;
+                    WriteRow(ws, r++, x.Code, DateOnly(x.OutboundDate), x.SalesOrderNo, x.CustomerName, line.LineNo, NormalizeSalesOutboundLineType(line.LineType),
+                        line.MaterialCode, line.MaterialName, line.Spec, line.Unit, line.PlannedQuantity, line.ActualQuantity, line.ReturnedQuantity,
+                        SalesOutboundLineFinalQuantity(line), line.CostPrice, line.CostAmount, line.SalesAmount, line.ReferenceAmount,
+                        line.WarehouseName, line.AdjustReason, line.SourceType, line.SourceNo, line.Id, line.Remark);
+                }
+            }
+        }
+
+        static void WriteSalesOutboundAccessorySheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "销售赠品随货配件", new[] {
+                "出库编号", "销售订单号", "客户名称", "行号", "类型", "物料编号", "物料名称", "规格", "单位",
+                "计划数量", "实际出库数量", "退回数量", "最终出库数量", "成本单价", "成本金额", "调整原因", "备注"
+            });
+            int r = 2;
+            foreach (var x in LoadSalesOutbounds())
+            {
+                foreach (var line in SalesOutboundLinesForUse(x).Where(IsSalesOutboundAccessoryLine).OrderBy(l => l.LineNo))
+                {
+                    if (line == null) continue;
+                    WriteRow(ws, r++, x.Code, x.SalesOrderNo, x.CustomerName, line.LineNo, NormalizeSalesOutboundLineType(line.LineType),
+                        line.MaterialCode, line.MaterialName, line.Spec, line.Unit, line.PlannedQuantity, line.ActualQuantity, line.ReturnedQuantity,
+                        SalesOutboundLineFinalQuantity(line), line.CostPrice, line.CostAmount, line.AdjustReason, line.Remark);
+                }
             }
         }
 
@@ -800,6 +911,27 @@ namespace SupplierErpApp
             ws.Cell(r, 1).Value = "说明：配件明细JSON 为维修物料行数组；含领料/退料/补领/调整字段的行会按状态写入库存流水，不自动生成应收（可关联已有应收单号）。";
         }
 
+        static void WriteAfterSalesPartLineSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "维修物料明细", new[] {
+                "维修单号", "登记日期", "客户", "行号", "动作", "物料编号", "物料名称", "规格", "单位", "仓库",
+                "计划数量", "领出数量", "退回数量", "补领数量", "调整数量", "最终耗用数量", "收费数量",
+                "收费单价", "收费金额", "成本单价", "成本金额", "原因", "备注"
+            });
+            int r = 2;
+            foreach (var x in LoadAfterSalesServiceOrders())
+            {
+                foreach (var line in (x.Parts ?? new List<AfterSalesPartLine>()).OrderBy(l => l.LineNo))
+                {
+                    if (line == null) continue;
+                    WriteRow(ws, r++, x.ServiceNo, DateOnly(x.ServiceDate), x.CustomerName, line.LineNo, line.ActionType,
+                        line.MaterialCode, line.MaterialName, line.Spec, line.Unit, line.WarehouseName,
+                        line.PlannedQuantity, line.PickedQuantity, line.ReturnedQuantity, line.ExtraQuantity, line.AdjustQuantity,
+                        line.FinalUsedQuantity, line.Quantity, line.UnitPrice, line.Amount, line.CostPrice, line.CostAmount, line.Reason, line.Remark);
+                }
+            }
+        }
+
         static void WriteReceivableSheet(XLWorkbook wb)
         {
             var ws = AddSheet(wb, "应收款", new[] { "应收编号", "销售订单号", "客户名称", "应收金额", "已收金额", "未收金额", "到期日期", "状态", "备注", "最后更新", "操作人" });
@@ -810,7 +942,21 @@ namespace SupplierErpApp
                 WriteTextCell(ws, r, 7, DateOnly(x.DueDate));
                 r++;
             }
-            ws.Cell(r, 1).Value = "说明：收款明细保存在 receivables.json 的 ReceiptDetails 数组；本表仅导出汇总金额，导入时按已收/未收汇总写入，不重复生成明细。";
+            ws.Cell(r, 1).Value = "说明：收款明细在“应收收款明细”Sheet 导出/导入；导入时按明细合计回写已收/未收金额。";
+        }
+
+        static void WriteReceivableReceiptDetailSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "应收收款明细", new[] { "应收编号", "销售订单号", "客户名称", "明细ID", "收款日期", "收款金额", "收款账户", "收款方式", "经办人", "备注", "创建时间", "最后更新" });
+            int r = 2;
+            foreach (var x in LoadReceivables())
+            {
+                foreach (var d in x.ReceiptDetails ?? new List<ReceiptDetail>())
+                {
+                    if (d == null) continue;
+                    WriteRow(ws, r++, x.Code, x.SalesOrderNo, x.CustomerName, d.Id, DateOnly(d.ReceiptDate), d.Amount, d.Account, d.PaymentMethod, d.Handler, d.Note, TimeText(d.CreatedAt), TimeText(d.UpdatedAt));
+                }
+            }
         }
 
         static void WritePayableSheet(XLWorkbook wb)
@@ -823,7 +969,21 @@ namespace SupplierErpApp
                 WriteTextCell(ws, r, 7, DateOnly(x.DueDate));
                 r++;
             }
-            ws.Cell(r, 1).Value = "说明：付款明细保存在 payables.json 的 PaymentDetails 数组；本表仅导出汇总金额，导入时按已付/未付汇总写入，不重复生成明细。";
+            ws.Cell(r, 1).Value = "说明：付款明细在“应付付款明细”Sheet 导出/导入；导入时按明细合计回写已付/未付金额。";
+        }
+
+        static void WritePayablePaymentDetailSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "应付付款明细", new[] { "应付编号", "采购单号", "供应商名称", "明细ID", "付款日期", "付款金额", "付款账户", "付款方式", "经办人", "备注", "创建时间", "最后更新" });
+            int r = 2;
+            foreach (var x in LoadPayables())
+            {
+                foreach (var d in x.PaymentDetails ?? new List<PaymentDetail>())
+                {
+                    if (d == null) continue;
+                    WriteRow(ws, r++, x.Code, x.PurchaseNo, x.SupplierName, d.Id, DateOnly(d.PaymentDate), d.Amount, d.Account, d.PaymentMethod, d.Handler, d.Note, TimeText(d.CreatedAt), TimeText(d.UpdatedAt));
+                }
+            }
         }
 
         static void WriteFinanceSheet(XLWorkbook wb)
@@ -854,6 +1014,79 @@ namespace SupplierErpApp
                     x.CostMethod ?? "", Money2(x.CostPrice), Money2(x.StockAmount));
             }
             ws.Cell(r, 1).Value = "（仅供参考，不参与导入）";
+        }
+
+        static void WriteStockDetailSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "库存详情", new[] {
+                "物料编码", "名称", "规格", "单位", "库存类型", "仓库", "当前库存", "成本单价", "库存金额",
+                "流水条数", "最后变动时间", "来源类型汇总"
+            });
+            var movements = LoadInventoryMovements();
+            int r = 2;
+            foreach (var x in BuildStockItems())
+            {
+                var itemMoves = movements.Where(m => StockItemMatchesMovement(x, m)).ToList();
+                string sourceTypes = string.Join("；", itemMoves.GroupBy(m => m.SourceType ?? "").Select(g => (string.IsNullOrWhiteSpace(g.Key) ? "未知" : g.Key) + ":" + g.Count()));
+                WriteRow(ws, r++, x.ItemCode, x.ItemName, x.Spec, x.Unit, x.StockType, x.WarehouseName, x.CurrentQuantity, x.CostPrice, x.StockAmount,
+                    itemMoves.Count, TimeText(itemMoves.Select(m => m.OccurredAt ?? m.CreatedAt ?? "").OrderByDescending(v => v).FirstOrDefault() ?? ""), sourceTypes);
+            }
+            ws.Cell(r, 1).Value = "（只读导出，库存详情由业务单据和库存流水计算，不参与导入）";
+        }
+
+        static void WriteInventoryMovementSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "库存流水", new[] {
+                "流水号", "发生时间", "方向", "物料编号", "物料名称", "规格", "库存类型", "单位", "仓库",
+                "变化数量", "变动前数量", "变动后数量", "成本单价", "变动金额", "来源类型", "来源单号", "来源明细行",
+                "动作类型", "来源状态", "业务日期", "操作人", "备注"
+            });
+            int r = 2;
+            foreach (var x in LoadInventoryMovements().OrderByDescending(x => x.OccurredAt ?? x.CreatedAt ?? ""))
+            {
+                WriteRow(ws, r++, x.MovementNo, TimeText(x.OccurredAt), InventoryDirectionLabel(x.Direction), x.MaterialCode, x.MaterialName,
+                    x.Spec, x.Category, x.Unit, x.WarehouseName, x.ChangeQuantity, x.BeforeQuantity, x.AfterQuantity, x.UnitCost, x.ChangeAmount,
+                    x.SourceType, x.SourceNo, x.SourceLineId, x.ActionType, x.SourceStatus, DateOnly(x.BusinessDate), x.Operator, x.Remark);
+            }
+            ws.Cell(r, 1).Value = "（只读导出，库存流水由采购入库、销售出库、生产领用、成品入库、维修业务自动生成，不参与导入）";
+        }
+
+        static void WriteSourceTraceSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "来源追溯", new[] {
+                "流水号", "物料编号", "物料名称", "来源类型", "来源单号", "来源明细行", "动作类型", "来源状态", "追溯摘要JSON"
+            });
+            int r = 2;
+            foreach (var x in LoadInventoryMovements().OrderByDescending(x => x.OccurredAt ?? x.CreatedAt ?? ""))
+            {
+                var summary = BuildInventoryMovementSourceSummary(x);
+                WriteRow(ws, r++, x.MovementNo, x.MaterialCode, x.MaterialName, x.SourceType, x.SourceNo, x.SourceLineId, x.ActionType, x.SourceStatus, Json.Serialize(summary));
+            }
+            ws.Cell(r, 1).Value = "（只读导出，来源追溯由库存流水反查业务单据计算，不参与导入）";
+        }
+
+        static void WriteOperationLogSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "操作记录", new[] { "时间", "用户名", "显示名", "IP", "模块", "动作", "业务类型", "业务ID", "业务编号", "业务名称", "结果", "摘要", "失败原因", "接口", "备份路径" });
+            int r = 2;
+            foreach (var x in LoadOperationLogs().OrderByDescending(x => x.Time ?? "").Take(10000))
+            {
+                NormalizeOperationLogEntry(x);
+                WriteRow(ws, r++, TimeText(x.Time), x.Username, x.DisplayName, x.Ip, x.Module, x.Action, x.EntityType, x.EntityId, x.EntityCode, x.EntityName, x.Result, x.Message, x.Error, x.Api, x.BackupPath);
+            }
+            ws.Cell(r, 1).Value = "（只读导出，操作记录不允许通过测试总表导入）";
+        }
+
+        static void WriteUserPermissionSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "子账号权限", new[] { "账号", "显示名", "角色", "启用", "权限项数量", "权限项", "权限摘要", "最后更新" });
+            int r = 2;
+            foreach (var x in Users.Select(ToPublic).OrderBy(x => x.Username))
+            {
+                var permissions = x.Permissions ?? new string[0];
+                WriteRow(ws, r++, x.Username, x.DisplayName, x.Role, x.Enabled ? "是" : "否", permissions.Length, string.Join(";", permissions), x.PermissionSummary, TimeText(x.UpdatedAt));
+            }
+            ws.Cell(r, 1).Value = "（只读导出，子账号/权限涉及安全策略，不通过测试总表导入）";
         }
 
         static TestDataModuleResult ImportModuleRows(string moduleKey, List<Dictionary<string, string>> rows, UserSession user, bool previewOnly = false, ExcelImportContext excelCtx = null)
@@ -1123,11 +1356,30 @@ namespace SupplierErpApp
                     var item = new SalesOrder
                     {
                         CustomerCode = Cell(row, "客户编号"), CustomerName = Cell(row, "客户名称"),
+                        ItemType = Cell(row, "项目类型", "物料类型"),
                         MaterialCode = Cell(row, "物料编号"), MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "数量")),
                         TaxExcludedSalePrice = Money(Cell(row, "不含税销售单价", "销售单价", "单价")),
                         TaxIncludedSalePrice = Money(Cell(row, "含税销售单价")),
                         OrderDate = Cell(row, "订单日期", "销售日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
+                    string modelCostCode = Cell(row, "机型成本编号", "机型编号");
+                    string bomCode = Cell(row, "BOM编号");
+                    if (!Placeholder(modelCostCode))
+                    {
+                        var modelCost = LoadModelCosts().FirstOrDefault(x => string.Equals((x.ModelCode ?? "").Trim(), modelCostCode.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (modelCost != null)
+                        {
+                            item.ModelCostId = modelCost.Id;
+                            item.ItemType = "FinishedProduct";
+                        }
+                        else if (!excelCtx.ModelCostExists(modelCostCode)) { AddErr(res, errors, rowNo, "机型成本不存在，请先在机型成本中创建"); continue; }
+                    }
+                    if (!Placeholder(bomCode))
+                    {
+                        var bom = LoadBom().FirstOrDefault(x => string.Equals((x.Code ?? "").Trim(), bomCode.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (bom != null) item.BomId = bom.Id;
+                        else if (!excelCtx.BomExists(bomCode, "")) { AddErr(res, errors, rowNo, "BOM不存在，请先在BOM表中创建"); continue; }
+                    }
                     if (Placeholder(item.CustomerName) && Placeholder(item.CustomerCode)) { AddErr(res, errors, rowNo, "请选择客户"); continue; }
                     if (!excelCtx.CustomerExists(item.CustomerCode, item.CustomerName)) { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
                     if (item.Quantity < 0) { AddErr(res, errors, rowNo, "数量不能为负数"); continue; }
@@ -1146,12 +1398,70 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
+        static List<SalesOutboundLine> BuildSalesOutboundLinesFromChildSheets(string outboundCode, ExcelImportContext excelCtx, List<Material> materials, int parentRowNo, TestDataModuleResult res, List<string> errors)
+        {
+            var rows = excelCtx.GetChildRows("salesOutboundLines", outboundCode, "出库编号", "销售出库编号", "父出库编号");
+            if (rows.Count == 0)
+                rows = excelCtx.GetChildRows("salesOutboundAccessories", outboundCode, "出库编号", "销售出库编号", "父出库编号");
+            if (rows.Count == 0) return null;
+            var lines = new List<SalesOutboundLine>();
+            int lineNo = 0;
+            foreach (var row in rows)
+            {
+                lineNo++;
+                string type = Cell(row, "类型", "明细类型");
+                string materialCode = Cell(row, "物料编号", "物料编码");
+                string materialName = Cell(row, "物料名称", "名称");
+                if (Placeholder(type) && Placeholder(materialCode) && Placeholder(materialName)) continue;
+                var mat = materials.FirstOrDefault(x => (!Placeholder(materialCode) && string.Equals((x.Code ?? "").Trim(), materialCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                    || (!Placeholder(materialName) && string.Equals((x.NameSpec ?? "").Trim(), materialName.Trim(), StringComparison.OrdinalIgnoreCase)));
+                decimal planned = Money(Cell(row, "计划数量", "计划"));
+                decimal actual = Money(Cell(row, "实际出库数量", "实际数量", "实际"));
+                decimal returned = Money(Cell(row, "退回数量", "退回"));
+                decimal finalQty = Money(Cell(row, "最终出库数量", "最终数量", "最终"));
+                decimal cost = Money(Cell(row, "成本单价", "单价"));
+                if (planned < 0 || actual < 0 || returned < 0 || finalQty < 0 || cost < 0)
+                {
+                    AddErr(res, errors, parentRowNo, "销售出库明细数量/成本不能为负数");
+                    return null;
+                }
+                int importedLineNo = (int)Money(Cell(row, "行号"));
+                lines.Add(new SalesOutboundLine
+                {
+                    Id = Cell(row, "来源明细行", "明细ID"),
+                    LineNo = importedLineNo > 0 ? importedLineNo : lineNo,
+                    LineType = NormalizeSalesOutboundLineType(type),
+                    ItemType = Cell(row, "项目类型", "物料类型"),
+                    MaterialId = mat != null ? mat.Id : "",
+                    MaterialCode = materialCode,
+                    MaterialName = materialName,
+                    Spec = Cell(row, "规格", "规格型号"),
+                    Unit = Cell(row, "单位"),
+                    PlannedQuantity = planned,
+                    ActualQuantity = actual,
+                    ReturnedQuantity = returned,
+                    FinalQuantity = finalQty,
+                    CostPrice = cost,
+                    CostAmount = Money(Cell(row, "成本金额")),
+                    SalesAmount = Money(Cell(row, "销售金额")),
+                    ReferenceAmount = Money(Cell(row, "参考金额")),
+                    WarehouseName = Cell(row, "仓库", "仓库名称"),
+                    AdjustReason = Cell(row, "调整原因", "原因"),
+                    SourceType = Cell(row, "来源类型"),
+                    SourceNo = Cell(row, "来源单号"),
+                    Remark = Cell(row, "备注")
+                });
+            }
+            return lines.Count == 0 ? null : lines.OrderBy(x => x.LineNo <= 0 ? int.MaxValue : x.LineNo).ToList();
+        }
+
         static TestDataModuleResult ImportSalesOutboundsTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("salesOutbounds");
             var errors = new List<string>();
             bool changed = false;
             int rowNo = 1;
+            var materials = excelCtx.GetMergedMaterials();
             Action<List<SalesOutbound>> importLoop = list =>
             {
             foreach (var row in rows)
@@ -1174,6 +1484,9 @@ namespace SupplierErpApp
                             try { Json.Deserialize<List<SalesOutboundLine>>(previewLinesJson.Trim()); }
                             catch { AddErr(res, errors, rowNo, "出库明细JSON 格式无效"); continue; }
                         }
+                        int failedBeforeChild = res.Failed;
+                        BuildSalesOutboundLinesFromChildSheets(code, excelCtx, materials, rowNo, res, errors);
+                        if (res.Failed > failedBeforeChild) continue;
                         res.Added++; continue;
                     }
                     var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
@@ -1191,6 +1504,10 @@ namespace SupplierErpApp
                         try { item.Lines = Json.Deserialize<List<SalesOutboundLine>>(linesJson.Trim()) ?? new List<SalesOutboundLine>(); }
                         catch { AddErr(res, errors, rowNo, "出库明细JSON 格式无效"); continue; }
                     }
+                    int failedBeforeSheetLines = res.Failed;
+                    var sheetLines = BuildSalesOutboundLinesFromChildSheets(code, excelCtx, materials, rowNo, res, errors);
+                    if (res.Failed > failedBeforeSheetLines) continue;
+                    if (sheetLines != null) item.Lines = sheetLines;
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplySalesOutbound(item);
                     item.Id = Guid.NewGuid().ToString("N");
@@ -1510,6 +1827,63 @@ namespace SupplierErpApp
             }
         }
 
+        static List<AfterSalesPartLine> BuildAfterSalesPartsFromChildSheets(string serviceNo, ExcelImportContext excelCtx, List<Material> materials, int parentRowNo, TestDataModuleResult res, List<string> errors)
+        {
+            var rows = excelCtx.GetChildRows("afterSalesPartLines", serviceNo, "维修单号", "维修工单号", "父维修单号");
+            if (rows.Count == 0) return null;
+            var parts = new List<AfterSalesPartLine>();
+            int lineNo = 0;
+            foreach (var row in rows)
+            {
+                lineNo++;
+                string materialCode = Cell(row, "物料编号", "物料编码");
+                string materialName = Cell(row, "物料名称", "名称");
+                if (Placeholder(materialCode) && Placeholder(materialName)) continue;
+                var mat = materials.FirstOrDefault(x => (!Placeholder(materialCode) && string.Equals((x.Code ?? "").Trim(), materialCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                    || (!Placeholder(materialName) && string.Equals((x.NameSpec ?? "").Trim(), materialName.Trim(), StringComparison.OrdinalIgnoreCase)));
+                decimal planned = Money(Cell(row, "计划数量", "计划"));
+                decimal picked = Money(Cell(row, "领出数量", "领料数量", "领出"));
+                decimal returned = Money(Cell(row, "退回数量", "退料数量", "退回"));
+                decimal extra = Money(Cell(row, "补领数量", "补领"));
+                decimal finalUsed = Money(Cell(row, "最终耗用数量", "最终耗用"));
+                decimal quantity = Money(Cell(row, "收费数量", "数量"));
+                decimal unitPrice = Money(Cell(row, "收费单价", "单价"));
+                decimal costPrice = Money(Cell(row, "成本单价"));
+                if (planned < 0 || picked < 0 || returned < 0 || extra < 0 || quantity < 0 || unitPrice < 0 || costPrice < 0)
+                {
+                    AddErr(res, errors, parentRowNo, "维修物料明细数量/单价不能为负数");
+                    return null;
+                }
+                int importedLineNo = (int)Money(Cell(row, "行号"));
+                parts.Add(new AfterSalesPartLine
+                {
+                    Id = Cell(row, "明细ID"),
+                    LineNo = importedLineNo > 0 ? importedLineNo : lineNo,
+                    ActionType = Cell(row, "动作", "动作类型"),
+                    MaterialId = mat != null ? mat.Id : "",
+                    MaterialCode = materialCode,
+                    MaterialName = materialName,
+                    Spec = Cell(row, "规格", "规格型号"),
+                    Unit = Cell(row, "单位"),
+                    WarehouseName = Cell(row, "仓库", "仓库名称"),
+                    PlannedQuantity = planned,
+                    PickedQuantity = picked,
+                    ReturnedQuantity = returned,
+                    ExtraQuantity = extra,
+                    AdjustQuantity = Money(Cell(row, "调整数量", "调整")),
+                    FinalUsedQuantity = finalUsed,
+                    Quantity = quantity > 0 ? quantity : Math.Max(0, finalUsed),
+                    UnitPrice = unitPrice,
+                    Amount = Money(Cell(row, "收费金额", "金额")),
+                    CostPrice = costPrice,
+                    CostAmount = Money(Cell(row, "成本金额")),
+                    Reason = Cell(row, "原因", "调整原因"),
+                    Remark = Cell(row, "备注")
+                });
+            }
+            return parts.Count == 0 ? null : parts.OrderBy(x => x.LineNo <= 0 ? int.MaxValue : x.LineNo).ToList();
+        }
+
         static void ResolveAfterSalesPartsForImport(List<AfterSalesPartLine> parts, List<Material> materials)
         {
             if (parts == null) return;
@@ -1521,6 +1895,40 @@ namespace SupplierErpApp
                 if (string.IsNullOrWhiteSpace(code)) continue;
                 var mat = materials.FirstOrDefault(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase));
                 if (mat != null) p.MaterialId = mat.Id;
+            }
+        }
+
+        static void PreserveAfterSalesPartIdsForImport(AfterSalesServiceOrder existing, List<AfterSalesPartLine> parts)
+        {
+            if (existing == null || existing.Parts == null || parts == null) return;
+            var matchedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in parts.Where(x => x != null && string.IsNullOrWhiteSpace(x.Id)))
+            {
+                var action = NormalizeAfterSalesPartActionType(p.ActionType);
+                var match = existing.Parts.FirstOrDefault(x =>
+                    x != null
+                    && !string.IsNullOrWhiteSpace(x.Id)
+                    && !matchedIds.Contains(x.Id)
+                    && x.LineNo > 0
+                    && p.LineNo > 0
+                    && x.LineNo == p.LineNo);
+                if (match == null)
+                {
+                    match = existing.Parts.FirstOrDefault(x =>
+                        x != null
+                        && !string.IsNullOrWhiteSpace(x.Id)
+                        && !matchedIds.Contains(x.Id)
+                        && string.Equals((x.MaterialId ?? "").Trim(), (p.MaterialId ?? "").Trim(), StringComparison.OrdinalIgnoreCase)
+                        && string.Equals((x.MaterialCode ?? "").Trim(), (p.MaterialCode ?? "").Trim(), StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(NormalizeAfterSalesPartActionType(x.ActionType), action, StringComparison.OrdinalIgnoreCase)
+                        && RoundMoney(x.PickedQuantity) == RoundMoney(p.PickedQuantity)
+                        && RoundMoney(x.ReturnedQuantity) == RoundMoney(p.ReturnedQuantity)
+                        && RoundMoney(x.ExtraQuantity) == RoundMoney(p.ExtraQuantity)
+                        && RoundMoney(x.AdjustQuantity) == RoundMoney(p.AdjustQuantity));
+                }
+                if (match == null) continue;
+                p.Id = match.Id;
+                matchedIds.Add(match.Id);
             }
         }
 
@@ -1542,19 +1950,22 @@ namespace SupplierErpApp
             }
         }
 
-        static AfterSalesServiceOrder BuildAfterSalesServiceOrderFromImportRow(Dictionary<string, string> row, AfterSalesServiceOrder existing, List<Material> materials, int rowNo, TestDataModuleResult res, List<string> errors)
+        static AfterSalesServiceOrder BuildAfterSalesServiceOrderFromImportRow(Dictionary<string, string> row, AfterSalesServiceOrder existing, ExcelImportContext excelCtx, List<Material> materials, int rowNo, TestDataModuleResult res, List<string> errors, bool previewOnly)
         {
             string customerName = Cell(row, "客户", "客户名称");
             string customerCode = Cell(row, "客户编号");
             if (Placeholder(customerName) && existing != null) customerName = existing.CustomerName;
             if (Placeholder(customerName)) { AddErr(res, errors, rowNo, "请填写客户"); return null; }
-            var parts = ParseAfterSalesPartsJsonForImport(Cell(row, "配件明细JSON", "配件明细"), rowNo, res, errors);
+            int failedBeforeChildParts = res.Failed;
+            var parts = BuildAfterSalesPartsFromChildSheets(Cell(row, "维修单号"), excelCtx, materials, rowNo, res, errors);
+            if (res.Failed > failedBeforeChildParts) return null;
+            if (parts == null) parts = ParseAfterSalesPartsJsonForImport(Cell(row, "配件明细JSON", "配件明细"), rowNo, res, errors);
             if (parts == null) return null;
             ResolveAfterSalesPartsForImport(parts, materials);
             foreach (var p in parts)
             {
                 if (p == null) continue;
-                if (string.IsNullOrWhiteSpace(p.MaterialId))
+                if (string.IsNullOrWhiteSpace(p.MaterialId) && (!previewOnly || !excelCtx.MaterialExists(p.MaterialCode, p.MaterialName)))
                 {
                     AddErr(res, errors, rowNo, "配件明细缺少有效物料（MaterialId 或物料编号）");
                     return null;
@@ -1592,6 +2003,8 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(item.FaultDescription)) { AddErr(res, errors, rowNo, "请填写故障描述"); return null; }
             try { ApplyAfterSalesReceivableLinkFromSheet(item, Cell(row, "关联应收单号"), existing); }
             catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); return null; }
+            PreserveAfterSalesPartIdsForImport(existing, item.Parts);
+            if (previewOnly) return item;
             try { ApplyAfterSalesServiceOrder(item, preserveReceivableLink: !string.IsNullOrWhiteSpace(item.ReceivableId)); }
             catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); return null; }
             return item;
@@ -1620,7 +2033,7 @@ namespace SupplierErpApp
                         var existing = !Placeholder(serviceNo)
                             ? list.FirstOrDefault(x => string.Equals(x.ServiceNo, serviceNo.Trim(), StringComparison.OrdinalIgnoreCase))
                             : null;
-                        var item = BuildAfterSalesServiceOrderFromImportRow(row, existing, materials, rowNo, res, errors);
+                        var item = BuildAfterSalesServiceOrderFromImportRow(row, existing, excelCtx, materials, rowNo, res, errors, previewOnly);
                         if (item == null) continue;
                         if (existing != null)
                         {
@@ -1679,6 +2092,64 @@ namespace SupplierErpApp
             return res;
         }
 
+        static List<ReceiptDetail> BuildReceiptDetailsFromChildSheets(string receivableCode, ExcelImportContext excelCtx, int parentRowNo, TestDataModuleResult res, List<string> errors)
+        {
+            var rows = excelCtx.GetChildRows("receivableReceiptDetails", receivableCode, "应收编号", "父应收编号");
+            if (rows.Count == 0) return null;
+            var details = new List<ReceiptDetail>();
+            foreach (var row in rows)
+            {
+                decimal amount = Money(Cell(row, "收款金额", "金额"));
+                if (amount <= 0)
+                {
+                    AddErr(res, errors, parentRowNo, "收款明细金额必须大于 0");
+                    return null;
+                }
+                details.Add(new ReceiptDetail
+                {
+                    Id = Placeholder(Cell(row, "明细ID")) ? Guid.NewGuid().ToString("N") : Cell(row, "明细ID").Trim(),
+                    ReceiptDate = NormalizeExcelDateText(Cell(row, "收款日期", "日期")),
+                    Amount = amount,
+                    Account = Cell(row, "收款账户", "账户"),
+                    PaymentMethod = Cell(row, "收款方式", "方式"),
+                    Handler = Cell(row, "经办人", "操作人"),
+                    Note = Cell(row, "备注"),
+                    CreatedAt = TimeText(Cell(row, "创建时间")),
+                    UpdatedAt = TimeText(Cell(row, "最后更新", "更新时间"))
+                });
+            }
+            return details;
+        }
+
+        static List<PaymentDetail> BuildPaymentDetailsFromChildSheets(string payableCode, ExcelImportContext excelCtx, int parentRowNo, TestDataModuleResult res, List<string> errors)
+        {
+            var rows = excelCtx.GetChildRows("payablePaymentDetails", payableCode, "应付编号", "父应付编号");
+            if (rows.Count == 0) return null;
+            var details = new List<PaymentDetail>();
+            foreach (var row in rows)
+            {
+                decimal amount = Money(Cell(row, "付款金额", "金额"));
+                if (amount <= 0)
+                {
+                    AddErr(res, errors, parentRowNo, "付款明细金额必须大于 0");
+                    return null;
+                }
+                details.Add(new PaymentDetail
+                {
+                    Id = Placeholder(Cell(row, "明细ID")) ? Guid.NewGuid().ToString("N") : Cell(row, "明细ID").Trim(),
+                    PaymentDate = NormalizeExcelDateText(Cell(row, "付款日期", "日期")),
+                    Amount = amount,
+                    Account = Cell(row, "付款账户", "账户"),
+                    PaymentMethod = Cell(row, "付款方式", "方式"),
+                    Handler = Cell(row, "经办人", "操作人"),
+                    Note = Cell(row, "备注"),
+                    CreatedAt = TimeText(Cell(row, "创建时间")),
+                    UpdatedAt = TimeText(Cell(row, "最后更新", "更新时间"))
+                });
+            }
+            return details;
+        }
+
         static TestDataModuleResult ImportReceivablesTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("receivables");
@@ -1704,6 +2175,14 @@ namespace SupplierErpApp
                     { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
                     decimal recvAmt = Money(Cell(row, "应收金额")), receivedAmt = Money(Cell(row, "已收金额"));
                     if (recvAmt < 0 || receivedAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
+                    int failedBeforeDetails = res.Failed;
+                    var receiptDetails = BuildReceiptDetailsFromChildSheets(code, excelCtx, rowNo, res, errors);
+                    if (res.Failed > failedBeforeDetails) continue;
+                    if (receiptDetails != null)
+                    {
+                        receivedAmt = RoundMoney(receiptDetails.Sum(x => x.Amount));
+                        if (receivedAmt > recvAmt + 0.0001m) { AddErr(res, errors, rowNo, "收款明细合计不能超过应收金额"); continue; }
+                    }
                     if (previewOnly) { res.Added++; continue; }
                     var order = hasOrderNo ? LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase)) : null;
                     if (hasOrderNo && order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
@@ -1712,7 +2191,8 @@ namespace SupplierErpApp
                         SalesOrderId = order?.Id ?? "", SalesOrderNo = order?.Code ?? "", CustomerName = order != null ? (order.CustomerName ?? "") : customerName,
                         ReceivableAmount = recvAmt, ReceivedAmount = receivedAmt,
                         DueDate = NormalizeExcelDateText(Cell(row, "到期日期")), Note = Cell(row, "备注"), Code = code,
-                        SourceType = hasOrderNo ? "销售订单" : "手工"
+                        SourceType = hasOrderNo ? "销售订单" : "手工",
+                        ReceiptDetails = receiptDetails ?? new List<ReceiptDetail>()
                     };
                     ApplyReceivable(item);
                     item.Id = Guid.NewGuid().ToString("N");
@@ -1753,6 +2233,14 @@ namespace SupplierErpApp
                     { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
                     decimal payAmt = Money(Cell(row, "应付金额")), paidAmt = Money(Cell(row, "已付金额"));
                     if (payAmt < 0 || paidAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
+                    int failedBeforeDetails = res.Failed;
+                    var paymentDetails = BuildPaymentDetailsFromChildSheets(code, excelCtx, rowNo, res, errors);
+                    if (res.Failed > failedBeforeDetails) continue;
+                    if (paymentDetails != null)
+                    {
+                        paidAmt = RoundMoney(paymentDetails.Sum(x => x.Amount));
+                        if (paidAmt > payAmt + 0.0001m) { AddErr(res, errors, rowNo, "付款明细合计不能超过应付金额"); continue; }
+                    }
                     if (previewOnly) { res.Added++; continue; }
                     var po = hasPurchaseNo ? LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase)) : null;
                     if (hasPurchaseNo && po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
@@ -1761,7 +2249,8 @@ namespace SupplierErpApp
                         PurchaseOrderId = po?.Id ?? "", PurchaseNo = po?.Code ?? "", SupplierName = po != null ? (po.SupplierName ?? "") : supplierName,
                         PayableAmount = payAmt, PaidAmount = paidAmt,
                         DueDate = NormalizeExcelDateText(Cell(row, "到期日期")), Note = Cell(row, "备注"), Code = code,
-                        SourceType = hasPurchaseNo ? "采购单" : "手工"
+                        SourceType = hasPurchaseNo ? "采购单" : "手工",
+                        PaymentDetails = paymentDetails ?? new List<PaymentDetail>()
                     };
                     ApplyPayable(item);
                     item.Id = Guid.NewGuid().ToString("N");
