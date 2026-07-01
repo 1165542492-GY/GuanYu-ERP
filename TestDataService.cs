@@ -25,6 +25,7 @@ namespace SupplierErpApp
             { "销售出库", "salesOutbounds" },
             { "采购单", "purchaseOrders" },
             { "采购入库", "purchaseInbounds" },
+            { "生产工单", "productionWorkOrders" },
             { "生产领用", "productionPicks" },
             { "成品入库", "finishedInbounds" },
             { "售后维修工单", "afterSalesServiceOrders" },
@@ -48,6 +49,7 @@ namespace SupplierErpApp
             { "salesOutbounds", "销售出库" },
             { "purchaseOrders", "采购单" },
             { "purchaseInbounds", "采购入库" },
+            { "productionWorkOrders", "生产工单" },
             { "productionPicks", "生产领用" },
             { "finishedInbounds", "成品入库" },
             { "afterSalesServiceOrders", "售后维修工单" },
@@ -62,7 +64,7 @@ namespace SupplierErpApp
         static readonly string[] TestDataImportOrder = {
             "suppliers", "customers", "materials", "boms", "modelCosts",
             "purchaseOrders", "purchaseInbounds", "salesOrders", "salesOutbounds",
-            "afterSalesServiceOrders", "productionPicks", "finishedInbounds", "receivables", "payables",
+            "afterSalesServiceOrders", "productionWorkOrders", "productionPicks", "finishedInbounds", "receivables", "payables",
             "financeTransactions", "financeOpening"
         };
 
@@ -87,6 +89,7 @@ namespace SupplierErpApp
                 WriteMaterialSheet(wb);
                 WriteBomSheet(wb);
                 WriteModelCostSheet(wb);
+                WriteProductionWorkOrderSheet(wb);
                 WriteSalesOrderSheet(wb);
                 WriteSalesOutboundSheet(wb);
                 WritePurchaseOrderSheet(wb);
@@ -259,6 +262,7 @@ namespace SupplierErpApp
             readonly HashSet<string> _modelCostCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _purchaseOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _salesOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _productionWorkOrderNos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public static ExcelImportContext FromParsedWorkbook(ParsedTestWorkbook parsed)
             {
@@ -308,6 +312,9 @@ namespace SupplierErpApp
                             break;
                         case "salesOrders":
                             AddIfPresent(_salesOrderCodes, Cell(row, "订单编号", "销售单号"));
+                            break;
+                        case "productionWorkOrders":
+                            AddIfPresent(_productionWorkOrderNos, Cell(row, "工单号", "生产工单号"));
                             break;
                     }
                 }
@@ -402,6 +409,14 @@ namespace SupplierErpApp
                 code = code.Trim();
                 return LoadSalesOrders().Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))
                     || _salesOrderCodes.Contains(code);
+            }
+
+            public bool ProductionWorkOrderExists(string code)
+            {
+                if (Placeholder(code)) return false;
+                code = code.Trim();
+                return LoadProductionWorkOrders().Any(x => string.Equals((x.WorkOrderNo ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))
+                    || _productionWorkOrderNos.Contains(code);
             }
 
             public List<Material> GetMergedMaterials()
@@ -693,6 +708,23 @@ namespace SupplierErpApp
                 WriteRow(ws, r++, x.ModelCode, x.ModelName, x.ProductName, x.BomCode, x.BomVersion, Money2(x.MaterialCost), Money2(x.TotalCost), x.Note, string.IsNullOrWhiteSpace(x.Status) ? "启用" : x.Status, x.CreatedAt, x.UpdatedAt);
         }
 
+        static void WriteProductionWorkOrderSheet(XLWorkbook wb)
+        {
+            var ws = AddSheet(wb, "生产工单", new[] { "工单号", "工单日期", "来源类型", "销售订单号", "客户名称", "产品/机型", "规格型号", "计划数量", "已领用数量", "已入库数量", "单位", "BOM编号", "BOM名称", "机型成本编号", "机型成本名称", "单台成本", "状态", "备注", "最后更新", "操作人" });
+            var boms = LoadBom();
+            var modelCosts = LoadModelCosts();
+            int r = 2;
+            foreach (var x in LoadProductionWorkOrders())
+            {
+                var bom = boms.FirstOrDefault(b => string.Equals(b.Id ?? "", x.BomId ?? "", StringComparison.OrdinalIgnoreCase));
+                var modelCost = modelCosts.FirstOrDefault(m => string.Equals(m.Id ?? "", x.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
+                WriteRow(ws, r++, x.WorkOrderNo, DateOnly(x.WorkOrderDate), x.SourceType, x.SalesOrderNo, x.CustomerName, x.ProductName, x.Spec,
+                    Money2(x.Quantity), Money2(x.PickedQuantity), Money2(x.FinishedQuantity), x.Unit,
+                    bom != null ? bom.Code : x.BomCode, x.BomName,
+                    modelCost != null ? modelCost.ModelCode : "", x.ModelCostName, Money2(x.UnitCost), x.Status, x.Remark, x.UpdatedAt, x.UpdatedBy);
+            }
+        }
+
         static void WriteSalesOrderSheet(XLWorkbook wb)
         {
             var ws = AddSheet(wb, "销售订单", new[] { "订单编号", "订单日期", "客户编号", "客户名称", "物料编号", "物料名称", "数量", "不含税销售单价", "含税销售单价", "不含税销售金额", "含税销售金额", "状态", "备注", "最后更新", "操作人" });
@@ -727,21 +759,21 @@ namespace SupplierErpApp
 
         static void WriteProductionPickSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "生产领用", new[] { "领用编号", "BOM名称", "物料编号", "物料名称", "领用数量", "成本单价", "成本金额", "领用日期", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "生产领用", new[] { "领用编号", "生产工单号", "BOM名称", "物料编号", "物料名称", "领用数量", "成本单价", "成本金额", "领用日期", "状态", "备注", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadProductionPicks())
-                WriteRow(ws, r++, x.Code, x.BomName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.CostPrice), Money2(x.CostAmount), DateOnly(x.PickDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteRow(ws, r++, x.Code, x.WorkOrderNo, x.BomName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.CostPrice), Money2(x.CostAmount), DateOnly(x.PickDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
         }
 
         static void WriteFinishedInboundSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "成品入库", new[] { "入库编号", "BOM编号", "机型成本编号", "产品名称", "入库数量", "单台成本", "入库金额", "入库日期", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "成品入库", new[] { "入库编号", "生产工单号", "BOM编号", "机型成本编号", "产品名称", "入库数量", "单台成本", "入库金额", "入库日期", "状态", "备注", "最后更新", "操作人" });
             var modelCosts = LoadModelCosts();
             int r = 2;
             foreach (var x in LoadFinishedInbounds())
             {
                 var modelCost = modelCosts.FirstOrDefault(m => string.Equals(m.Id ?? "", x.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
-                WriteRow(ws, r++, x.Code, x.BomCode, modelCost != null ? modelCost.ModelCode : "", x.ProductName, x.Quantity, Money2(x.UnitCost), Money2(x.Amount), DateOnly(x.InboundDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteRow(ws, r++, x.Code, x.WorkOrderNo, x.BomCode, modelCost != null ? modelCost.ModelCode : "", x.ProductName, x.Quantity, Money2(x.UnitCost), Money2(x.Amount), DateOnly(x.InboundDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
             }
         }
 
@@ -835,6 +867,7 @@ namespace SupplierErpApp
                 case "salesOutbounds": return ImportSalesOutboundsTest(rows, user, previewOnly, excelCtx);
                 case "purchaseOrders": return ImportPurchaseOrdersTest(rows, user, previewOnly, excelCtx);
                 case "purchaseInbounds": return ImportPurchaseInboundsTest(rows, user, previewOnly, excelCtx);
+                case "productionWorkOrders": return ImportProductionWorkOrdersTest(rows, user, previewOnly, excelCtx);
                 case "productionPicks": return ImportProductionPicksTest(rows, user, previewOnly, excelCtx);
                 case "finishedInbounds": return ImportFinishedInboundsTest(rows, user, previewOnly, excelCtx);
                 case "afterSalesServiceOrders": return ImportAfterSalesServiceOrdersTest(rows, user, previewOnly, excelCtx);
@@ -1252,6 +1285,81 @@ namespace SupplierErpApp
             res.Errors = errors.ToArray(); return res;
         }
 
+        static TestDataModuleResult ImportProductionWorkOrdersTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
+        {
+            var res = NewModuleResult("productionWorkOrders");
+            var errors = new List<string>();
+            bool changed = false;
+            int rowNo = 1;
+            Action<List<ProductionWorkOrder>> importLoop = list =>
+            {
+            foreach (var row in rows)
+            {
+                rowNo++;
+                try
+                {
+                    string workOrderNo = Cell(row, "工单号", "生产工单号");
+                    string productName = Cell(row, "产品/机型", "产品名称", "机型名称");
+                    if (Placeholder(workOrderNo) && Placeholder(productName)) { res.Skipped++; continue; }
+                    if (!Placeholder(workOrderNo) && list.Any(x => string.Equals(x.WorkOrderNo, workOrderNo, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
+                    string salesOrderNo = Cell(row, "销售订单号", "来源销售订单");
+                    string customerName = Cell(row, "客户名称", "客户");
+                    string bomCode = Cell(row, "BOM编号");
+                    string modelCostCode = Cell(row, "机型成本编号", "机型编号");
+                    decimal qty = Money(Cell(row, "计划数量", "计划生产数量", "数量"));
+                    decimal unitCost = Money(Cell(row, "单台成本"));
+                    if (qty <= 0) { AddErr(res, errors, rowNo, "计划生产数量必须大于 0"); continue; }
+                    if (unitCost < 0) { AddErr(res, errors, rowNo, "单台成本不能为负数"); continue; }
+                    if (!Placeholder(salesOrderNo) && !excelCtx.SalesOrderExists(salesOrderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
+                    if (!Placeholder(customerName) && !excelCtx.CustomerExists("", customerName)) { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
+                    if (!Placeholder(bomCode) && !excelCtx.BomExists(bomCode, "")) { AddErr(res, errors, rowNo, "BOM不存在，请先在BOM表中创建"); continue; }
+                    if (!Placeholder(modelCostCode) && !excelCtx.ModelCostExists(modelCostCode)) { AddErr(res, errors, rowNo, "机型成本不存在，请先在机型成本中创建"); continue; }
+                    if (previewOnly) { res.Added++; continue; }
+                    var salesOrder = Placeholder(salesOrderNo) ? null : LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, salesOrderNo, StringComparison.OrdinalIgnoreCase));
+                    var customer = Placeholder(customerName) ? null : LoadCustomers().FirstOrDefault(x => string.Equals(x.Company, customerName, StringComparison.OrdinalIgnoreCase) || string.Equals(x.Code, customerName, StringComparison.OrdinalIgnoreCase));
+                    var bom = Placeholder(bomCode) ? null : LoadBom().FirstOrDefault(x => string.Equals(x.Code, bomCode, StringComparison.OrdinalIgnoreCase));
+                    var modelCost = Placeholder(modelCostCode) ? null : LoadModelCosts().FirstOrDefault(x => string.Equals(x.ModelCode, modelCostCode, StringComparison.OrdinalIgnoreCase));
+                    var item = new ProductionWorkOrder
+                    {
+                        WorkOrderNo = Placeholder(workOrderNo) ? "" : workOrderNo.Trim(),
+                        WorkOrderDate = Cell(row, "工单日期", "日期"),
+                        SourceType = string.IsNullOrWhiteSpace(salesOrderNo) ? Cell(row, "来源类型", "手工") : "销售订单",
+                        SalesOrderId = salesOrder != null ? salesOrder.Id : "",
+                        SalesOrderNo = salesOrder != null ? salesOrder.Code : salesOrderNo,
+                        CustomerId = customer != null ? customer.Id : "",
+                        CustomerName = customer != null ? customer.Company : customerName,
+                        ProductName = productName,
+                        ModelName = productName,
+                        Spec = Cell(row, "规格型号"),
+                        Quantity = qty,
+                        PlannedQuantity = qty,
+                        Unit = Cell(row, "单位", "台"),
+                        BomId = bom != null ? bom.Id : "",
+                        BomCode = bom != null ? bom.Code : bomCode,
+                        BomName = Cell(row, "BOM名称"),
+                        ModelCostId = modelCost != null ? modelCost.Id : "",
+                        ModelCostName = modelCost != null ? ModelCostDisplayName(modelCost) : Cell(row, "机型成本名称"),
+                        UnitCost = unitCost,
+                        PickedQuantity = Money(Cell(row, "已领用数量")),
+                        FinishedQuantity = Money(Cell(row, "已入库数量")),
+                        Status = Cell(row, "状态"),
+                        Remark = Cell(row, "备注")
+                    };
+                    ApplyProductionWorkOrder(item, true);
+                    item.Id = Guid.NewGuid().ToString("N");
+                    if (Placeholder(item.WorkOrderNo) || list.Any(x => x.WorkOrderNo == item.WorkOrderNo)) item.WorkOrderNo = NextProductionWorkOrderNo(list);
+                    item.CreatedAt = NowTimeString(); item.UpdatedAt = NowTimeString();
+                    item.CreatedBy = user.DisplayName; item.UpdatedBy = user.DisplayName;
+                    list.Insert(0, item); res.Added++; changed = true;
+                }
+                catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
+            }
+            };
+            if (previewOnly) importLoop(LoadProductionWorkOrders());
+            else MutateJsonList<ProductionWorkOrder, object>(ProductionWorkOrdersFile, "production_work_orders", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            res.Errors = errors.ToArray(); return res;
+        }
+
         static TestDataModuleResult ImportProductionPicksTest(List<Dictionary<string, string>> rows, UserSession user, bool previewOnly, ExcelImportContext excelCtx)
         {
             var res = NewModuleResult("productionPicks");
@@ -1267,11 +1375,19 @@ namespace SupplierErpApp
                 {
                     string code = Cell(row, "领用编号");
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
+                    string workOrderNo = Cell(row, "生产工单号", "工单号");
+                    if (!Placeholder(workOrderNo) && !excelCtx.ProductionWorkOrderExists(workOrderNo)) { AddErr(res, errors, rowNo, "生产工单不存在"); continue; }
                     string matCode = Cell(row, "物料编号"), matName = Cell(row, "物料名称");
                     var mat = LoadMaterials().FirstOrDefault(x => string.Equals(x.Code, matCode, StringComparison.OrdinalIgnoreCase));
+                    var workOrder = Placeholder(workOrderNo) ? null : LoadProductionWorkOrders().FirstOrDefault(x => string.Equals(x.WorkOrderNo, workOrderNo, StringComparison.OrdinalIgnoreCase));
                     var item = new ProductionPick
                     {
-                        BomName = Cell(row, "BOM名称"), MaterialId = mat != null ? mat.Id : "", MaterialCode = matCode,
+                        WorkOrderId = workOrder != null ? workOrder.Id : "",
+                        WorkOrderNo = Placeholder(workOrderNo) ? "" : workOrderNo.Trim(),
+                        BomId = workOrder != null ? workOrder.BomId : "",
+                        BomName = workOrder != null && !string.IsNullOrWhiteSpace(workOrder.BomName) ? workOrder.BomName : Cell(row, "BOM名称"),
+                        ProductName = workOrder != null ? ProductionWorkOrderModelLabel(workOrder) : "",
+                        MaterialId = mat != null ? mat.Id : "", MaterialCode = matCode,
                         MaterialName = matName, Quantity = Money(Cell(row, "领用数量", "数量")),
                         CostPrice = Money(Cell(row, "成本单价", "单价")), PickDate = Cell(row, "领用日期"),
                         Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
@@ -1279,8 +1395,13 @@ namespace SupplierErpApp
                     if (string.IsNullOrWhiteSpace(matName) && mat == null && !excelCtx.MaterialExists(matCode, ""))
                     { AddErr(res, errors, rowNo, "物料不存在"); continue; }
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
+                    if (previewOnly)
+                    {
+                        if (item.Quantity <= 0) { AddErr(res, errors, rowNo, "领用数量必须大于 0"); continue; }
+                        res.Added++; continue;
+                    }
                     ApplyProductionPick(item);
-                    if (previewOnly) { res.Added++; continue; }
+                    ValidateProductionPickAssociations(item, user, false);
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -1291,6 +1412,7 @@ namespace SupplierErpApp
             };
             if (previewOnly) importLoop(LoadProductionPicks());
             else MutateJsonList<ProductionPick, object>(ProductionPicksFile, "production_picks", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            if (!previewOnly && changed) RefreshProductionWorkOrderProgressFor();
             res.Errors = errors.ToArray(); return res;
         }
 
@@ -1309,29 +1431,39 @@ namespace SupplierErpApp
                 {
                     string code = Cell(row, "入库编号");
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
+                    string workOrderNo = Cell(row, "生产工单号", "工单号");
+                    if (!Placeholder(workOrderNo) && !excelCtx.ProductionWorkOrderExists(workOrderNo)) { AddErr(res, errors, rowNo, "生产工单不存在"); continue; }
                     string bomCode = Cell(row, "BOM编号");
                     string modelCostCode = Cell(row, "机型成本编号", "机型编号");
+                    var workOrder = Placeholder(workOrderNo) ? null : LoadProductionWorkOrders().FirstOrDefault(x => string.Equals(x.WorkOrderNo, workOrderNo, StringComparison.OrdinalIgnoreCase));
                     var bom = LoadBom().FirstOrDefault(x => string.Equals(x.Code, bomCode, StringComparison.OrdinalIgnoreCase));
                     var modelCost = LoadModelCosts().FirstOrDefault(x => string.Equals(x.ModelCode, modelCostCode, StringComparison.OrdinalIgnoreCase));
                     var item = new FinishedInbound
                     {
-                        BomId = modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomId) ? modelCost.BomId : (bom != null ? bom.Id : ""),
-                        BomCode = modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomCode) ? modelCost.BomCode : bomCode,
-                        ModelCostId = modelCost != null ? modelCost.Id : "",
-                        ProductName = Cell(row, "产品名称"),
+                        WorkOrderId = workOrder != null ? workOrder.Id : "",
+                        WorkOrderNo = Placeholder(workOrderNo) ? "" : workOrderNo.Trim(),
+                        BomId = workOrder != null && !string.IsNullOrWhiteSpace(workOrder.BomId) ? workOrder.BomId : (modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomId) ? modelCost.BomId : (bom != null ? bom.Id : "")),
+                        BomCode = workOrder != null && !string.IsNullOrWhiteSpace(workOrder.BomCode) ? workOrder.BomCode : (modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomCode) ? modelCost.BomCode : bomCode),
+                        BomName = workOrder != null ? workOrder.BomName : "",
+                        ModelCostId = workOrder != null && !string.IsNullOrWhiteSpace(workOrder.ModelCostId) ? workOrder.ModelCostId : (modelCost != null ? modelCost.Id : ""),
+                        ModelCostName = workOrder != null ? workOrder.ModelCostName : (modelCost != null ? ModelCostDisplayName(modelCost) : ""),
+                        ProductName = Cell(row, "产品名称", "产品/机型"),
                         Quantity = Money(Cell(row, "入库数量", "数量")), UnitCost = Money(Cell(row, "单台成本", "成本单价")),
                         InboundDate = Cell(row, "入库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
+                    if (Placeholder(item.ProductName) && workOrder != null) item.ProductName = ProductionWorkOrderModelLabel(workOrder);
                     if (Placeholder(item.ProductName)) { AddErr(res, errors, rowNo, "请填写产品名称"); continue; }
                     if (item.Quantity < 0 || item.UnitCost < 0) { AddErr(res, errors, rowNo, "数量/成本不能为负数"); continue; }
                     if (previewOnly)
                     {
-                        bool hasModelCost = !Placeholder(modelCostCode) && excelCtx.ModelCostExists(modelCostCode);
+                        bool hasModelCost = (!Placeholder(modelCostCode) && excelCtx.ModelCostExists(modelCostCode)) || (workOrder != null && !string.IsNullOrWhiteSpace(workOrder.ModelCostId));
                         bool hasBom = !Placeholder(bomCode) && excelCtx.BomExists(bomCode, "");
                         if (!hasModelCost && !hasBom) { AddErr(res, errors, rowNo, "成品入库必须关联 BOM 或机型成本"); continue; }
+                        if (IsConfirmedStatus(item.Status) && !hasModelCost) { AddErr(res, errors, rowNo, "成品入库确认必须关联机型成本"); continue; }
                         res.Added++; continue;
                     }
                     ApplyFinishedInbound(item);
+                    ValidateFinishedInboundAssociations(item, user, false);
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -1342,6 +1474,7 @@ namespace SupplierErpApp
             };
             if (previewOnly) importLoop(LoadFinishedInbounds());
             else MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list => { importLoop(list); return new JsonMutationResult<object>(null, changed); });
+            if (!previewOnly && changed) RefreshProductionWorkOrderProgressFor();
             res.Errors = errors.ToArray(); return res;
         }
 

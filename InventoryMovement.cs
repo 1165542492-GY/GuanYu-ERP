@@ -58,6 +58,20 @@ namespace SupplierErpApp
                 && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
+        static string JoinInventorySourceNo(params string[] values)
+        {
+            return string.Join(" / ", (values ?? new string[0]).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()));
+        }
+
+        static bool InventorySourceNoMatches(string sourceNo, string token)
+        {
+            sourceNo = (sourceNo ?? "").Trim();
+            token = (token ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(sourceNo) || string.IsNullOrWhiteSpace(token)) return false;
+            return string.Equals(sourceNo, token, StringComparison.OrdinalIgnoreCase)
+                || sourceNo.Split('/').Any(x => string.Equals(x.Trim(), token, StringComparison.OrdinalIgnoreCase));
+        }
+
         static string InventoryDirectionLabel(string direction)
         {
             switch ((direction ?? "").Trim())
@@ -251,8 +265,10 @@ namespace SupplierErpApp
             if (delta == 0) return;
             var source = after ?? before;
             string status = InventorySourceStatus(before == null ? null : before.Status, after == null ? null : after.Status, deleting);
+            string sourceNo = JoinInventorySourceNo(source.WorkOrderNo, source.Code);
+            string remark = string.IsNullOrWhiteSpace(source.WorkOrderNo) ? "生产领用库存变动" : "生产领用库存变动，工单 " + source.WorkOrderNo;
             RecordInventoryDelta(user, "物料", source.MaterialId, source.MaterialCode, source.MaterialName, "", "", delta, source.CostPrice,
-                "生产领用", source.Id, source.Code, status, source.PickDate, false, "生产领用库存变动");
+                "生产领用", source.Id, sourceNo, status, source.PickDate, false, remark);
         }
 
         static void RecordFinishedInboundMovement(UserSession user, FinishedInbound before, FinishedInbound after, bool deleting = false)
@@ -264,8 +280,10 @@ namespace SupplierErpApp
             var source = after ?? before;
             string status = InventorySourceStatus(before == null ? null : before.Status, after == null ? null : after.Status, deleting);
             string pid = GetFinishedProductStockId(source.ModelCostId, source.BomId);
+            string sourceNo = JoinInventorySourceNo(source.WorkOrderNo, source.Code);
+            string remark = string.IsNullOrWhiteSpace(source.WorkOrderNo) ? "成品入库库存变动" : "成品入库库存变动，工单 " + source.WorkOrderNo;
             RecordInventoryDelta(user, "成品", pid, source.BomCode ?? "", source.ProductName, "", "台", delta, source.UnitCost,
-                "成品入库", source.Id, source.Code, status, source.InboundDate, true, "成品入库库存变动");
+                "成品入库", source.Id, sourceNo, status, source.InboundDate, true, remark);
         }
 
         static IEnumerable<InventoryMovement> FilterInventoryMovements(HttpListenerContext ctx, IEnumerable<InventoryMovement> source)
@@ -413,6 +431,9 @@ namespace SupplierErpApp
             string businessDate = movement.BusinessDate ?? "";
             string status = movement.SourceStatus ?? "";
             string title = "";
+            string workOrderId = "";
+            string workOrderNo = "";
+            string documentNo = no;
             bool found = false;
 
             if (type == "采购入库")
@@ -427,13 +448,35 @@ namespace SupplierErpApp
             }
             else if (type == "生产领用")
             {
-                var x = LoadProductionPicks().FirstOrDefault(v => SameInventoryToken(v.Id, id) || SameInventoryToken(v.Code, no));
-                if (x != null) { found = true; businessDate = x.PickDate; title = x.BomName + " / " + x.MaterialName; }
+                var picks = LoadProductionPicks();
+                var x = picks.FirstOrDefault(v => SameInventoryToken(v.Id, id) || InventorySourceNoMatches(no, v.Code))
+                    ?? picks.FirstOrDefault(v => InventorySourceNoMatches(no, v.WorkOrderNo));
+                if (x != null)
+                {
+                    found = true;
+                    businessDate = x.PickDate;
+                    status = string.IsNullOrWhiteSpace(x.Status) ? status : x.Status;
+                    workOrderId = x.WorkOrderId ?? "";
+                    workOrderNo = x.WorkOrderNo ?? "";
+                    documentNo = x.Code ?? no;
+                    title = JoinInventorySourceNo(x.WorkOrderNo, x.Code, x.BomName, x.MaterialName);
+                }
             }
             else if (type == "成品入库")
             {
-                var x = LoadFinishedInbounds().FirstOrDefault(v => SameInventoryToken(v.Id, id) || SameInventoryToken(v.Code, no));
-                if (x != null) { found = true; businessDate = x.InboundDate; title = x.ProductName; }
+                var inbounds = LoadFinishedInbounds();
+                var x = inbounds.FirstOrDefault(v => SameInventoryToken(v.Id, id) || InventorySourceNoMatches(no, v.Code))
+                    ?? inbounds.FirstOrDefault(v => InventorySourceNoMatches(no, v.WorkOrderNo));
+                if (x != null)
+                {
+                    found = true;
+                    businessDate = x.InboundDate;
+                    status = string.IsNullOrWhiteSpace(x.Status) ? status : x.Status;
+                    workOrderId = x.WorkOrderId ?? "";
+                    workOrderNo = x.WorkOrderNo ?? "";
+                    documentNo = x.Code ?? no;
+                    title = JoinInventorySourceNo(x.WorkOrderNo, x.Code, x.ProductName);
+                }
             }
 
             return new
@@ -441,11 +484,14 @@ namespace SupplierErpApp
                 SourceType = type,
                 SourceId = id,
                 SourceNo = no,
+                DocumentNo = documentNo,
+                WorkOrderId = workOrderId,
+                WorkOrderNo = workOrderNo,
                 BusinessDate = businessDate,
                 SourceStatus = status,
                 Found = found,
                 Title = string.IsNullOrWhiteSpace(title) ? movement.MaterialName : title,
-                Summary = type + " " + no + " / " + status
+                Summary = type + " " + no + " / " + status + (string.IsNullOrWhiteSpace(workOrderNo) ? "" : " / 工单 " + workOrderNo)
             };
         }
 

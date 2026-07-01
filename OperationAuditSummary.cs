@@ -111,6 +111,7 @@ namespace SupplierErpApp
         {
             if (item == null) return "";
             var parts = new List<string> { AuditText(item.Code) };
+            AddAuditPart(parts, "wo", item.WorkOrderNo);
             AddAuditPart(parts, "bom", item.BomName);
             AddAuditPart(parts, "item", item.MaterialName);
             AddAuditPart(parts, "qty", item.Quantity);
@@ -123,7 +124,9 @@ namespace SupplierErpApp
         {
             if (item == null) return "";
             var parts = new List<string> { AuditText(item.Code) };
+            AddAuditPart(parts, "wo", item.WorkOrderNo);
             AddAuditPart(parts, "bom", item.BomCode);
+            AddAuditPart(parts, "modelCost", item.ModelCostName);
             AddAuditPart(parts, "product", item.ProductName);
             AddAuditPart(parts, "qty", item.Quantity);
             AddAuditPart(parts, "amount", item.Amount);
@@ -163,6 +166,8 @@ namespace SupplierErpApp
             AddAuditPart(parts, "customer", item.CustomerName);
             AddAuditPart(parts, "product", item.ProductName);
             AddAuditPart(parts, "qty", item.Quantity);
+            AddAuditPart(parts, "picked", item.PickedQuantity);
+            AddAuditPart(parts, "finished", item.FinishedQuantity);
             AddAuditPart(parts, "status", item.Status);
             return JoinAuditParts(parts);
         }

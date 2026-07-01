@@ -537,8 +537,11 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string WorkOrderId { get; set; }
+        public string WorkOrderNo { get; set; }
         public string BomId { get; set; }
         public string BomName { get; set; }
+        public string ProductName { get; set; }
         public string MaterialId { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
@@ -556,9 +559,13 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string Code { get; set; }
+        public string WorkOrderId { get; set; }
+        public string WorkOrderNo { get; set; }
         public string BomId { get; set; }
         public string BomCode { get; set; }
+        public string BomName { get; set; }
         public string ModelCostId { get; set; }
+        public string ModelCostName { get; set; }
         public string ProductName { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitCost { get; set; }
@@ -574,6 +581,7 @@ namespace SupplierErpApp
     {
         public string Id { get; set; }
         public string WorkOrderNo { get; set; }
+        public string WorkDate { get; set; }
         public string WorkOrderDate { get; set; }
         public string SourceType { get; set; }
         public string SalesOrderId { get; set; }
@@ -581,18 +589,24 @@ namespace SupplierErpApp
         public string CustomerId { get; set; }
         public string CustomerName { get; set; }
         public string ProductName { get; set; }
+        public string ModelName { get; set; }
         public string Spec { get; set; }
         public decimal Quantity { get; set; }
+        public decimal PlannedQuantity { get; set; }
         public string Unit { get; set; }
         public string BomId { get; set; }
+        public string BomCode { get; set; }
         public string BomName { get; set; }
         public string ModelCostId { get; set; }
+        public string ModelCostName { get; set; }
         public decimal UnitCost { get; set; }
         public string PlannedStartDate { get; set; }
         public string PlannedFinishDate { get; set; }
         public string ActualStartDate { get; set; }
         public string ActualFinishDate { get; set; }
         public decimal ProducedQuantity { get; set; }
+        public decimal PickedQuantity { get; set; }
+        public decimal FinishedQuantity { get; set; }
         public decimal UnproducedQuantity { get; set; }
         public decimal PickedMaterialAmount { get; set; }
         public decimal FinishedInboundAmount { get; set; }
@@ -4925,6 +4939,7 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(item.BomId)) return;
             var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
             if (bom == null) return;
+            if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = !string.IsNullOrWhiteSpace(bom.ProductName) ? bom.ProductName : bom.ModelName;
             item.BomName = string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ProductName : bom.ModelName;
         }
 
@@ -4937,6 +4952,7 @@ namespace SupplierErpApp
                 {
                     if (string.IsNullOrWhiteSpace(item.BomId)) item.BomId = mc.BomId;
                     if (string.IsNullOrWhiteSpace(item.BomCode)) item.BomCode = mc.BomCode;
+                    item.ModelCostName = !string.IsNullOrWhiteSpace(mc.ModelName) ? mc.ModelName : mc.ProductName;
                     if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = mc.ProductName ?? mc.ModelName;
                 }
             }
@@ -4946,7 +4962,178 @@ namespace SupplierErpApp
                 if (bom != null)
                 {
                     item.BomCode = bom.Code;
+                    item.BomName = !string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ModelName : bom.ProductName;
                     if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = bom.ProductName ?? bom.ModelName;
+                }
+            }
+        }
+
+        static string ProductionWorkOrderModelLabel(ProductionWorkOrder item)
+        {
+            if (item == null) return "";
+            if (!string.IsNullOrWhiteSpace(item.ModelName)) return item.ModelName.Trim();
+            if (!string.IsNullOrWhiteSpace(item.ProductName)) return item.ProductName.Trim();
+            return "";
+        }
+
+        static string ModelCostDisplayName(ModelCost item)
+        {
+            if (item == null) return "";
+            return !string.IsNullOrWhiteSpace(item.ModelName) ? item.ModelName : (item.ProductName ?? "");
+        }
+
+        static string BomDisplayName(BomItem item)
+        {
+            if (item == null) return "";
+            return !string.IsNullOrWhiteSpace(item.ModelName) ? item.ModelName : (item.ProductName ?? "");
+        }
+
+        static ProductionWorkOrder FindProductionWorkOrder(string id, string no)
+        {
+            id = (id ?? "").Trim();
+            no = (no ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(no)) return null;
+            var list = LoadProductionWorkOrders();
+            ProductionWorkOrder item = null;
+            if (!string.IsNullOrWhiteSpace(id)) item = list.FirstOrDefault(x => string.Equals(x.Id ?? "", id, StringComparison.OrdinalIgnoreCase));
+            if (item == null && !string.IsNullOrWhiteSpace(no)) item = list.FirstOrDefault(x => string.Equals(x.WorkOrderNo ?? "", no, StringComparison.OrdinalIgnoreCase));
+            return item;
+        }
+
+        static void ResolveProductionPickWorkOrderLink(ProductionPick item)
+        {
+            if (item == null) return;
+            item.WorkOrderId = (item.WorkOrderId ?? "").Trim();
+            item.WorkOrderNo = (item.WorkOrderNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.WorkOrderId) && string.IsNullOrWhiteSpace(item.WorkOrderNo)) return;
+            var wo = FindProductionWorkOrder(item.WorkOrderId, item.WorkOrderNo);
+            if (wo == null) BizFail("来源生产工单不存在");
+            item.WorkOrderId = wo.Id;
+            item.WorkOrderNo = wo.WorkOrderNo ?? "";
+            if (string.IsNullOrWhiteSpace(item.BomId)) item.BomId = wo.BomId ?? "";
+            if (string.IsNullOrWhiteSpace(item.BomName)) item.BomName = wo.BomName ?? "";
+            if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = ProductionWorkOrderModelLabel(wo);
+        }
+
+        static void ResolveFinishedInboundWorkOrderLink(FinishedInbound item)
+        {
+            if (item == null) return;
+            item.WorkOrderId = (item.WorkOrderId ?? "").Trim();
+            item.WorkOrderNo = (item.WorkOrderNo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(item.WorkOrderId) && string.IsNullOrWhiteSpace(item.WorkOrderNo)) return;
+            var wo = FindProductionWorkOrder(item.WorkOrderId, item.WorkOrderNo);
+            if (wo == null) BizFail("来源生产工单不存在");
+            item.WorkOrderId = wo.Id;
+            item.WorkOrderNo = wo.WorkOrderNo ?? "";
+            if (string.IsNullOrWhiteSpace(item.BomId)) item.BomId = wo.BomId ?? "";
+            if (string.IsNullOrWhiteSpace(item.BomCode)) item.BomCode = wo.BomCode ?? "";
+            if (string.IsNullOrWhiteSpace(item.BomName)) item.BomName = wo.BomName ?? "";
+            if (string.IsNullOrWhiteSpace(item.ModelCostId)) item.ModelCostId = wo.ModelCostId ?? "";
+            if (string.IsNullOrWhiteSpace(item.ModelCostName)) item.ModelCostName = wo.ModelCostName ?? "";
+            if (string.IsNullOrWhiteSpace(item.ProductName)) item.ProductName = ProductionWorkOrderModelLabel(wo);
+        }
+
+        static bool BomLineMatchesProductionPick(BomDetail line, ProductionPick item)
+        {
+            if (line == null || item == null) return false;
+            return (!string.IsNullOrWhiteSpace(line.MaterialId) && string.Equals(line.MaterialId ?? "", item.MaterialId ?? "", StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(line.MaterialCode) && string.Equals(line.MaterialCode ?? "", item.MaterialCode ?? "", StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(line.MaterialName) && string.Equals(line.MaterialName ?? "", item.MaterialName ?? "", StringComparison.OrdinalIgnoreCase));
+        }
+
+        static string ProductionPickTraceLabel(ProductionPick item)
+        {
+            if (item == null) return "";
+            return string.Join(" / ", new[] { item.WorkOrderNo, item.Code, item.BomName, item.MaterialName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+
+        static string FinishedInboundTraceLabel(FinishedInbound item)
+        {
+            if (item == null) return "";
+            return string.Join(" / ", new[] { item.WorkOrderNo, item.Code, item.ProductName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+
+        static void AuditProductionRuleBlock(UserSession user, string action, string message, string detail)
+        {
+            try { Audit(user, action, message + (string.IsNullOrWhiteSpace(detail) ? "" : "：" + detail)); } catch { }
+        }
+
+        static void ValidateProductionPickAssociations(ProductionPick item, UserSession user = null, bool auditBlock = true)
+        {
+            if (item == null) return;
+            bool confirmed = IsConfirmedStatus(item.Status);
+            if (confirmed && string.IsNullOrWhiteSpace(item.BomId))
+            {
+                const string msg = "旧记录缺少生产工单/BOM关联，请补齐后再确认";
+                if (auditBlock) AuditProductionRuleBlock(user, "BOM物料不匹配拦截", msg, ProductionPickTraceLabel(item));
+                BizFail(msg, 409);
+            }
+            var wo = FindProductionWorkOrder(item.WorkOrderId, item.WorkOrderNo);
+            if (!string.IsNullOrWhiteSpace(item.WorkOrderId) || !string.IsNullOrWhiteSpace(item.WorkOrderNo))
+            {
+                if (wo == null) BizFail("来源生产工单不存在", 409);
+                if (NormalizeProductionWorkOrderStatus(wo.Status) == "已取消") BizFail("已取消的生产工单不能继续领用", 409);
+                if (!string.IsNullOrWhiteSpace(wo.BomId) && !string.IsNullOrWhiteSpace(item.BomId)
+                    && !string.Equals(wo.BomId, item.BomId, StringComparison.OrdinalIgnoreCase))
+                {
+                    const string msg = "生产领用选择的 BOM 与生产工单不匹配";
+                    if (auditBlock) AuditProductionRuleBlock(user, "BOM物料不匹配拦截", msg, ProductionPickTraceLabel(item));
+                    BizFail(msg, 409);
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(item.BomId))
+            {
+                var bom = LoadBom().FirstOrDefault(x => string.Equals(x.Id ?? "", item.BomId ?? "", StringComparison.OrdinalIgnoreCase));
+                if (bom == null) BizFail("来源 BOM 不存在", 409);
+                if ((confirmed || !string.IsNullOrWhiteSpace(item.WorkOrderId)) && !(bom.Items ?? new List<BomDetail>()).Any(line => BomLineMatchesProductionPick(line, item)))
+                {
+                    const string msg = "所选物料不在生产工单/BOM明细中，不能确认生产领用";
+                    if (auditBlock) AuditProductionRuleBlock(user, "BOM物料不匹配拦截", msg, ProductionPickTraceLabel(item));
+                    BizFail(msg, 409);
+                }
+            }
+        }
+
+        static void ValidateFinishedInboundAssociations(FinishedInbound item, UserSession user = null, bool auditBlock = true)
+        {
+            if (item == null) return;
+            bool confirmed = IsConfirmedStatus(item.Status);
+            var wo = FindProductionWorkOrder(item.WorkOrderId, item.WorkOrderNo);
+            if (!string.IsNullOrWhiteSpace(item.WorkOrderId) || !string.IsNullOrWhiteSpace(item.WorkOrderNo))
+            {
+                if (wo == null) BizFail("来源生产工单不存在", 409);
+                if (NormalizeProductionWorkOrderStatus(wo.Status) == "已取消") BizFail("已取消的生产工单不能继续入库", 409);
+                if (!string.IsNullOrWhiteSpace(wo.ModelCostId) && !string.IsNullOrWhiteSpace(item.ModelCostId)
+                    && !string.Equals(wo.ModelCostId, item.ModelCostId, StringComparison.OrdinalIgnoreCase))
+                {
+                    const string msg = "成品入库选择的机型成本与生产工单不匹配";
+                    if (auditBlock) AuditProductionRuleBlock(user, "机型成本不匹配拦截", msg, FinishedInboundTraceLabel(item));
+                    BizFail(msg, 409);
+                }
+                if (!string.IsNullOrWhiteSpace(wo.BomId) && !string.IsNullOrWhiteSpace(item.BomId)
+                    && !string.Equals(wo.BomId, item.BomId, StringComparison.OrdinalIgnoreCase))
+                {
+                    const string msg = "成品入库选择的 BOM 与生产工单不匹配";
+                    if (auditBlock) AuditProductionRuleBlock(user, "机型成本不匹配拦截", msg, FinishedInboundTraceLabel(item));
+                    BizFail(msg, 409);
+                }
+            }
+            if (confirmed && string.IsNullOrWhiteSpace(item.ModelCostId))
+            {
+                const string msg = "成品入库确认必须关联机型成本";
+                if (auditBlock) AuditProductionRuleBlock(user, "机型成本不匹配拦截", msg, FinishedInboundTraceLabel(item));
+                BizFail(msg, 409);
+            }
+            if (!string.IsNullOrWhiteSpace(item.ModelCostId))
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => string.Equals(x.Id ?? "", item.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
+                if (mc == null) BizFail("机型成本不存在", 409);
+                if (!string.IsNullOrWhiteSpace(item.BomId) && !string.IsNullOrWhiteSpace(mc.BomId)
+                    && !string.Equals(item.BomId, mc.BomId, StringComparison.OrdinalIgnoreCase))
+                {
+                    const string msg = "成品入库选择的机型成本与 BOM 不匹配";
+                    if (auditBlock) AuditProductionRuleBlock(user, "机型成本不匹配拦截", msg, FinishedInboundTraceLabel(item));
+                    BizFail(msg, 409);
                 }
             }
         }
@@ -5662,12 +5849,16 @@ namespace SupplierErpApp
         static void ApplyProductionPick(ProductionPick item)
         {
             if (item == null) BizFail("数据不能为空");
+            ResolveProductionPickWorkOrderLink(item);
             ResolveBomLinkForPick(item);
             string mid, mcode, mname, mspec, munit;
             ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
             item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
+            item.WorkOrderId = (item.WorkOrderId ?? "").Trim();
+            item.WorkOrderNo = (item.WorkOrderNo ?? "").Trim();
             item.BomId = (item.BomId ?? "").Trim();
             item.BomName = (item.BomName ?? "").Trim();
+            item.ProductName = (item.ProductName ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
             if (item.Quantity <= 0) BizFail("领用数量必须大于 0");
             AutoResolveProductionPickCost(item);
@@ -5681,6 +5872,7 @@ namespace SupplierErpApp
         static void AddProductionPick(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(item);
+            ValidateProductionPickAssociations(item, user);
             ValidateStockForConfirmedPick(item);
             var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
             {
@@ -5691,6 +5883,7 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
+            RefreshProductionWorkOrderProgressFor(saved.WorkOrderId);
             var detail = BuildProductionPickAuditDetail(saved);
             Audit(user, "新增生产领用", detail);
             AuditStatusTransition(user, "确认生产领用", "取消生产领用", null, saved.Status, detail);
@@ -5700,19 +5893,24 @@ namespace SupplierErpApp
         static void UpdateProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
+            ValidateProductionPickAssociations(input, user);
             ValidateStockForConfirmedPick(input, id);
             string previousStatus = null;
+            string previousWorkOrderId = null;
             var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
-                var before = new ProductionPick { Id = item.Id, Code = item.Code, BomId = item.BomId, BomName = item.BomName, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, CostPrice = item.CostPrice, CostAmount = item.CostAmount, PickDate = item.PickDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
-                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
-                    || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                previousWorkOrderId = item.WorkOrderId;
+                var before = new ProductionPick { Id = item.Id, Code = item.Code, WorkOrderId = item.WorkOrderId, WorkOrderNo = item.WorkOrderNo, BomId = item.BomId, BomName = item.BomName, ProductName = item.ProductName, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, CostPrice = item.CostPrice, CostAmount = item.CostAmount, PickDate = item.PickDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
+                bool lockedBomChange = !string.IsNullOrWhiteSpace(item.BomId) && !string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal);
+                bool lockedMaterialChange = !string.IsNullOrWhiteSpace(item.MaterialId) && !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal);
+                if (IsConfirmedStatus(item.Status) && (lockedBomChange || lockedMaterialChange))
                     BizFail(ReferenceLockMessage, 409);
-                item.BomId = input.BomId; item.BomName = input.BomName;
+                item.WorkOrderId = input.WorkOrderId; item.WorkOrderNo = input.WorkOrderNo;
+                item.BomId = input.BomId; item.BomName = input.BomName; item.ProductName = input.ProductName;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
                 item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
                 item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
@@ -5720,6 +5918,7 @@ namespace SupplierErpApp
                 RecordProductionPickMovement(user, before, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
+            RefreshProductionWorkOrderProgressFor(previousWorkOrderId, saved.WorkOrderId);
             var detail = BuildProductionPickAuditDetail(saved);
             Audit(user, "修改生产领用", detail);
             AuditStatusTransition(user, "确认生产领用", "取消生产领用", previousStatus, saved.Status, detail);
@@ -5729,11 +5928,13 @@ namespace SupplierErpApp
         static void DeleteProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            string workOrderId = null;
             RunUnderDataLock(() =>
             {
                 var item = ReadJsonListCore<ProductionPick>(ProductionPicksFile).FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 auditCode = item.Code;
+                workOrderId = item.WorkOrderId;
             });
             EnforceDeleteImpact("productionPick", id, user, ctx, auditCode);
             MutateJsonList<ProductionPick, object>(ProductionPicksFile, "production_picks", list =>
@@ -5744,10 +5945,16 @@ namespace SupplierErpApp
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
+            RefreshProductionWorkOrderProgressFor(workOrderId);
             Audit(user, "删除生产领用", auditCode); WriteJson(ctx, new { ok = true });
         }
 
-        static List<ProductionWorkOrder> LoadProductionWorkOrders() { return LoadJsonList<ProductionWorkOrder>(ProductionWorkOrdersFile); }
+        static List<ProductionWorkOrder> LoadProductionWorkOrders()
+        {
+            var items = LoadJsonList<ProductionWorkOrder>(ProductionWorkOrdersFile);
+            EnrichProductionWorkOrderProgress(items);
+            return items;
+        }
 
         static string NextProductionWorkOrderNo(IEnumerable<ProductionWorkOrder> list)
         {
@@ -5784,25 +5991,144 @@ namespace SupplierErpApp
             return status == "草稿" || status == "已取消";
         }
 
+        static void SyncProductionWorkOrderAliases(ProductionWorkOrder item)
+        {
+            if (item == null) return;
+            if (item.Quantity <= 0 && item.PlannedQuantity > 0) item.Quantity = item.PlannedQuantity;
+            item.PlannedQuantity = item.Quantity;
+            if (string.IsNullOrWhiteSpace(item.WorkOrderDate) && !string.IsNullOrWhiteSpace(item.WorkDate)) item.WorkOrderDate = item.WorkDate;
+            item.WorkDate = item.WorkOrderDate;
+            if (!string.IsNullOrWhiteSpace(item.BomId))
+            {
+                var bom = LoadBom().FirstOrDefault(x => string.Equals(x.Id ?? "", item.BomId ?? "", StringComparison.OrdinalIgnoreCase));
+                if (bom != null)
+                {
+                    item.BomCode = bom.Code ?? item.BomCode;
+                    item.BomName = BomDisplayName(bom);
+                    if (string.IsNullOrWhiteSpace(item.ModelName)) item.ModelName = !string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ModelName : bom.ProductName;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(item.ModelCostId))
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => string.Equals(x.Id ?? "", item.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
+                if (mc != null)
+                {
+                    item.ModelCostName = ModelCostDisplayName(mc);
+                    if (string.IsNullOrWhiteSpace(item.BomId) && !string.IsNullOrWhiteSpace(mc.BomId)) item.BomId = mc.BomId;
+                    if (string.IsNullOrWhiteSpace(item.BomCode)) item.BomCode = mc.BomCode ?? "";
+                    if (string.IsNullOrWhiteSpace(item.ModelName)) item.ModelName = ModelCostDisplayName(mc);
+                }
+            }
+            if (string.IsNullOrWhiteSpace(item.ModelName)) item.ModelName = item.ProductName ?? "";
+        }
+
         static void SyncProductionWorkOrderQuantities(ProductionWorkOrder item)
         {
             if (item == null) return;
             item.ProducedQuantity = Math.Max(0, item.ProducedQuantity);
-            if (item.ProducedQuantity > item.Quantity) BizFail("已完工数量不能大于计划数量");
-            item.UnproducedQuantity = item.Quantity - item.ProducedQuantity;
+            item.PickedQuantity = Math.Max(0, item.PickedQuantity);
+            item.FinishedQuantity = Math.Max(0, item.FinishedQuantity);
+            var progressQty = Math.Max(item.ProducedQuantity, item.FinishedQuantity);
+            item.UnproducedQuantity = Math.Max(0, item.Quantity - progressQty);
+            item.PlannedQuantity = item.Quantity;
         }
 
         static void SyncProductionWorkOrderFinishStatus(ProductionWorkOrder item)
         {
             if (item == null) return;
             if (item.Status == "已取消" || item.Status == "草稿" || item.Status == "待生产") return;
-            if (item.ProducedQuantity >= item.Quantity)
+            var progressQty = Math.Max(item.ProducedQuantity, item.FinishedQuantity);
+            if (progressQty >= item.Quantity)
             {
                 item.Status = "已完成";
                 if (string.IsNullOrWhiteSpace(item.ActualFinishDate)) item.ActualFinishDate = TodayText();
             }
-            else if (item.ProducedQuantity > 0)
+            else if (progressQty > 0)
                 item.Status = "部分完工";
+        }
+
+        static void SyncProductionWorkOrderInventoryStatus(ProductionWorkOrder item)
+        {
+            if (item == null) return;
+            var status = NormalizeProductionWorkOrderStatus(item.Status);
+            if (status == "已取消" || status == "已完成") return;
+            var progressQty = Math.Max(item.ProducedQuantity, item.FinishedQuantity);
+            if (item.Quantity > 0 && progressQty >= item.Quantity)
+            {
+                item.Status = "已完成";
+                if (string.IsNullOrWhiteSpace(item.ActualFinishDate)) item.ActualFinishDate = TodayText();
+            }
+            else if (progressQty > 0)
+            {
+                item.Status = "部分完工";
+            }
+            else if (item.PickedQuantity > 0 && (status == "草稿" || status == "待生产"))
+            {
+                item.Status = "生产中";
+                if (string.IsNullOrWhiteSpace(item.ActualStartDate)) item.ActualStartDate = TodayText();
+            }
+        }
+
+        static void EnrichProductionWorkOrderProgress(List<ProductionWorkOrder> items)
+        {
+            if (items == null || items.Count == 0) return;
+            var picks = LoadJsonList<ProductionPick>(ProductionPicksFile);
+            var inbounds = LoadJsonList<FinishedInbound>(FinishedInboundsFile);
+            foreach (var item in items)
+            {
+                SyncProductionWorkOrderAliases(item);
+                var pickRows = picks.Where(x => IsConfirmedStatus(x.Status)
+                    && (!string.IsNullOrWhiteSpace(item.Id) && string.Equals(x.WorkOrderId ?? "", item.Id, StringComparison.OrdinalIgnoreCase)
+                        || !string.IsNullOrWhiteSpace(item.WorkOrderNo) && string.Equals(x.WorkOrderNo ?? "", item.WorkOrderNo, StringComparison.OrdinalIgnoreCase))).ToList();
+                var inboundRows = inbounds.Where(x => IsConfirmedStatus(x.Status)
+                    && (!string.IsNullOrWhiteSpace(item.Id) && string.Equals(x.WorkOrderId ?? "", item.Id, StringComparison.OrdinalIgnoreCase)
+                        || !string.IsNullOrWhiteSpace(item.WorkOrderNo) && string.Equals(x.WorkOrderNo ?? "", item.WorkOrderNo, StringComparison.OrdinalIgnoreCase))).ToList();
+                item.PickedQuantity = RoundMoney(pickRows.Sum(x => x.Quantity));
+                item.PickedMaterialAmount = RoundMoney(pickRows.Sum(x => x.CostAmount));
+                item.FinishedQuantity = RoundMoney(inboundRows.Sum(x => x.Quantity));
+                item.FinishedInboundAmount = RoundMoney(inboundRows.Sum(x => x.Amount));
+                SyncProductionWorkOrderQuantities(item);
+            }
+        }
+
+        static void RefreshProductionWorkOrderProgressFor(params string[] workOrderIds)
+        {
+            var ids = new HashSet<string>((workOrderIds ?? new string[0]).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()), StringComparer.OrdinalIgnoreCase);
+            bool updateAll = ids.Count == 0;
+            MutateJsonList<ProductionWorkOrder, object>(ProductionWorkOrdersFile, "production_work_orders", list =>
+            {
+                var picks = ReadJsonListCore<ProductionPick>(ProductionPicksFile);
+                var inbounds = ReadJsonListCore<FinishedInbound>(FinishedInboundsFile);
+                bool changed = false;
+                foreach (var item in list)
+                {
+                    if (!updateAll && !ids.Contains(item.Id ?? "")) continue;
+                    SyncProductionWorkOrderAliases(item);
+                    var pickRows = picks.Where(x => IsConfirmedStatus(x.Status)
+                        && (!string.IsNullOrWhiteSpace(item.Id) && string.Equals(x.WorkOrderId ?? "", item.Id, StringComparison.OrdinalIgnoreCase)
+                            || !string.IsNullOrWhiteSpace(item.WorkOrderNo) && string.Equals(x.WorkOrderNo ?? "", item.WorkOrderNo, StringComparison.OrdinalIgnoreCase))).ToList();
+                    var inboundRows = inbounds.Where(x => IsConfirmedStatus(x.Status)
+                        && (!string.IsNullOrWhiteSpace(item.Id) && string.Equals(x.WorkOrderId ?? "", item.Id, StringComparison.OrdinalIgnoreCase)
+                            || !string.IsNullOrWhiteSpace(item.WorkOrderNo) && string.Equals(x.WorkOrderNo ?? "", item.WorkOrderNo, StringComparison.OrdinalIgnoreCase))).ToList();
+                    var pickedQty = RoundMoney(pickRows.Sum(x => x.Quantity));
+                    var pickedAmount = RoundMoney(pickRows.Sum(x => x.CostAmount));
+                    var finishedQty = RoundMoney(inboundRows.Sum(x => x.Quantity));
+                    var finishedAmount = RoundMoney(inboundRows.Sum(x => x.Amount));
+                    if (item.PickedQuantity != pickedQty || item.PickedMaterialAmount != pickedAmount
+                        || item.FinishedQuantity != finishedQty || item.FinishedInboundAmount != finishedAmount)
+                    {
+                        item.PickedQuantity = pickedQty;
+                        item.PickedMaterialAmount = pickedAmount;
+                        item.FinishedQuantity = finishedQty;
+                        item.FinishedInboundAmount = finishedAmount;
+                        SyncProductionWorkOrderQuantities(item);
+                        SyncProductionWorkOrderInventoryStatus(item);
+                        item.UpdatedAt = BizUpdatedAtNow();
+                        changed = true;
+                    }
+                }
+                return new JsonMutationResult<object>(null, changed);
+            });
         }
 
         static void ResolveProductionWorkOrderSalesOrder(ProductionWorkOrder item)
@@ -5865,8 +6191,10 @@ namespace SupplierErpApp
             if (string.IsNullOrWhiteSpace(item.BomId)) return;
             var bom = LoadBom().FirstOrDefault(x => x.Id == item.BomId);
             if (bom == null) BizFail("来源 BOM 不存在");
+            item.BomCode = bom.Code ?? "";
             item.BomName = !string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ModelName : (bom.ProductName ?? "");
             item.ProductName = !string.IsNullOrWhiteSpace(bom.ProductName) ? bom.ProductName : (bom.ModelName ?? "");
+            item.ModelName = !string.IsNullOrWhiteSpace(bom.ModelName) ? bom.ModelName : item.ProductName;
             item.Spec = bom.ModelCode ?? "";
         }
 
@@ -5877,11 +6205,14 @@ namespace SupplierErpApp
             var mc = LoadModelCosts().FirstOrDefault(x => x.Id == item.ModelCostId);
             if (mc == null) BizFail("机型成本不存在");
             item.UnitCost = mc.TotalCost > 0 ? mc.TotalCost : mc.MaterialCost;
+            item.ModelCostName = ModelCostDisplayName(mc);
             if (string.IsNullOrWhiteSpace(item.BomId) && !string.IsNullOrWhiteSpace(mc.BomId))
                 item.BomId = mc.BomId;
+            if (string.IsNullOrWhiteSpace(item.BomCode)) item.BomCode = mc.BomCode ?? "";
             if (string.IsNullOrWhiteSpace(item.BomId))
             {
                 item.ProductName = !string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : (mc.ModelName ?? "");
+                item.ModelName = !string.IsNullOrWhiteSpace(mc.ModelName) ? mc.ModelName : item.ProductName;
                 item.Spec = mc.ModelCode ?? "";
             }
         }
@@ -5889,6 +6220,7 @@ namespace SupplierErpApp
         static void ApplyProductionWorkOrder(ProductionWorkOrder item, bool preserveProgressFields)
         {
             if (item == null) BizFail("数据不能为空");
+            item.WorkOrderNo = (item.WorkOrderNo ?? "").Trim();
             item.SourceType = string.IsNullOrWhiteSpace(item.SourceType) ? "手工" : item.SourceType.Trim();
             bool fromSalesOrder = string.Equals(item.SourceType, "销售订单", StringComparison.OrdinalIgnoreCase)
                 || !string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo);
@@ -5896,19 +6228,24 @@ namespace SupplierErpApp
                 ResolveProductionWorkOrderSalesOrder(item);
             else if (!string.IsNullOrWhiteSpace(item.SalesOrderId) || !string.IsNullOrWhiteSpace(item.SalesOrderNo))
                 ResolveProductionWorkOrderSalesOrder(item);
+            if (item.Quantity <= 0 && item.PlannedQuantity > 0) item.Quantity = item.PlannedQuantity;
             ResolveProductionWorkOrderCustomer(item, fromSalesOrder && !string.IsNullOrWhiteSpace(item.SalesOrderId));
             ResolveProductionWorkOrderModelCost(item);
             ResolveProductionWorkOrderBom(item);
+            SyncProductionWorkOrderAliases(item);
             if (string.IsNullOrWhiteSpace(item.ProductName)) BizFail("请填写产品/机型名称");
             if (item.Quantity <= 0) BizFail("计划生产数量必须大于 0");
             if (string.IsNullOrWhiteSpace(item.Unit)) item.Unit = "台";
             item.WorkOrderDate = string.IsNullOrWhiteSpace(item.WorkOrderDate) ? TodayText() : item.WorkOrderDate.Trim();
+            item.WorkDate = item.WorkOrderDate;
             item.PlannedStartDate = (item.PlannedStartDate ?? "").Trim();
             item.PlannedFinishDate = (item.PlannedFinishDate ?? "").Trim();
             item.Remark = (item.Remark ?? "").Trim();
             if (!preserveProgressFields)
             {
                 item.ProducedQuantity = 0;
+                item.PickedQuantity = 0;
+                item.FinishedQuantity = 0;
                 item.UnproducedQuantity = item.Quantity;
                 item.PickedMaterialAmount = 0;
                 item.FinishedInboundAmount = 0;
@@ -5921,6 +6258,7 @@ namespace SupplierErpApp
         static void CopyProductionWorkOrderEditableFields(ProductionWorkOrder target, ProductionWorkOrder input, bool coreEditable)
         {
             target.WorkOrderDate = input.WorkOrderDate;
+            target.WorkDate = input.WorkDate;
             target.SourceType = input.SourceType;
             target.SalesOrderId = input.SalesOrderId;
             target.SalesOrderNo = input.SalesOrderNo;
@@ -5929,12 +6267,16 @@ namespace SupplierErpApp
             if (coreEditable)
             {
                 target.ProductName = input.ProductName;
+                target.ModelName = input.ModelName;
                 target.Spec = input.Spec;
                 target.Quantity = input.Quantity;
+                target.PlannedQuantity = input.PlannedQuantity;
                 target.Unit = input.Unit;
                 target.BomId = input.BomId;
+                target.BomCode = input.BomCode;
                 target.BomName = input.BomName;
                 target.ModelCostId = input.ModelCostId;
+                target.ModelCostName = input.ModelCostName;
                 target.UnitCost = input.UnitCost;
             }
             target.PlannedStartDate = input.PlannedStartDate;
@@ -5959,7 +6301,9 @@ namespace SupplierErpApp
             var saved = MutateJsonList<ProductionWorkOrder, ProductionWorkOrder>(ProductionWorkOrdersFile, "production_work_orders", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
-                item.WorkOrderNo = NextProductionWorkOrderNo(list);
+                item.WorkOrderNo = !string.IsNullOrWhiteSpace(item.WorkOrderNo) && !list.Any(x => string.Equals(x.WorkOrderNo ?? "", item.WorkOrderNo, StringComparison.OrdinalIgnoreCase))
+                    ? item.WorkOrderNo
+                    : NextProductionWorkOrderNo(list);
                 item.CreatedAt = now;
                 item.UpdatedAt = now;
                 item.CreatedBy = user.DisplayName;
@@ -5982,6 +6326,8 @@ namespace SupplierErpApp
                 if (!CanEditProductionWorkOrder(item.Status)) BizFail("当前状态不允许编辑", 409);
                 bool coreEditable = item.Status == "草稿" || item.Status == "待生产";
                 var produced = item.ProducedQuantity;
+                var pickedQty = item.PickedQuantity;
+                var finishedQty = item.FinishedQuantity;
                 var picked = item.PickedMaterialAmount;
                 var finishedAmt = item.FinishedInboundAmount;
                 var actualStart = item.ActualStartDate;
@@ -5990,6 +6336,8 @@ namespace SupplierErpApp
                 ApplyProductionWorkOrder(input, true);
                 CopyProductionWorkOrderEditableFields(item, input, coreEditable);
                 item.ProducedQuantity = produced;
+                item.PickedQuantity = pickedQty;
+                item.FinishedQuantity = finishedQty;
                 item.PickedMaterialAmount = picked;
                 item.FinishedInboundAmount = finishedAmt;
                 item.ActualStartDate = actualStart;
@@ -6091,13 +6439,18 @@ namespace SupplierErpApp
         static void ApplyFinishedInbound(FinishedInbound item)
         {
             if (item == null) BizFail("数据不能为空");
+            ResolveFinishedInboundWorkOrderLink(item);
             ResolveBomAndModelCostLink(item);
             if (string.IsNullOrWhiteSpace(item.BomId) && string.IsNullOrWhiteSpace(item.ModelCostId))
                 BizFail("成品入库必须关联 BOM 或机型成本");
+            item.WorkOrderId = (item.WorkOrderId ?? "").Trim();
+            item.WorkOrderNo = (item.WorkOrderNo ?? "").Trim();
             item.ProductName = (item.ProductName ?? "").Trim();
             item.BomId = (item.BomId ?? "").Trim();
             item.BomCode = (item.BomCode ?? "").Trim();
+            item.BomName = (item.BomName ?? "").Trim();
             item.ModelCostId = (item.ModelCostId ?? "").Trim();
+            item.ModelCostName = (item.ModelCostName ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.ProductName)) BizFail("请填写产品名称");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
             AutoResolveFinishedInboundUnitCost(item);
@@ -6111,6 +6464,7 @@ namespace SupplierErpApp
         static void AddFinishedInbound(HttpListenerContext ctx, UserSession user)
         {
             var item = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(item);
+            ValidateFinishedInboundAssociations(item, user);
             var saved = MutateJsonList<FinishedInbound, FinishedInbound>(FinishedInboundsFile, "finished_inbounds", list =>
             {
                 item.Id = Guid.NewGuid().ToString("N");
@@ -6120,6 +6474,7 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
+            RefreshProductionWorkOrderProgressFor(saved.WorkOrderId);
             var detail = BuildFinishedInboundAuditDetail(saved);
             Audit(user, "新增成品入库", detail);
             AuditStatusTransition(user, "确认成品入库", "取消成品入库", null, saved.Status, detail);
@@ -6129,26 +6484,33 @@ namespace SupplierErpApp
         static void UpdateFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(input);
+            ValidateFinishedInboundAssociations(input, user);
             string previousStatus = null;
+            string previousWorkOrderId = null;
             var saved = MutateJsonList<FinishedInbound, FinishedInbound>(FinishedInboundsFile, "finished_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
-                var before = new FinishedInbound { Id = item.Id, Code = item.Code, BomId = item.BomId, BomCode = item.BomCode, ModelCostId = item.ModelCostId, ProductName = item.ProductName, Quantity = item.Quantity, UnitCost = item.UnitCost, Amount = item.Amount, InboundDate = item.InboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
-                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
-                    || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
+                previousWorkOrderId = item.WorkOrderId;
+                var before = new FinishedInbound { Id = item.Id, Code = item.Code, WorkOrderId = item.WorkOrderId, WorkOrderNo = item.WorkOrderNo, BomId = item.BomId, BomCode = item.BomCode, BomName = item.BomName, ModelCostId = item.ModelCostId, ModelCostName = item.ModelCostName, ProductName = item.ProductName, Quantity = item.Quantity, UnitCost = item.UnitCost, Amount = item.Amount, InboundDate = item.InboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
+                bool lockedBomChange = !string.IsNullOrWhiteSpace(item.BomId) && !string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal);
+                bool lockedModelCostChange = !string.IsNullOrWhiteSpace(item.ModelCostId) && !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal);
+                if (IsConfirmedStatus(item.Status) && (lockedBomChange || lockedModelCostChange
                     || !string.Equals(item.ProductName ?? "", input.ProductName ?? "", StringComparison.OrdinalIgnoreCase)))
                     BizFail(ReferenceLockMessage, 409);
                 ValidateFinishedInboundRollbackStock(item, input);
-                item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
+                item.WorkOrderId = input.WorkOrderId; item.WorkOrderNo = input.WorkOrderNo;
+                item.BomId = input.BomId; item.BomCode = input.BomCode; item.BomName = input.BomName;
+                item.ModelCostId = input.ModelCostId; item.ModelCostName = input.ModelCostName;
                 item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
                 item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
                 item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 RecordFinishedInboundMovement(user, before, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
+            RefreshProductionWorkOrderProgressFor(previousWorkOrderId, saved.WorkOrderId);
             var detail = BuildFinishedInboundAuditDetail(saved);
             Audit(user, "修改成品入库", detail);
             AuditStatusTransition(user, "确认成品入库", "取消成品入库", previousStatus, saved.Status, detail);
@@ -6158,11 +6520,13 @@ namespace SupplierErpApp
         static void DeleteFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             string auditCode = null;
+            string workOrderId = null;
             RunUnderDataLock(() =>
             {
                 var item = ReadJsonListCore<FinishedInbound>(FinishedInboundsFile).FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 auditCode = item.Code;
+                workOrderId = item.WorkOrderId;
             });
             EnforceDeleteImpact("finishedInbound", id, user, ctx, auditCode);
             MutateJsonList<FinishedInbound, object>(FinishedInboundsFile, "finished_inbounds", list =>
@@ -6174,6 +6538,7 @@ namespace SupplierErpApp
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
+            RefreshProductionWorkOrderProgressFor(workOrderId);
             Audit(user, "删除成品入库", auditCode); WriteJson(ctx, new { ok = true });
         }
 
@@ -6548,6 +6913,7 @@ namespace SupplierErpApp
                 new BackupFileSpec { Path = PurchaseOrderSequenceFile, FileName = "purchase_order_sequence.json" },
                 new BackupFileSpec { Path = PurchaseInboundsFile, FileName = "purchase_inbounds.json" },
                 new BackupFileSpec { Path = PurchaseInboundSequenceFile, FileName = "purchase_inbound_sequence.json" },
+                new BackupFileSpec { Path = ProductionWorkOrdersFile, FileName = "production-work-orders.json" },
                 new BackupFileSpec { Path = ProductionPicksFile, FileName = "production_picks.json" },
                 new BackupFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json" },
                 new BackupFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json" },
@@ -6626,6 +6992,7 @@ namespace SupplierErpApp
                 new ClearDataFileSpec { Path = PurchaseOrderSequenceFile, FileName = "purchase_order_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = PurchaseInboundsFile, FileName = "purchase_inbounds.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = PurchaseInboundSequenceFile, FileName = "purchase_inbound_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = ProductionWorkOrdersFile, FileName = "production-work-orders.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = ProductionPicksFile, FileName = "production_picks.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json", EmptyContent = "[]" },
