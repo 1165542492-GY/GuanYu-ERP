@@ -25,9 +25,41 @@ namespace SupplierErpApp
                 .Sum(x => x.Quantity);
         }
 
+        static void EnrichSalesOrderFulfillmentFields(System.Collections.Generic.IEnumerable<SalesOrder> orders)
+        {
+            if (orders == null) return;
+            foreach (var order in orders)
+            {
+                if (order == null) continue;
+                var shipped = RoundMoney(GetConfirmedOutboundQtyForSalesOrder(order.Id));
+                var remaining = RoundMoney(order.Quantity - shipped);
+                order.ShippedQuantity = shipped;
+                order.RemainingQuantity = remaining > 0 ? remaining : 0;
+                if (shipped <= 0) order.OutboundStatus = "未出库";
+                else if (shipped + 0.0001m < order.Quantity) order.OutboundStatus = "部分出库";
+                else order.OutboundStatus = "已出库";
+            }
+        }
+
+        static void EnrichPurchaseOrderFulfillmentFields(System.Collections.Generic.IEnumerable<PurchaseOrder> orders)
+        {
+            if (orders == null) return;
+            foreach (var order in orders)
+            {
+                if (order == null) continue;
+                var received = RoundMoney(GetConfirmedInboundQtyForPurchaseOrder(order.Id));
+                var remaining = RoundMoney(order.Quantity - received);
+                order.ReceivedQuantity = received;
+                order.RemainingQuantity = remaining > 0 ? remaining : 0;
+                if (received <= 0) order.InboundStatus = "未入库";
+                else if (received + 0.0001m < order.Quantity) order.InboundStatus = "部分入库";
+                else order.InboundStatus = "已入库";
+            }
+        }
+
         static void ValidateSalesOutboundRemainingQty(SalesOutbound item, string excludeOutboundId = null)
         {
-            if (item == null || string.IsNullOrWhiteSpace(item.SalesOrderId)) return;
+            if (item == null || !IsConfirmedStatus(item.Status) || string.IsNullOrWhiteSpace(item.SalesOrderId)) return;
             var order = LoadSalesOrders().FirstOrDefault(x => x.Id == item.SalesOrderId);
             if (order == null) return;
             if (!IsConfirmedStatus(order.Status)) BizFail("来源销售订单尚未确认，不能出库");
@@ -39,7 +71,7 @@ namespace SupplierErpApp
 
         static void ValidatePurchaseInboundRemainingQty(PurchaseInbound item, string excludeInboundId = null)
         {
-            if (item == null || string.IsNullOrWhiteSpace(item.PurchaseOrderId)) return;
+            if (item == null || !IsConfirmedStatus(item.Status) || string.IsNullOrWhiteSpace(item.PurchaseOrderId)) return;
             var order = LoadPurchaseOrders().FirstOrDefault(x => x.Id == item.PurchaseOrderId);
             if (order == null) return;
             if (!IsConfirmedStatus(order.Status)) BizFail("来源采购单尚未确认，不能入库");

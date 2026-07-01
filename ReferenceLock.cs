@@ -126,33 +126,47 @@ namespace SupplierErpApp
         {
             if (existing == null || input == null) return;
             bool hasOutbound = outbounds.Any(x => x.SalesOrderId == existing.Id);
-            bool hasAutoReceivable = receivables.Any(x => x.SalesOrderId == existing.Id);
-            if (!hasOutbound && !hasAutoReceivable) return;
-            bool keyChanged =
+            var linkedReceivables = receivables.Where(x => x.SalesOrderId == existing.Id).ToList();
+            if (!hasOutbound && linkedReceivables.Count == 0) return;
+            bool identityChanged =
                 !string.Equals(existing.CustomerId ?? "", input.CustomerId ?? "", StringComparison.Ordinal) ||
+                !string.Equals(existing.ItemType ?? "", input.ItemType ?? "", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(existing.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal) ||
+                !string.Equals(existing.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal) ||
                 !string.Equals(existing.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal) ||
                 !string.Equals(existing.MaterialCode ?? "", input.MaterialCode ?? "", StringComparison.OrdinalIgnoreCase) ||
-                existing.Quantity != input.Quantity ||
+                existing.Quantity != input.Quantity;
+            if (identityChanged) BizFail(ReferenceLockMessage, 409);
+            bool amountChanged =
                 existing.TaxExcludedSalePrice != input.TaxExcludedSalePrice ||
                 existing.TaxIncludedSalePrice != input.TaxIncludedSalePrice ||
+                existing.TaxExcludedSaleAmount != input.TaxExcludedSaleAmount ||
+                existing.TaxIncludedSaleAmount != input.TaxIncludedSaleAmount ||
+                existing.UnitPrice != input.UnitPrice ||
                 existing.Amount != input.Amount;
-            if (keyChanged) BizFail(ReferenceLockMessage, 409);
+            if (amountChanged && linkedReceivables.Any(x => x.ReceivedAmount > 0 || (x.ReceiptDetails != null && x.ReceiptDetails.Count > 0)))
+                BizFail("该销售订单已有收款，不能修改金额相关字段。", 409);
         }
 
         static void EnsurePurchaseOrderReferenceLockForEdit(PurchaseOrder existing, PurchaseOrder input, List<PurchaseInbound> inbounds, List<Payable> payables)
         {
             if (existing == null || input == null) return;
             bool hasInbound = inbounds.Any(x => x.PurchaseOrderId == existing.Id);
-            bool hasAutoPayable = payables.Any(x => x.PurchaseOrderId == existing.Id);
-            if (!hasInbound && !hasAutoPayable) return;
-            bool keyChanged =
+            var linkedPayables = payables.Where(x => x.PurchaseOrderId == existing.Id).ToList();
+            if (!hasInbound && linkedPayables.Count == 0) return;
+            bool identityChanged =
+                !string.Equals(existing.SupplierId ?? "", input.SupplierId ?? "", StringComparison.Ordinal) ||
                 !string.Equals(existing.SupplierName ?? "", input.SupplierName ?? "", StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(existing.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal) ||
                 !string.Equals(existing.MaterialCode ?? "", input.MaterialCode ?? "", StringComparison.OrdinalIgnoreCase) ||
-                existing.Quantity != input.Quantity ||
+                existing.Quantity != input.Quantity;
+            if (identityChanged) BizFail(ReferenceLockMessage, 409);
+            bool amountChanged =
                 existing.UnitPrice != input.UnitPrice ||
+                !string.Equals(existing.PriceType ?? "", input.PriceType ?? "", StringComparison.OrdinalIgnoreCase) ||
                 existing.Amount != input.Amount;
-            if (keyChanged) BizFail(ReferenceLockMessage, 409);
+            if (amountChanged && linkedPayables.Any(x => x.PaidAmount > 0 || (x.PaymentDetails != null && x.PaymentDetails.Count > 0)))
+                BizFail("该采购单已有付款，不能修改金额相关字段。", 409);
         }
 
         static void EnsureConfirmedInventoryDocDeleteBlocked(string status, string docLabel)

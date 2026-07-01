@@ -85,6 +85,74 @@ namespace SupplierErpApp
                 new StockMapOptions { ExcludeProductionPickId = excludeId });
         }
 
+        static decimal GetPositiveSourceRollbackQty(decimal currentQty, string currentStatus, decimal nextQty, string nextStatus)
+        {
+            if (!IsConfirmedStatus(currentStatus)) return 0;
+            if (!IsConfirmedStatus(nextStatus)) return currentQty;
+            var rollbackQty = currentQty - nextQty;
+            return rollbackQty > 0 ? rollbackQty : 0;
+        }
+
+        static void EnsureMaterialStockRollbackAvailable(decimal rollbackQty, string materialId, string materialCode, string materialName, string docName)
+        {
+            if (rollbackQty <= 0) return;
+            decimal available = GetMaterialAvailableQty(materialId, materialCode, materialName);
+            if (available + 0.0001m >= rollbackQty) return;
+
+            string mid, mcode, mname, mspec, munit;
+            ResolveMaterialFields(materialId, materialName, out mid, out mcode, out mname, out mspec, out munit);
+            if (!string.IsNullOrWhiteSpace(materialCode)) mcode = materialCode;
+            string display = !string.IsNullOrWhiteSpace(mcode) ? mcode + " " + mname : (!string.IsNullOrWhiteSpace(mname) ? mname : (materialName ?? "未知物料"));
+            BizFail(string.Format("物料「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty)), 409);
+        }
+
+        static void EnsureFinishedProductStockRollbackAvailable(decimal rollbackQty, string modelCostId, string bomId, string productName, string docName)
+        {
+            if (rollbackQty <= 0) return;
+            decimal available = GetFinishedProductAvailableQty(modelCostId, bomId, productName);
+            if (available + 0.0001m >= rollbackQty) return;
+
+            string display = !string.IsNullOrWhiteSpace(productName) ? productName : "成品";
+            BizFail(string.Format("成品「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty)), 409);
+        }
+
+        static void ValidatePurchaseInboundRollbackStock(PurchaseInbound current, PurchaseInbound next = null)
+        {
+            if (current == null) return;
+            var nextQty = next == null ? 0 : next.Quantity;
+            var nextStatus = next == null ? "" : next.Status;
+            var rollbackQty = GetPositiveSourceRollbackQty(current.Quantity, current.Status, nextQty, nextStatus);
+            EnsureMaterialStockRollbackAvailable(rollbackQty, current.MaterialId, current.MaterialCode, current.MaterialName, "采购入库");
+        }
+
+        static void ValidatePurchaseInboundRollbackStock(System.Collections.Generic.IEnumerable<PurchaseInbound> items)
+        {
+            if (items == null) return;
+            var rows = new System.Collections.Generic.List<Tuple<string, string, string, string, decimal>>();
+            foreach (var item in items)
+            {
+                if (item == null || !IsConfirmedStatus(item.Status)) continue;
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                if (!string.IsNullOrWhiteSpace(item.MaterialCode)) mcode = item.MaterialCode;
+                rows.Add(Tuple.Create(StockKey("物料", mid, mname), mid, mcode, mname, item.Quantity));
+            }
+            foreach (var group in rows.GroupBy(x => x.Item1))
+            {
+                var first = group.First();
+                EnsureMaterialStockRollbackAvailable(group.Sum(x => x.Item5), first.Item2, first.Item3, first.Item4, "采购入库");
+            }
+        }
+
+        static void ValidateFinishedInboundRollbackStock(FinishedInbound current, FinishedInbound next = null)
+        {
+            if (current == null) return;
+            var nextQty = next == null ? 0 : next.Quantity;
+            var nextStatus = next == null ? "" : next.Status;
+            var rollbackQty = GetPositiveSourceRollbackQty(current.Quantity, current.Status, nextQty, nextStatus);
+            EnsureFinishedProductStockRollbackAvailable(rollbackQty, current.ModelCostId, current.BomId, current.ProductName, "成品入库");
+        }
+
         static void SyncAutoReceivableInMemory(SalesOrder order, List<Receivable> receivables, UserSession user)
         {
             if (order == null || string.IsNullOrWhiteSpace(order.Id)) return;

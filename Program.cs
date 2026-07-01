@@ -455,6 +455,9 @@ namespace SupplierErpApp
         public decimal TaxIncludedSaleAmount { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
+        public decimal ShippedQuantity { get; set; }
+        public decimal RemainingQuantity { get; set; }
+        public string OutboundStatus { get; set; }
         public string OrderDate { get; set; }
         public string Status { get; set; }
         public string Note { get; set; }
@@ -500,6 +503,9 @@ namespace SupplierErpApp
         public decimal UnitPrice { get; set; }
         public string PriceType { get; set; }
         public decimal Amount { get; set; }
+        public decimal ReceivedQuantity { get; set; }
+        public decimal RemainingQuantity { get; set; }
+        public string InboundStatus { get; set; }
         public string OrderDate { get; set; }
         public string Status { get; set; }
         public string Note { get; set; }
@@ -4996,7 +5002,12 @@ namespace SupplierErpApp
             return DateTimeOffset.UtcNow.ToString("O");
         }
 
-        static List<SalesOrder> LoadSalesOrders() { return LoadJsonList<SalesOrder>(SalesOrdersFile); }
+        static List<SalesOrder> LoadSalesOrders()
+        {
+            var items = LoadJsonList<SalesOrder>(SalesOrdersFile);
+            EnrichSalesOrderFulfillmentFields(items);
+            return items;
+        }
         static void SaveSalesOrders(List<SalesOrder> items) { SaveJsonList(SalesOrdersFile, "sales_orders", items); }
 
         static void ResolveCustomerFields(SalesOrder item)
@@ -5118,7 +5129,7 @@ namespace SupplierErpApp
         static List<SalesOutbound> LoadSalesOutbounds() { return LoadJsonList<SalesOutbound>(SalesOutboundsFile); }
         static void SaveSalesOutbounds(List<SalesOutbound> items) { SaveJsonList(SalesOutboundsFile, "sales_outbounds", items); }
 
-        static void ApplySalesOutbound(SalesOutbound item)
+        static void ApplySalesOutbound(SalesOutbound item, string excludeOutboundId = null)
         {
             if (item == null) BizFail("数据不能为空");
             ResolveSalesOrderLink(item);
@@ -5137,12 +5148,12 @@ namespace SupplierErpApp
                 if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
             }
             if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
-            ValidateSalesOutboundRemainingQty(item);
+            item.Status = NormalizeDocStatus(item.Status);
+            ValidateSalesOutboundRemainingQty(item, excludeOutboundId);
             AutoResolveSalesOutboundCost(item);
             if (item.CostPrice < 0) BizFail("成本单价不能为负数");
             item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.OutboundDate = string.IsNullOrWhiteSpace(item.OutboundDate) ? TodayText() : item.OutboundDate.Trim();
-            item.Status = NormalizeDocStatus(item.Status);
             item.Note = (item.Note ?? "").Trim();
         }
 
@@ -5163,7 +5174,7 @@ namespace SupplierErpApp
 
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
         {
-            var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input);
+            var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input, id);
             ValidateSalesOutboundRemainingQty(input, id);
             ValidateStockForConfirmedOutbound(input, id);
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
@@ -5171,8 +5182,7 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "销售出库");
-                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity
+                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.SalesOrderId ?? "", input.SalesOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
                     || !string.Equals(NormalizeSalesItemType(item.ItemType), NormalizeSalesItemType(input.ItemType), StringComparison.OrdinalIgnoreCase)))
@@ -5210,7 +5220,12 @@ namespace SupplierErpApp
             Audit(user, "删除销售出库", auditCode); WriteJson(ctx, new { ok = true });
         }
 
-        static List<PurchaseOrder> LoadPurchaseOrders() { return LoadJsonList<PurchaseOrder>(PurchaseOrdersFile); }
+        static List<PurchaseOrder> LoadPurchaseOrders()
+        {
+            var items = LoadJsonList<PurchaseOrder>(PurchaseOrdersFile);
+            EnrichPurchaseOrderFulfillmentFields(items);
+            return items;
+        }
         static void SavePurchaseOrders(List<PurchaseOrder> items) { SaveJsonList(PurchaseOrdersFile, "purchase_orders", items); }
 
         static void ApplyPurchaseOrder(PurchaseOrder item)
@@ -5263,7 +5278,7 @@ namespace SupplierErpApp
         static List<PurchaseInbound> LoadPurchaseInbounds() { return LoadJsonList<PurchaseInbound>(PurchaseInboundsFile); }
         static void SavePurchaseInbounds(List<PurchaseInbound> items) { SaveJsonList(PurchaseInboundsFile, "purchase_inbounds", items); }
 
-        static void ApplyPurchaseInbound(PurchaseInbound item)
+        static void ApplyPurchaseInbound(PurchaseInbound item, string excludeInboundId = null)
         {
             if (item == null) BizFail("数据不能为空");
             ResolvePurchaseOrderLink(item);
@@ -5275,11 +5290,11 @@ namespace SupplierErpApp
             item.PurchaseNo = (item.PurchaseNo ?? "").Trim();
             if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("请选择物料");
             if (item.Quantity <= 0) BizFail("入库数量必须大于 0");
-            ValidatePurchaseInboundRemainingQty(item);
+            item.Status = NormalizeDocStatus(item.Status);
+            ValidatePurchaseInboundRemainingQty(item, excludeInboundId);
             if (item.InboundPrice < 0) BizFail("入库单价不能为负数");
             item.Amount = CalcLineAmount(item.Quantity, item.InboundPrice);
             item.InboundDate = string.IsNullOrWhiteSpace(item.InboundDate) ? TodayText() : item.InboundDate.Trim();
-            item.Status = NormalizeDocStatus(item.Status);
             item.Note = (item.Note ?? "").Trim();
         }
 
@@ -5299,16 +5314,17 @@ namespace SupplierErpApp
 
         static void UpdatePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
-            var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input);
+            var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input, id);
             ValidatePurchaseInboundRemainingQty(input, id);
             var saved = MutateJsonList<PurchaseInbound, PurchaseInbound>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "采购入库");
-                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.PurchaseOrderId ?? "", input.PurchaseOrderId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
+                ValidatePurchaseInboundRollbackStock(item, input);
                 item.PurchaseOrderId = input.PurchaseOrderId; item.PurchaseNo = input.PurchaseNo;
                 item.SupplierName = input.SupplierName; item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
@@ -5333,6 +5349,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
+                ValidatePurchaseInboundRollbackStock(item);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5355,6 +5372,7 @@ namespace SupplierErpApp
             {
                 var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
                 if (removed.Count == 0) throw new BusinessException("未找到可删除的" + label, 404);
+                if (auditKey == "purchase_inbound") ValidatePurchaseInboundRollbackStock(removed.OfType<PurchaseInbound>());
                 foreach (var item in removed) list.Remove(item);
                 return new JsonMutationResult<int>(removed.Count, true);
             });
@@ -5635,10 +5653,8 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                if (IsConfirmedStatus(item.Status) && IsConfirmedStatus(input.Status))
-                    BizFail("该生产领用已确认，不能重复确认。", 409);
-                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "生产领用");
-                if (IsConfirmedStatus(item.Status) && (item.Quantity != input.Quantity || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
+                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
                 item.BomId = input.BomId; item.BomName = input.BomName;
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode; item.MaterialName = input.MaterialName;
@@ -6053,9 +6069,11 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
-                EnsureConfirmedInventoryDocEditBlocked(item.Status, input.Status, "成品入库");
-                if (IsConfirmedStatus(item.Status) && item.Quantity != input.Quantity)
+                if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
+                    || !string.Equals(item.ProductName ?? "", input.ProductName ?? "", StringComparison.OrdinalIgnoreCase)))
                     BizFail(ReferenceLockMessage, 409);
+                ValidateFinishedInboundRollbackStock(item, input);
                 item.BomId = input.BomId; item.BomCode = input.BomCode; item.ModelCostId = input.ModelCostId;
                 item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
                 item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
@@ -6079,6 +6097,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
+                ValidateFinishedInboundRollbackStock(item);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });

@@ -121,18 +121,19 @@ function bizBuildListNextActions(cfg,x,detailMode){
 if(!x||x.Status==='已取消')return '';
 var acts='',id=safe(x.Id);
 if(cfg.view==='salesOrderView'){
+if(numVal(x.RemainingQuantity)>0.0001&&can('sales_outbound.view'))acts+=bizNextBtn('转出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
 if(x.ItemType==='FinishedProduct'){
 if(can('production_pick.view'))acts+=bizNextBtn('下一步：生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
 }else if(x.ItemType==='Material'){
-if(can('sales_outbound.view'))acts+=bizNextBtn('下一步：销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
+if(!acts&&can('sales_outbound.view'))acts+=bizNextBtn('下一步：销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
 }else{
-if(can('sales_outbound.view'))acts+=bizNextBtn('前往销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
+if(!acts&&can('sales_outbound.view'))acts+=bizNextBtn('前往销售出库','bizNextFromSalesOrder(\''+id+'\',\'outbound\')');
 if(can('production_pick.view'))acts+=bizNextBtn('前往生产工单','bizNextFromSalesOrder(\''+id+'\',\'pwo\')');
 if(!detailMode)acts+='<span class="mini" style="display:block;margin-top:4px;color:var(--muted)">现货/配件直接出库；需要车间生产的设备先建生产工单。</span>';
 }
 }
 if(cfg.view==='purchaseOrderView'&&x.Status!=='已取消'&&can('purchase_inbound.view')){
-acts+=bizNextBtn('下一步：采购入库','bizNextFromPurchaseOrder(\''+id+'\')');
+acts+=bizNextBtn(numVal(x.RemainingQuantity)>0.0001?'转入库':'下一步：采购入库','bizNextFromPurchaseOrder(\''+id+'\')');
 }
 if(cfg.view==='receivableView'&&numVal(x.UnreceivedAmount)>0.0001&&arapDetailCan('receipt','view')){
 acts+=bizNextBtn('下一步：登记收款','bizNextRegisterReceipt(\''+id+'\')');
@@ -239,6 +240,7 @@ var bizModules={
 {key:'MaterialName',label:'产品/物料名称',readonly:1,section:'basic',autoTag:1},
 {key:'ModelCostId',label:'内部成本关联',type:'refSelect',ref:'modelCosts',display:'ModelName',section:'internal',costHidden:1,batchRef:1,showWhen:{key:'ItemType',value:'FinishedProduct'},fill:{BomId:'BomId',MaterialCode:'ModelCode',MaterialName:'ProductName'}},
 {key:'Quantity',label:'数量',type:'number',step:'0.01',req:1,calc:1,section:'qty'},{key:'MaterialUnit',label:'单位',readonly:1,section:'qty',autoTag:1},
+{key:'ShippedQuantity',label:'已出库数量',readonly:1,section:'qty',autoTag:1,uiOnly:1},{key:'RemainingQuantity',label:'未出库数量',readonly:1,section:'qty',autoTag:1,uiOnly:1},{key:'OutboundStatus',label:'出库状态',readonly:1,section:'status',autoTag:1,uiOnly:1},
 {key:'TaxExcludedSalePrice',label:'不含税销售单价',type:'number',step:'0.01',calc:1,money:1,taxPrice:1,section:'qty'},{key:'TaxIncludedSalePrice',label:'含税销售单价',type:'number',step:'0.01',calc:1,money:1,taxPrice:1,section:'qty'},
 {key:'TaxExcludedSaleAmount',label:'不含税销售金额',type:'number',step:'0.01',readonly:1,money:1,section:'qty',computed:function(r){return numVal(r.Quantity)*numVal(r.TaxExcludedSalePrice)}},
 {key:'TaxIncludedSaleAmount',label:'含税销售金额',type:'number',step:'0.01',readonly:1,money:1,section:'qty',computed:function(r){return numVal(r.Quantity)*numVal(r.TaxIncludedSalePrice)}},
@@ -260,6 +262,7 @@ var bizModules={
 {key:'MaterialId',label:'物料',type:'refSelect',ref:'materials',display:'NameSpec',req:1,batchRef:1,section:'basic',fill:{MaterialCode:'Code',MaterialName:'NameSpec'}},
 {key:'MaterialName',label:'物料名称',readonly:1,section:'basic',autoTag:1},{key:'MaterialUnit',label:'单位',readonly:1,section:'qty',autoTag:1},
 {key:'Quantity',label:'采购数量',type:'number',step:'0.01',req:1,calc:1,section:'qty'},
+{key:'ReceivedQuantity',label:'已入库数量',readonly:1,section:'qty',autoTag:1,uiOnly:1},{key:'RemainingQuantity',label:'未入库数量',readonly:1,section:'qty',autoTag:1,uiOnly:1},{key:'InboundStatus',label:'入库状态',readonly:1,section:'status',autoTag:1,uiOnly:1},
 {key:'UnitPrice',label:'采购单价',type:'number',step:'0.01',readonly:1,money:1,section:'qty',autoTag:1},
 {key:'PriceType',label:'价格类型',type:'select',options:['含税','不含税'],readonly:1,section:'qty',autoTag:1},
 {key:'Amount',label:'采购金额',type:'number',step:'0.01',readonly:1,money:1,section:'qty',computed:function(r){return numVal(r.Quantity)*numVal(r.UnitPrice)}},
@@ -383,7 +386,7 @@ if(/Quantity|Qty/i.test(f.key||'')||/鏁伴噺/.test(f.label||''))return 'col-qt
 return '';
 }
 function bizListFields(cfg){
-var keepKeys={'sales-order':['CustomerName','ItemType','MaterialName','Quantity','TaxIncludedSaleAmount','OrderDate','Status'],'sales-outbound':['SalesOrderNo','CustomerName','MaterialName','Quantity','OutboundDate','Status'],'purchase-order':['SupplierName','MaterialName','Quantity','Amount','OrderDate','Status'],'purchase-inbound':['PurchaseNo','SupplierName','MaterialName','Quantity','Amount','InboundDate','Status'],'production-pick':['BomName','MaterialName','Quantity','PickDate','Status'],'finished-inbound':['ProductName','Quantity','Amount','InboundDate','Status'],'receivable':['SalesOrderNo','CustomerName','ReceivableAmount','ReceivedAmount','UnreceivedAmount','DueDate','Status'],'payable':['PurchaseNo','SupplierName','PayableAmount','PaidAmount','UnpaidAmount','DueDate','Status']};
+var keepKeys={'sales-order':['CustomerName','ItemType','MaterialName','Quantity','ShippedQuantity','RemainingQuantity','OutboundStatus','TaxIncludedSaleAmount','OrderDate','Status'],'sales-outbound':['SalesOrderNo','CustomerName','MaterialName','Quantity','OutboundDate','Status'],'purchase-order':['SupplierName','MaterialName','Quantity','ReceivedQuantity','RemainingQuantity','InboundStatus','Amount','OrderDate','Status'],'purchase-inbound':['PurchaseNo','SupplierName','MaterialName','Quantity','Amount','InboundDate','Status'],'production-pick':['BomName','MaterialName','Quantity','PickDate','Status'],'finished-inbound':['ProductName','Quantity','Amount','InboundDate','Status'],'receivable':['SalesOrderNo','CustomerName','ReceivableAmount','ReceivedAmount','UnreceivedAmount','DueDate','Status'],'payable':['PurchaseNo','SupplierName','PayableAmount','PaidAmount','UnpaidAmount','DueDate','Status']};
 var page=null;for(var pk in bizModules){if(bizModules[pk]===cfg){page=pk;break}}
 var keys=keepKeys[page];
 if(keys)return cfg.fields.filter(function(f){return keys.indexOf(f.key)>=0});
