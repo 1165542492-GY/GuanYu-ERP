@@ -735,10 +735,13 @@ namespace SupplierErpApp
 
         static void WriteSalesOutboundSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "销售出库", new[] { "出库编号", "出库日期", "销售订单号", "客户名称", "物料编号", "物料名称", "出库数量", "成本单价", "成本金额", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "销售出库", new[] { "出库编号", "出库日期", "销售订单号", "客户名称", "物料编号", "物料名称", "出库数量", "成本单价", "成本金额", "状态", "备注", "最后更新", "操作人", "出库明细JSON" });
             int r = 2;
             foreach (var x in LoadSalesOutbounds())
-                WriteRow(ws, r++, x.Code, DateOnly(x.OutboundDate), x.SalesOrderNo, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.CostPrice), Money2(x.CostAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            {
+                string linesJson = (x.Lines == null || x.Lines.Count == 0) ? "" : Json.Serialize(x.Lines);
+                WriteRow(ws, r++, x.Code, DateOnly(x.OutboundDate), x.SalesOrderNo, x.CustomerName, x.MaterialCode, x.MaterialName, x.Quantity, Money2(x.CostPrice), Money2(x.CostAmount), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy, linesJson);
+            }
         }
 
         static void WritePurchaseOrderSheet(XLWorkbook wb)
@@ -794,7 +797,7 @@ namespace SupplierErpApp
                     Money2(x.ReceivableAmount), Money2(x.ReceivedAmount), Money2(x.UnreceivedAmount),
                     x.ReceivableNo, x.Remark, x.UpdatedAt, x.UpdatedBy);
             }
-            ws.Cell(r, 1).Value = "说明：配件明细JSON 为配件行数组；导入时按规则重算金额，不自动扣库存、不自动生成应收（可关联已有应收单号）。";
+            ws.Cell(r, 1).Value = "说明：配件明细JSON 为维修物料行数组；含领料/退料/补领/调整字段的行会按状态写入库存流水，不自动生成应收（可关联已有应收单号）。";
         }
 
         static void WriteReceivableSheet(XLWorkbook wb)
@@ -1165,6 +1168,12 @@ namespace SupplierErpApp
                     {
                         decimal qty = Money(Cell(row, "出库数量", "数量")), cost = Money(Cell(row, "成本单价", "单价"));
                         if (qty < 0 || cost < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
+                        var previewLinesJson = Cell(row, "出库明细JSON", "明细JSON");
+                        if (!Placeholder(previewLinesJson))
+                        {
+                            try { Json.Deserialize<List<SalesOutboundLine>>(previewLinesJson.Trim()); }
+                            catch { AddErr(res, errors, rowNo, "出库明细JSON 格式无效"); continue; }
+                        }
                         res.Added++; continue;
                     }
                     var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
@@ -1176,11 +1185,19 @@ namespace SupplierErpApp
                         Quantity = Money(Cell(row, "出库数量", "数量")), CostPrice = Money(Cell(row, "成本单价", "单价")),
                         OutboundDate = Cell(row, "出库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
+                    var linesJson = Cell(row, "出库明细JSON", "明细JSON");
+                    if (!Placeholder(linesJson))
+                    {
+                        try { item.Lines = Json.Deserialize<List<SalesOutboundLine>>(linesJson.Trim()) ?? new List<SalesOutboundLine>(); }
+                        catch { AddErr(res, errors, rowNo, "出库明细JSON 格式无效"); continue; }
+                    }
                     if (item.Quantity < 0 || item.CostPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
                     ApplySalesOutbound(item);
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
+                    AttachSalesOutboundLineParent(item);
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                    RecordSalesOutboundMovement(user, null, item);
                     list.Insert(0, item); res.Added++; changed = true;
                 }
                 catch (Exception ex) { AddErr(res, errors, rowNo, ex.Message); }
@@ -1608,6 +1625,7 @@ namespace SupplierErpApp
                         if (existing != null)
                         {
                             if (previewOnly) { res.Updated++; continue; }
+                            var before = CloneAfterSalesServiceOrder(existing);
                             existing.ServiceDate = item.ServiceDate;
                             existing.CustomerId = item.CustomerId;
                             existing.CustomerName = item.CustomerName;
@@ -1630,13 +1648,16 @@ namespace SupplierErpApp
                             existing.ReceivableId = item.ReceivableId;
                             existing.ReceivableNo = item.ReceivableNo;
                             ApplyAfterSalesServiceOrder(existing, preserveReceivableLink: !string.IsNullOrWhiteSpace(existing.ReceivableId));
+                            ValidateStockForAfterSalesServiceOrder(existing, existing.Id);
                             existing.UpdatedAt = NowTimeString();
                             existing.UpdatedBy = user.DisplayName;
+                            RecordAfterSalesServiceMovement(user, before, existing);
                             res.Updated++; changed = true;
                         }
                         else
                         {
                             if (previewOnly) { res.Added++; continue; }
+                            ValidateStockForAfterSalesServiceOrder(item);
                             item.Id = Guid.NewGuid().ToString("N");
                             if (Placeholder(item.ServiceNo) || list.Any(x => string.Equals(x.ServiceNo, item.ServiceNo, StringComparison.OrdinalIgnoreCase)))
                                 item.ServiceNo = NextAfterSalesServiceNo(list);
@@ -1644,6 +1665,7 @@ namespace SupplierErpApp
                             item.CreatedBy = user.DisplayName;
                             item.UpdatedAt = NowTimeString();
                             item.UpdatedBy = user.DisplayName;
+                            RecordAfterSalesServiceMovement(user, null, item);
                             list.Insert(0, item);
                             res.Added++; changed = true;
                         }

@@ -27,7 +27,9 @@ namespace SupplierErpApp
         public decimal ChangeAmount { get; set; }
         public string SourceType { get; set; }
         public string SourceId { get; set; }
+        public string SourceLineId { get; set; }
         public string SourceNo { get; set; }
+        public string ActionType { get; set; }
         public string SourceStatus { get; set; }
         public string BusinessDate { get; set; }
         public string Operator { get; set; }
@@ -186,7 +188,7 @@ namespace SupplierErpApp
 
         static void RecordInventoryDelta(UserSession user, string itemType, string itemId, string itemCode, string itemName,
             string spec, string unit, decimal delta, decimal unitCost, string sourceType, string sourceId, string sourceNo,
-            string sourceStatus, string businessDate, bool positiveSource, string remark)
+            string sourceStatus, string businessDate, bool positiveSource, string remark, string actionType = "", string sourceLineId = "", string warehouseName = "")
         {
             if (delta == 0) return;
             string resolvedId = itemId ?? "", resolvedCode = itemCode ?? "", resolvedName = itemName ?? "", resolvedSpec = spec ?? "", resolvedUnit = unit ?? "";
@@ -207,7 +209,7 @@ namespace SupplierErpApp
                 Category = MovementCategory(itemType, resolvedId, resolvedCode),
                 Unit = resolvedUnit,
                 WarehouseId = "",
-                WarehouseName = MovementWarehouseName(itemType, resolvedId, resolvedCode),
+                WarehouseName = string.IsNullOrWhiteSpace(warehouseName) ? MovementWarehouseName(itemType, resolvedId, resolvedCode) : warehouseName,
                 Direction = InventoryDirectionFromDelta(delta, sourceStatus, positiveSource),
                 ChangeQuantity = delta,
                 BeforeQuantity = before,
@@ -216,7 +218,9 @@ namespace SupplierErpApp
                 ChangeAmount = Math.Abs(delta) * unitCost,
                 SourceType = sourceType,
                 SourceId = sourceId,
+                SourceLineId = sourceLineId,
                 SourceNo = sourceNo,
+                ActionType = actionType,
                 SourceStatus = sourceStatus,
                 BusinessDate = businessDate,
                 Operator = user == null ? "系统" : user.DisplayName,
@@ -236,24 +240,73 @@ namespace SupplierErpApp
                 "采购入库", source.Id, source.Code, status, source.InboundDate, true, "采购入库库存变动");
         }
 
+        static string InventoryImpactKey(InventoryImpactLine line)
+        {
+            if (line == null) return "";
+            return string.Join("|", new[] {
+                line.LineId ?? "",
+                line.LineNo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                line.ItemType ?? "",
+                line.ItemId ?? "",
+                line.ItemCode ?? "",
+                line.ItemName ?? "",
+                line.ActionType ?? ""
+            });
+        }
+
+        static Dictionary<string, InventoryImpactLine> AggregateInventoryImpacts(IEnumerable<InventoryImpactLine> rows)
+        {
+            var dict = new Dictionary<string, InventoryImpactLine>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows ?? Enumerable.Empty<InventoryImpactLine>())
+            {
+                if (row == null || row.Quantity == 0) continue;
+                var key = InventoryImpactKey(row);
+                InventoryImpactLine agg;
+                if (!dict.TryGetValue(key, out agg))
+                {
+                    agg = new InventoryImpactLine
+                    {
+                        ItemType = row.ItemType,
+                        ItemId = row.ItemId,
+                        ItemCode = row.ItemCode,
+                        ItemName = row.ItemName,
+                        Spec = row.Spec,
+                        Unit = row.Unit,
+                        UnitCost = row.UnitCost,
+                        LineId = row.LineId,
+                        LineNo = row.LineNo,
+                        ActionType = row.ActionType,
+                        WarehouseName = row.WarehouseName
+                    };
+                    dict[key] = agg;
+                }
+                agg.Quantity += row.Quantity;
+                if (agg.UnitCost <= 0 && row.UnitCost > 0) agg.UnitCost = row.UnitCost;
+            }
+            return dict;
+        }
+
         static void RecordSalesOutboundMovement(UserSession user, SalesOutbound before, SalesOutbound after, bool deleting = false)
         {
-            decimal beforeImpact = before != null && IsConfirmedStatus(before.Status) ? -before.Quantity : 0;
-            decimal afterImpact = after != null && IsConfirmedStatus(after.Status) ? -after.Quantity : 0;
-            decimal delta = afterImpact - beforeImpact;
-            if (delta == 0) return;
+            var beforeMap = AggregateInventoryImpacts(GetSalesOutboundStockImpacts(before));
+            var afterMap = AggregateInventoryImpacts(GetSalesOutboundStockImpacts(after));
+            var keys = beforeMap.Keys.Union(afterMap.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (keys.Count == 0) return;
             var source = after ?? before;
             string status = InventorySourceStatus(before == null ? null : before.Status, after == null ? null : after.Status, deleting);
-            if (IsFinishedProductOutbound(source))
+            foreach (var key in keys)
             {
-                string pid = GetFinishedProductStockId(source.ModelCostId, source.BomId);
-                RecordInventoryDelta(user, "成品", pid, source.BomCode ?? "", source.MaterialName, "", "台", delta, source.CostPrice,
-                    "销售出库", source.Id, source.Code, status, source.OutboundDate, false, "销售出库库存变动");
-            }
-            else
-            {
-                RecordInventoryDelta(user, "物料", source.MaterialId, source.MaterialCode, source.MaterialName, "", "", delta, source.CostPrice,
-                    "销售出库", source.Id, source.Code, status, source.OutboundDate, false, "销售出库库存变动");
+                InventoryImpactLine b, a;
+                beforeMap.TryGetValue(key, out b);
+                afterMap.TryGetValue(key, out a);
+                var line = a ?? b;
+                decimal delta = (a == null ? 0 : a.Quantity) - (b == null ? 0 : b.Quantity);
+                if (delta == 0 || line == null) continue;
+                string remark = "销售出库库存变动";
+                if (!string.IsNullOrWhiteSpace(line.ActionType)) remark += "，" + line.ActionType;
+                if (!string.IsNullOrWhiteSpace(line.ItemName)) remark += "，" + line.ItemName;
+                RecordInventoryDelta(user, line.ItemType, line.ItemId, line.ItemCode, line.ItemName, line.Spec, line.Unit, delta, line.UnitCost,
+                    "销售出库", source.Id, source.Code, status, source.OutboundDate, false, remark, line.ActionType, line.LineId, line.WarehouseName);
             }
         }
 
@@ -286,6 +339,41 @@ namespace SupplierErpApp
                 "成品入库", source.Id, sourceNo, status, source.InboundDate, true, remark);
         }
 
+        static string AfterSalesInventorySourceStatus(AfterSalesServiceOrder before, AfterSalesServiceOrder after, bool deleting)
+        {
+            if (deleting) return "删除回滚";
+            bool beforeActive = AfterSalesServiceInventoryActive(before);
+            bool afterActive = AfterSalesServiceInventoryActive(after);
+            if (!beforeActive && afterActive) return "维修领料";
+            if (beforeActive && !afterActive) return "取消回滚";
+            return "维修变更";
+        }
+
+        static void RecordAfterSalesServiceMovement(UserSession user, AfterSalesServiceOrder before, AfterSalesServiceOrder after, bool deleting = false)
+        {
+            var beforeMap = AggregateInventoryImpacts(GetAfterSalesServiceStockImpacts(before));
+            var afterMap = AggregateInventoryImpacts(GetAfterSalesServiceStockImpacts(after));
+            var keys = beforeMap.Keys.Union(afterMap.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (keys.Count == 0) return;
+            var source = after ?? before;
+            string status = AfterSalesInventorySourceStatus(before, after, deleting);
+            foreach (var key in keys)
+            {
+                InventoryImpactLine b, a;
+                beforeMap.TryGetValue(key, out b);
+                afterMap.TryGetValue(key, out a);
+                var line = a ?? b;
+                decimal delta = (a == null ? 0 : a.Quantity) - (b == null ? 0 : b.Quantity);
+                if (delta == 0 || line == null) continue;
+                string action = string.IsNullOrWhiteSpace(line.ActionType) ? "维修物料" : line.ActionType;
+                string remark = "维修业务库存变动，" + action;
+                if (!string.IsNullOrWhiteSpace(line.ItemName)) remark += "，" + line.ItemName;
+                RecordInventoryDelta(user, "物料", line.ItemId, line.ItemCode, line.ItemName, line.Spec, line.Unit, delta, line.UnitCost,
+                    "维修业务", source.Id, source.ServiceNo, status, source.ServiceDate, false, remark, action, line.LineId, line.WarehouseName);
+                try { Audit(user, "维修" + action, (source.ServiceNo ?? "") + " " + (line.ItemName ?? "") + " " + Math.Abs(delta).ToString("0.##")); } catch { }
+            }
+        }
+
         static IEnumerable<InventoryMovement> FilterInventoryMovements(HttpListenerContext ctx, IEnumerable<InventoryMovement> source)
         {
             string keyword = (GetQueryParam(ctx, "keyword") ?? "").Trim().ToLowerInvariant();
@@ -313,7 +401,7 @@ namespace SupplierErpApp
                 if (!string.IsNullOrWhiteSpace(dateTo) && string.Compare(date, dateTo, StringComparison.Ordinal) > 0) return false;
                 if (!string.IsNullOrWhiteSpace(keyword))
                 {
-                    string hay = string.Join(" ", new[] { x.MovementNo, x.MaterialCode, x.MaterialName, x.Spec, x.Category, x.WarehouseName, x.SourceType, x.SourceNo, x.SourceStatus, x.Remark }).ToLowerInvariant();
+                    string hay = string.Join(" ", new[] { x.MovementNo, x.MaterialCode, x.MaterialName, x.Spec, x.Category, x.WarehouseName, x.SourceType, x.SourceNo, x.SourceLineId, x.ActionType, x.SourceStatus, x.Remark }).ToLowerInvariant();
                     if (hay.IndexOf(keyword, StringComparison.Ordinal) < 0) return false;
                 }
                 return true;
@@ -344,7 +432,9 @@ namespace SupplierErpApp
                 x.ChangeAmount,
                 x.SourceType,
                 x.SourceId,
+                x.SourceLineId,
                 x.SourceNo,
+                x.ActionType,
                 x.SourceStatus,
                 x.BusinessDate,
                 x.Operator,
@@ -434,6 +524,8 @@ namespace SupplierErpApp
             string workOrderId = "";
             string workOrderNo = "";
             string documentNo = no;
+            string sourceLineId = movement.SourceLineId ?? "";
+            string actionType = movement.ActionType ?? "";
             bool found = false;
 
             if (type == "采购入库")
@@ -444,7 +536,19 @@ namespace SupplierErpApp
             else if (type == "销售出库")
             {
                 var x = LoadSalesOutbounds().FirstOrDefault(v => SameInventoryToken(v.Id, id) || SameInventoryToken(v.Code, no));
-                if (x != null) { found = true; businessDate = x.OutboundDate; title = x.CustomerName + " / " + x.MaterialName; }
+                if (x != null)
+                {
+                    found = true;
+                    businessDate = x.OutboundDate;
+                    documentNo = x.Code ?? no;
+                    var line = SalesOutboundLinesForUse(x).FirstOrDefault(v => SameInventoryToken(v.Id, sourceLineId));
+                    if (line != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(actionType)) actionType = NormalizeSalesOutboundLineType(line.LineType);
+                        title = x.CustomerName + " / " + NormalizeSalesOutboundLineType(line.LineType) + " / " + line.MaterialName;
+                    }
+                    else title = x.CustomerName + " / " + x.MaterialName;
+                }
             }
             else if (type == "生产领用")
             {
@@ -478,15 +582,35 @@ namespace SupplierErpApp
                     title = JoinInventorySourceNo(x.WorkOrderNo, x.Code, x.ProductName);
                 }
             }
+            else if (type == "维修业务")
+            {
+                var x = LoadAfterSalesServiceOrders().FirstOrDefault(v => SameInventoryToken(v.Id, id) || SameInventoryToken(v.ServiceNo, no));
+                if (x != null)
+                {
+                    found = true;
+                    businessDate = x.ServiceDate;
+                    status = string.IsNullOrWhiteSpace(x.Status) ? status : x.Status;
+                    documentNo = x.ServiceNo ?? no;
+                    var line = (x.Parts ?? new List<AfterSalesPartLine>()).FirstOrDefault(v => SameInventoryToken(v.Id, sourceLineId));
+                    if (line != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(actionType)) actionType = NormalizeAfterSalesPartActionType(line.ActionType);
+                        title = JoinInventorySourceNo(x.ServiceNo, actionType, line.MaterialName);
+                    }
+                    else title = JoinInventorySourceNo(x.ServiceNo, x.CustomerName, x.MachineName);
+                }
+            }
 
             return new
             {
                 SourceType = type,
                 SourceId = id,
+                SourceLineId = sourceLineId,
                 SourceNo = no,
                 DocumentNo = documentNo,
                 WorkOrderId = workOrderId,
                 WorkOrderNo = workOrderNo,
+                ActionType = actionType,
                 BusinessDate = businessDate,
                 SourceStatus = status,
                 Found = found,
@@ -505,14 +629,14 @@ namespace SupplierErpApp
         static void ExportInventoryMovementsCsv(HttpListenerContext ctx, UserSession user)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("时间,方向,物料编码,物料名称,规格型号,仓库,变化数量,变动前,变动后,单位,单价,金额,来源类型,来源单号,来源状态,操作人,备注");
+            sb.AppendLine("时间,方向,物料编码,物料名称,规格型号,仓库,变化数量,变动前,变动后,单位,单价,金额,来源类型,来源单号,来源行ID,动作类型,来源状态,操作人,备注");
             foreach (var x in FilterInventoryMovements(ctx, LoadInventoryMovements()).OrderByDescending(x => x.OccurredAt ?? x.CreatedAt ?? ""))
             {
                 sb.AppendLine(string.Join(",", new[]
                 {
                     x.OccurredAt, InventoryDirectionLabel(x.Direction), x.MaterialCode, x.MaterialName, x.Spec, x.WarehouseName,
                     x.ChangeQuantity.ToString("0.##"), x.BeforeQuantity.ToString("0.##"), x.AfterQuantity.ToString("0.##"),
-                    x.Unit, x.UnitCost.ToString("0.00"), x.ChangeAmount.ToString("0.00"), x.SourceType, x.SourceNo, x.SourceStatus, x.Operator, x.Remark
+                    x.Unit, x.UnitCost.ToString("0.00"), x.ChangeAmount.ToString("0.00"), x.SourceType, x.SourceNo, x.SourceLineId, x.ActionType, x.SourceStatus, x.Operator, x.Remark
                 }.Select(Csv)));
             }
             Audit(user, "导出库存流水", "库存流水");

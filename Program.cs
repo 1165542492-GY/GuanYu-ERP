@@ -465,6 +465,38 @@ namespace SupplierErpApp
         public string UpdatedBy { get; set; }
     }
 
+    public class SalesOutboundLine
+    {
+        public string Id { get; set; }
+        public string ParentOutboundId { get; set; }
+        public int LineNo { get; set; }
+        public string LineType { get; set; }
+        public string ItemType { get; set; }
+        public string MaterialId { get; set; }
+        public string ProductId { get; set; }
+        public string ModelCostId { get; set; }
+        public string BomId { get; set; }
+        public string BomCode { get; set; }
+        public string MaterialCode { get; set; }
+        public string MaterialName { get; set; }
+        public string Spec { get; set; }
+        public string Unit { get; set; }
+        public decimal PlannedQuantity { get; set; }
+        public decimal ActualQuantity { get; set; }
+        public decimal ReturnedQuantity { get; set; }
+        public decimal FinalQuantity { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal CostAmount { get; set; }
+        public decimal SalesAmount { get; set; }
+        public decimal ReferenceAmount { get; set; }
+        public string WarehouseName { get; set; }
+        public string AdjustReason { get; set; }
+        public string SourceType { get; set; }
+        public string SourceId { get; set; }
+        public string SourceNo { get; set; }
+        public string Remark { get; set; }
+    }
+
     public class SalesOutbound
     {
         public string Id { get; set; }
@@ -485,6 +517,7 @@ namespace SupplierErpApp
         public string OutboundDate { get; set; }
         public string Status { get; set; }
         public string Note { get; set; }
+        public List<SalesOutboundLine> Lines { get; set; }
         public string UpdatedAt { get; set; }
         public string UpdatedBy { get; set; }
     }
@@ -626,14 +659,27 @@ namespace SupplierErpApp
 
     public class AfterSalesPartLine
     {
+        public string Id { get; set; }
+        public int LineNo { get; set; }
+        public string ActionType { get; set; }
         public string MaterialId { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialName { get; set; }
         public string Spec { get; set; }
         public string Unit { get; set; }
+        public string WarehouseName { get; set; }
+        public decimal PlannedQuantity { get; set; }
+        public decimal PickedQuantity { get; set; }
+        public decimal ReturnedQuantity { get; set; }
+        public decimal ExtraQuantity { get; set; }
+        public decimal AdjustQuantity { get; set; }
+        public decimal FinalUsedQuantity { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
+        public decimal CostPrice { get; set; }
+        public decimal CostAmount { get; set; }
+        public string Reason { get; set; }
         public string Remark { get; set; }
     }
 
@@ -4906,6 +4952,224 @@ namespace SupplierErpApp
             }
         }
 
+        static string NormalizeSalesOutboundLineType(string value)
+        {
+            value = (value ?? "").Trim();
+            if (value == "随货配件" || value.Equals("accessory", StringComparison.OrdinalIgnoreCase)) return "随货配件";
+            if (value == "赠品" || value.Equals("gift", StringComparison.OrdinalIgnoreCase)) return "赠品";
+            if (value == "调整项" || value.Equals("adjust", StringComparison.OrdinalIgnoreCase)) return "调整项";
+            return "主产品";
+        }
+
+        static bool IsSalesOutboundMainLine(SalesOutboundLine line)
+        {
+            return line == null || NormalizeSalesOutboundLineType(line.LineType) == "主产品";
+        }
+
+        static bool HasExplicitSalesOutboundLines(SalesOutbound item)
+        {
+            return item != null && item.Lines != null && item.Lines.Any(x => x != null && (
+                !string.IsNullOrWhiteSpace(x.MaterialId) || !string.IsNullOrWhiteSpace(x.MaterialName) ||
+                !string.IsNullOrWhiteSpace(x.ModelCostId) || x.ActualQuantity != 0 || x.FinalQuantity != 0 ||
+                x.PlannedQuantity != 0 || x.ReturnedQuantity != 0));
+        }
+
+        static SalesOutboundLine LegacySalesOutboundLine(SalesOutbound item)
+        {
+            if (item == null) return null;
+            return new SalesOutboundLine
+            {
+                Id = "",
+                ParentOutboundId = item.Id ?? "",
+                LineNo = 1,
+                LineType = "主产品",
+                ItemType = NormalizeSalesItemType(item.ItemType),
+                MaterialId = item.MaterialId ?? "",
+                ModelCostId = item.ModelCostId ?? "",
+                BomId = item.BomId ?? "",
+                BomCode = item.BomCode ?? "",
+                MaterialCode = item.MaterialCode ?? "",
+                MaterialName = item.MaterialName ?? "",
+                PlannedQuantity = item.Quantity,
+                ActualQuantity = item.Quantity,
+                ReturnedQuantity = 0,
+                FinalQuantity = item.Quantity,
+                CostPrice = item.CostPrice,
+                CostAmount = item.CostAmount,
+                SourceType = "销售订单",
+                SourceId = item.SalesOrderId ?? "",
+                SourceNo = item.SalesOrderNo ?? ""
+            };
+        }
+
+        static List<SalesOutboundLine> SalesOutboundLinesForUse(SalesOutbound item)
+        {
+            if (item == null) return new List<SalesOutboundLine>();
+            if (HasExplicitSalesOutboundLines(item)) return item.Lines.Where(x => x != null).ToList();
+            var legacy = LegacySalesOutboundLine(item);
+            return legacy == null ? new List<SalesOutboundLine>() : new List<SalesOutboundLine> { legacy };
+        }
+
+        static bool IsFinishedProductOutboundLine(SalesOutbound item, SalesOutboundLine line)
+        {
+            if (line != null)
+            {
+                if (!string.IsNullOrWhiteSpace(line.ModelCostId)) return true;
+                if (string.Equals(NormalizeSalesItemType(line.ItemType), "FinishedProduct", StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return IsSalesOutboundMainLine(line) && IsFinishedProductOutbound(item);
+        }
+
+        static decimal SalesOutboundLineFinalQuantity(SalesOutboundLine line)
+        {
+            if (line == null) return 0;
+            if (line.FinalQuantity != 0) return RoundMoney(line.FinalQuantity);
+            return RoundMoney(line.ActualQuantity - line.ReturnedQuantity);
+        }
+
+        static decimal GetSalesOutboundOrderQuantity(SalesOutbound item)
+        {
+            if (item == null) return 0;
+            if (!HasExplicitSalesOutboundLines(item)) return item.Quantity;
+            var lines = SalesOutboundLinesForUse(item);
+            var main = lines.Where(IsSalesOutboundMainLine).ToList();
+            var source = main.Count > 0 ? main : lines;
+            return RoundMoney(source.Sum(SalesOutboundLineFinalQuantity));
+        }
+
+        static void AutoResolveSalesOutboundLineCost(SalesOutbound item, SalesOutboundLine line)
+        {
+            if (line == null || line.CostPrice > 0) return;
+            if (IsFinishedProductOutboundLine(item, line))
+            {
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == line.ModelCostId);
+                if (mc != null)
+                {
+                    decimal cost = mc.TotalCost > 0 ? mc.TotalCost : mc.MaterialCost;
+                    if (cost > 0) line.CostPrice = cost;
+                }
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(line.MaterialId))
+            {
+                var material = LoadMaterials().FirstOrDefault(x => x.Id == line.MaterialId);
+                if (material != null)
+                {
+                    decimal price = MaterialDisplayUnitPrice(material);
+                    if (price > 0) line.CostPrice = price;
+                }
+            }
+        }
+
+        static void ApplySalesOutboundLine(SalesOutbound item, SalesOrder order, SalesOutboundLine line, int lineNo)
+        {
+            if (line == null) return;
+            line.Id = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id.Trim();
+            line.ParentOutboundId = item.Id ?? "";
+            line.LineNo = lineNo;
+            line.LineType = NormalizeSalesOutboundLineType(line.LineType);
+            line.SourceType = string.IsNullOrWhiteSpace(line.SourceType) ? "销售订单" : line.SourceType.Trim();
+            line.SourceId = string.IsNullOrWhiteSpace(line.SourceId) ? item.SalesOrderId ?? "" : line.SourceId.Trim();
+            line.SourceNo = string.IsNullOrWhiteSpace(line.SourceNo) ? item.SalesOrderNo ?? "" : line.SourceNo.Trim();
+            line.AdjustReason = (line.AdjustReason ?? "").Trim();
+            line.Remark = (line.Remark ?? "").Trim();
+            line.WarehouseName = (line.WarehouseName ?? "").Trim();
+
+            if (IsSalesOutboundMainLine(line))
+            {
+                if (string.IsNullOrWhiteSpace(line.ItemType)) line.ItemType = item.ItemType;
+                if (string.IsNullOrWhiteSpace(line.ModelCostId)) line.ModelCostId = item.ModelCostId;
+                if (string.IsNullOrWhiteSpace(line.BomId)) line.BomId = item.BomId;
+                if (string.IsNullOrWhiteSpace(line.BomCode)) line.BomCode = item.BomCode;
+                if (string.IsNullOrWhiteSpace(line.MaterialId)) line.MaterialId = item.MaterialId;
+                if (string.IsNullOrWhiteSpace(line.MaterialCode)) line.MaterialCode = item.MaterialCode;
+                if (string.IsNullOrWhiteSpace(line.MaterialName)) line.MaterialName = item.MaterialName;
+                if (line.PlannedQuantity <= 0 && order != null) line.PlannedQuantity = order.Quantity;
+            }
+
+            line.ItemType = NormalizeSalesItemType(line.ItemType);
+            if (IsFinishedProductOutboundLine(item, line))
+            {
+                line.ItemType = "FinishedProduct";
+                if (string.IsNullOrWhiteSpace(line.ModelCostId)) line.ModelCostId = item.ModelCostId;
+                if (string.IsNullOrWhiteSpace(line.ModelCostId)) BizFail("销售出库成品明细必须关联机型成本");
+                var mc = LoadModelCosts().FirstOrDefault(x => x.Id == line.ModelCostId);
+                if (mc == null) BizFail("销售出库明细关联的机型成本不存在");
+                if (string.IsNullOrWhiteSpace(line.BomId)) line.BomId = mc.BomId ?? "";
+                if (string.IsNullOrWhiteSpace(line.BomCode)) line.BomCode = mc.BomCode ?? "";
+                line.MaterialCode = string.IsNullOrWhiteSpace(line.MaterialCode) ? mc.ModelCode ?? "" : line.MaterialCode.Trim();
+                line.MaterialName = string.IsNullOrWhiteSpace(line.MaterialName) ? (!string.IsNullOrWhiteSpace(mc.ProductName) ? mc.ProductName : mc.ModelName) : line.MaterialName.Trim();
+                line.MaterialId = "";
+                line.Spec = string.IsNullOrWhiteSpace(line.Spec) ? "" : line.Spec.Trim();
+                line.Unit = string.IsNullOrWhiteSpace(line.Unit) ? "台" : line.Unit.Trim();
+            }
+            else
+            {
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(line.MaterialId, line.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                if (!string.IsNullOrWhiteSpace(line.MaterialCode)) mcode = line.MaterialCode.Trim();
+                line.MaterialId = mid;
+                line.MaterialCode = mcode;
+                line.MaterialName = mname;
+                line.Spec = string.IsNullOrWhiteSpace(line.Spec) ? mspec : line.Spec.Trim();
+                line.Unit = string.IsNullOrWhiteSpace(line.Unit) ? munit : line.Unit.Trim();
+                if (string.IsNullOrWhiteSpace(line.MaterialName)) BizFail("销售出库明细请选择物料");
+            }
+
+            if (line.ActualQuantity <= 0 && line.FinalQuantity > 0) line.ActualQuantity = line.FinalQuantity + Math.Max(0, line.ReturnedQuantity);
+            if (line.ActualQuantity <= 0 && line.PlannedQuantity > 0) line.ActualQuantity = line.PlannedQuantity;
+            if (IsSalesOutboundMainLine(line) && line.ActualQuantity <= 0 && item.Quantity > 0) line.ActualQuantity = item.Quantity;
+            if (line.ActualQuantity <= 0) BizFail("销售出库明细实际出库数量必须大于 0");
+            if (line.ReturnedQuantity < 0) BizFail("销售出库明细退回数量不能为负数");
+            if (line.ReturnedQuantity > line.ActualQuantity + 0.0001m) BizFail("销售出库明细退回数量不能大于实际出库数量");
+            line.PlannedQuantity = RoundMoney(Math.Max(0, line.PlannedQuantity));
+            line.ActualQuantity = RoundMoney(line.ActualQuantity);
+            line.ReturnedQuantity = RoundMoney(line.ReturnedQuantity);
+            line.FinalQuantity = RoundMoney(line.ActualQuantity - line.ReturnedQuantity);
+            if (line.FinalQuantity <= 0) BizFail("销售出库明细最终出库数量必须大于 0");
+            AutoResolveSalesOutboundLineCost(item, line);
+            if (line.CostPrice < 0) BizFail("销售出库明细成本单价不能为负数");
+            line.CostAmount = CalcLineAmount(line.FinalQuantity, line.CostPrice);
+            if (line.ReferenceAmount <= 0 && line.SalesAmount > 0) line.ReferenceAmount = line.SalesAmount;
+            if (line.LineType == "赠品") line.SalesAmount = 0;
+        }
+
+        static void ApplySalesOutboundLines(SalesOutbound item)
+        {
+            var order = LoadSalesOrders().FirstOrDefault(x => x.Id == item.SalesOrderId);
+            var lines = SalesOutboundLinesForUse(item);
+            int lineNo = 1;
+            foreach (var line in lines)
+                ApplySalesOutboundLine(item, order, line, lineNo++);
+            if (lines.Count == 0) BizFail("销售出库至少需要一行明细");
+            var mainLines = lines.Where(IsSalesOutboundMainLine).ToList();
+            var primary = mainLines.FirstOrDefault() ?? lines.First();
+            item.Lines = lines;
+            item.ItemType = NormalizeSalesItemType(primary.ItemType);
+            item.ModelCostId = primary.ModelCostId ?? "";
+            item.BomId = primary.BomId ?? "";
+            item.BomCode = primary.BomCode ?? "";
+            item.MaterialId = primary.MaterialId ?? "";
+            item.MaterialCode = primary.MaterialCode ?? "";
+            item.MaterialName = primary.MaterialName ?? "";
+            item.Quantity = RoundMoney((mainLines.Count > 0 ? mainLines : lines).Sum(SalesOutboundLineFinalQuantity));
+            item.CostPrice = primary.CostPrice;
+            item.CostAmount = RoundMoney(lines.Sum(x => x.CostAmount));
+            if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
+        }
+
+        static SalesOutbound CloneSalesOutbound(SalesOutbound item)
+        {
+            return item == null ? null : Json.Deserialize<SalesOutbound>(Json.Serialize(item));
+        }
+
+        static void AttachSalesOutboundLineParent(SalesOutbound item)
+        {
+            if (item == null || item.Lines == null) return;
+            foreach (var line in item.Lines)
+                if (line != null) line.ParentOutboundId = item.Id ?? "";
+        }
+
         static void ResolvePurchaseOrderLink(PurchaseInbound item)
         {
             item.PurchaseOrderId = (item.PurchaseOrderId ?? "").Trim();
@@ -5340,24 +5604,9 @@ namespace SupplierErpApp
             ResolveSalesOrderLink(item);
             ApplySalesOutboundItemFields(item);
             item.CustomerName = (item.CustomerName ?? "").Trim();
-            if (IsFinishedProductOutbound(item))
-            {
-                if (string.IsNullOrWhiteSpace(item.ModelCostId)) BizFail("销售成品出库必须关联机型成本");
-                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少产品信息");
-            }
-            else
-            {
-                string mid, mcode, mname, mspec, munit;
-                ResolveMaterialFields(item.MaterialId, item.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
-                item.MaterialId = mid; item.MaterialCode = mcode; item.MaterialName = mname;
-                if (string.IsNullOrWhiteSpace(item.MaterialName)) BizFail("来源销售订单缺少物料信息");
-            }
-            if (item.Quantity <= 0) BizFail("出库数量必须大于 0");
+            ApplySalesOutboundLines(item);
             item.Status = NormalizeDocStatus(item.Status);
             ValidateSalesOutboundRemainingQty(item, excludeOutboundId);
-            AutoResolveSalesOutboundCost(item);
-            if (item.CostPrice < 0) BizFail("成本单价不能为负数");
-            item.CostAmount = CalcLineAmount(item.Quantity, item.CostPrice);
             item.OutboundDate = string.IsNullOrWhiteSpace(item.OutboundDate) ? TodayText() : item.OutboundDate.Trim();
             item.Note = (item.Note ?? "").Trim();
         }
@@ -5370,6 +5619,7 @@ namespace SupplierErpApp
             {
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
+                AttachSalesOutboundLineParent(item);
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 RecordSalesOutboundMovement(user, null, item);
                 list.Insert(0, item);
@@ -5394,7 +5644,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
-                var before = new SalesOutbound { Id = item.Id, Code = item.Code, SalesOrderId = item.SalesOrderId, SalesOrderNo = item.SalesOrderNo, CustomerName = item.CustomerName, ItemType = item.ItemType, ModelCostId = item.ModelCostId, BomId = item.BomId, BomCode = item.BomCode, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, CostPrice = item.CostPrice, CostAmount = item.CostAmount, OutboundDate = item.OutboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
+                var before = CloneSalesOutbound(item);
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.SalesOrderId ?? "", input.SalesOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
@@ -5407,7 +5657,9 @@ namespace SupplierErpApp
                 item.MaterialId = input.MaterialId; item.MaterialCode = input.MaterialCode;
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
-                item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                item.Status = input.Status; item.Note = input.Note; item.Lines = input.Lines;
+                AttachSalesOutboundLineParent(item);
+                item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 RecordSalesOutboundMovement(user, before, item);
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
@@ -5658,7 +5910,16 @@ namespace SupplierErpApp
                 foreach (var input in items)
                 {
                     rowNo++;
-                    try { ApplySalesOutbound(input); ValidateSalesOutboundRemainingQty(input); ValidateStockForConfirmedOutbound(input); var item = input; item.Id = Guid.NewGuid().ToString("N"); item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim(); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; pending.Insert(0, item); imported++; }
+                    try
+                    {
+                        ApplySalesOutbound(input); ValidateSalesOutboundRemainingQty(input); ValidateStockForConfirmedOutbound(input);
+                        var item = input; item.Id = Guid.NewGuid().ToString("N");
+                        item.Code = string.IsNullOrWhiteSpace(input.Code) ? NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code).Concat(pending.Select(x => x.Code)), "XSCK") : input.Code.Trim();
+                        AttachSalesOutboundLineParent(item);
+                        item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
+                        RecordSalesOutboundMovement(user, null, item);
+                        pending.Insert(0, item); imported++;
+                    }
                     catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
                 }
                 if (imported == 0) throw new BusinessException("没有可保存的数据", 409);
@@ -5758,7 +6019,7 @@ namespace SupplierErpApp
                 {
                     var item = new SalesOutbound { SalesOrderNo = Cell(row, "销售订单号", "关联销售单号"), CustomerName = Cell(row, "客户名称"), MaterialName = Cell(row, "物料名称", "产品名称"), Quantity = Money(Cell(row, "出库数量", "数量")), CostPrice = Money(Cell(row, "成本单价", "单价")), OutboundDate = Cell(row, "出库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = Cell(row, "出库编号", "出库单号") };
                     if (Placeholder(item.MaterialName)) { skipped++; continue; }
-                    ApplySalesOutbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK"); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; list.Insert(0, item); imported++;
+                    ApplySalesOutbound(item); item.Id = Guid.NewGuid().ToString("N"); if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK"); AttachSalesOutboundLineParent(item); item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName; RecordSalesOutboundMovement(user, null, item); list.Insert(0, item); imported++;
                 }
                 catch (Exception ex) { skipped++; errors.Add("第" + rowNo + "行：" + ex.Message); }
             }
@@ -6773,16 +7034,21 @@ namespace SupplierErpApp
             }
             foreach (var x in LoadSalesOutbounds().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeSalesOutboundId))
             {
-                if (IsFinishedProductOutbound(x))
+                foreach (var line in GetSalesOutboundStockImpacts(x))
                 {
-                    string pid = GetFinishedProductStockId(x.ModelCostId, x.BomId);
-                    StockAdd(map, "成品", pid, x.BomCode ?? "", x.MaterialName ?? "", "", "", -x.Quantity, x.CostPrice);
+                    if (line.ItemType == "成品")
+                        StockAdd(map, "成品", line.ItemId, line.ItemCode, line.ItemName, line.Spec, line.Unit, line.Quantity, line.UnitCost);
+                    else
+                        StockAddMaterial(map, line.ItemId, line.ItemCode, line.ItemName, line.Quantity, line.UnitCost);
                 }
-                else
-                    StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
             }
             foreach (var x in LoadProductionPicks().Where(x => IsConfirmedStatus(x.Status) && x.Id != options.ExcludeProductionPickId))
                 StockAddMaterial(map, x.MaterialId, x.MaterialCode, x.MaterialName, -x.Quantity, x.CostPrice);
+            foreach (var x in LoadAfterSalesServiceOrders().Where(x => x.Id != options.ExcludeAfterSalesServiceOrderId))
+            {
+                foreach (var line in GetAfterSalesServiceStockImpacts(x))
+                    StockAddMaterial(map, line.ItemId, line.ItemCode, line.ItemName, line.Quantity, line.UnitCost);
+            }
             return map;
         }
 

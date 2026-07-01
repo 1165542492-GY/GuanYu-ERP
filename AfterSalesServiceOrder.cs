@@ -54,6 +54,49 @@ namespace SupplierErpApp
             return 0;
         }
 
+        static string NormalizeAfterSalesPartActionType(string value)
+        {
+            value = (value ?? "").Trim();
+            if (value == "退料" || value.Equals("return", StringComparison.OrdinalIgnoreCase)) return "退料";
+            if (value == "补领" || value.Equals("extra", StringComparison.OrdinalIgnoreCase)) return "补领";
+            if (value == "耗用调整" || value.Equals("adjust", StringComparison.OrdinalIgnoreCase)) return "耗用调整";
+            return "领料";
+        }
+
+        static bool AfterSalesPartHasInventoryFields(AfterSalesPartLine line)
+        {
+            if (line == null) return false;
+            return !string.IsNullOrWhiteSpace(line.ActionType)
+                || !string.IsNullOrWhiteSpace(line.WarehouseName)
+                || !string.IsNullOrWhiteSpace(line.Reason)
+                || line.PlannedQuantity != 0
+                || line.PickedQuantity != 0
+                || line.ReturnedQuantity != 0
+                || line.ExtraQuantity != 0
+                || line.AdjustQuantity != 0
+                || line.FinalUsedQuantity != 0
+                || line.CostPrice != 0
+                || line.CostAmount != 0;
+        }
+
+        static decimal ComputeAfterSalesPartFinalUsedQuantity(AfterSalesPartLine line)
+        {
+            if (line == null) return 0;
+            return RoundMoney(line.PickedQuantity - line.ReturnedQuantity + line.ExtraQuantity + line.AdjustQuantity);
+        }
+
+        static bool AfterSalesServiceInventoryActive(AfterSalesServiceOrder item)
+        {
+            if (item == null) return false;
+            var status = NormalizeAfterSalesServiceStatus(item.Status);
+            return status != "草稿" && status != "已取消";
+        }
+
+        static AfterSalesServiceOrder CloneAfterSalesServiceOrder(AfterSalesServiceOrder item)
+        {
+            return item == null ? null : Json.Deserialize<AfterSalesServiceOrder>(Json.Serialize(item));
+        }
+
         static void ResolveAfterSalesServiceCustomer(AfterSalesServiceOrder item)
         {
             item.CustomerId = (item.CustomerId ?? "").Trim();
@@ -88,6 +131,7 @@ namespace SupplierErpApp
         static void ResolveAfterSalesPartLine(AfterSalesPartLine line)
         {
             if (line == null) return;
+            line.Id = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id.Trim();
             line.MaterialId = (line.MaterialId ?? "").Trim();
             if (string.IsNullOrWhiteSpace(line.MaterialId)) BizFail("配件明细请选择物料");
             var mat = LoadMaterials().FirstOrDefault(x => x.Id == line.MaterialId);
@@ -97,7 +141,33 @@ namespace SupplierErpApp
             line.Spec = "-";
             line.Unit = ParseMaterialQtyUnitParts(mat.QuantityUnit).Unit;
             if (line.UnitPrice <= 0) line.UnitPrice = AfterSalesMaterialUnitPrice(mat);
-            if (line.Quantity <= 0) BizFail("配件数量必须大于 0");
+            bool affectsStock = AfterSalesPartHasInventoryFields(line);
+            if (affectsStock)
+            {
+                line.ActionType = NormalizeAfterSalesPartActionType(line.ActionType);
+                line.WarehouseName = (line.WarehouseName ?? "").Trim();
+                line.Reason = (line.Reason ?? "").Trim();
+                line.PlannedQuantity = RoundMoney(Math.Max(0, line.PlannedQuantity));
+                line.PickedQuantity = RoundMoney(Math.Max(0, line.PickedQuantity));
+                line.ReturnedQuantity = RoundMoney(Math.Max(0, line.ReturnedQuantity));
+                line.ExtraQuantity = RoundMoney(Math.Max(0, line.ExtraQuantity));
+                line.AdjustQuantity = RoundMoney(line.AdjustQuantity);
+                if (line.PickedQuantity == 0 && line.ReturnedQuantity == 0 && line.ExtraQuantity == 0 && line.AdjustQuantity == 0 && line.FinalUsedQuantity != 0)
+                    line.AdjustQuantity = line.FinalUsedQuantity;
+                if (line.PickedQuantity == 0 && line.ReturnedQuantity == 0 && line.ExtraQuantity == 0 && line.AdjustQuantity == 0 && line.Quantity > 0)
+                {
+                    if (line.ActionType == "退料") line.ReturnedQuantity = line.Quantity;
+                    else if (line.ActionType == "补领") line.ExtraQuantity = line.Quantity;
+                    else line.PickedQuantity = line.Quantity;
+                }
+                line.FinalUsedQuantity = ComputeAfterSalesPartFinalUsedQuantity(line);
+                if (line.FinalUsedQuantity == 0) BizFail("维修物料最终耗用数量不能为 0");
+                if (line.CostPrice <= 0) line.CostPrice = AfterSalesMaterialUnitPrice(mat);
+                if (line.CostPrice < 0) BizFail("维修物料成本单价不能为负数");
+                line.CostAmount = RoundMoney(Math.Abs(line.FinalUsedQuantity) * line.CostPrice);
+                line.Quantity = RoundMoney(Math.Max(0, line.FinalUsedQuantity));
+            }
+            if (line.Quantity <= 0 && !affectsStock) BizFail("配件数量必须大于 0");
             line.Amount = RoundMoney(line.Quantity * line.UnitPrice);
             line.Remark = (line.Remark ?? "").Trim();
         }
@@ -164,8 +234,13 @@ namespace SupplierErpApp
             item.Remark = (item.Remark ?? "").Trim();
             item.ServiceDate = string.IsNullOrWhiteSpace(item.ServiceDate) ? TodayText() : item.ServiceDate.Trim();
             if (item.Parts == null) item.Parts = new List<AfterSalesPartLine>();
+            int lineNo = 1;
             foreach (var line in item.Parts)
+            {
+                if (line != null && line.LineNo <= 0) line.LineNo = lineNo;
                 ResolveAfterSalesPartLine(line);
+                lineNo++;
+            }
             if (!preserveReceivableLink)
             {
                 item.ReceivableId = (item.ReceivableId ?? "").Trim();
@@ -254,6 +329,7 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<AfterSalesServiceOrder>(ReadBody(ctx.Request));
             ApplyAfterSalesServiceOrder(item, false);
+            ValidateStockForAfterSalesServiceOrder(item);
             string now = BizUpdatedAtNow();
             var saved = MutateJsonList<AfterSalesServiceOrder, AfterSalesServiceOrder>(AfterSalesServiceOrdersFile, "after_sales_service_orders", list =>
             {
@@ -263,6 +339,7 @@ namespace SupplierErpApp
                 item.UpdatedAt = now;
                 item.CreatedBy = user.DisplayName;
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, null, item);
                 list.Insert(0, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
@@ -280,14 +357,17 @@ namespace SupplierErpApp
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 if (!CanEditAfterSalesServiceOrder(item.Status)) BizFail("当前状态不允许修改", 409);
                 bool coreEditable = item.Status == "草稿" || item.Status == "待派工" || item.Status == "维修中";
+                var before = CloneAfterSalesServiceOrder(item);
                 string receivableId = item.ReceivableId;
                 string receivableNo = item.ReceivableNo;
                 CopyAfterSalesServiceEditableFields(item, input, coreEditable);
                 item.ReceivableId = receivableId;
                 item.ReceivableNo = receivableNo;
                 ApplyAfterSalesServiceOrder(item, true);
+                ValidateStockForAfterSalesServiceOrder(item, id);
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "修改售后维修工单", saved);
@@ -320,6 +400,7 @@ namespace SupplierErpApp
                         BizFail("已生成应收的维修单不能删除，请先处理应收关联", 409);
                     BizFail("仅草稿或已取消的维修单可以删除", 409);
                 }
+                RecordAfterSalesServiceMovement(user, item, null, true);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -336,10 +417,13 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("售后维修工单不存在", 404);
                 if (NormalizeAfterSalesServiceStatus(item.Status) != "草稿") BizFail("仅草稿状态可以确认派工", 409);
                 if (string.IsNullOrWhiteSpace(item.AssignedWorker)) BizFail("请先填写派工人员");
+                var before = CloneAfterSalesServiceOrder(item);
                 oldStatus = item.Status;
                 item.Status = "待派工";
+                ValidateStockForAfterSalesServiceOrder(item, id);
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "售后维修状态流转", saved, oldStatus, "确认派工");
@@ -354,11 +438,13 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("售后维修工单不存在", 404);
                 if (NormalizeAfterSalesServiceStatus(item.Status) != "待派工") BizFail("仅待派工状态可以开始维修", 409);
+                var before = CloneAfterSalesServiceOrder(item);
                 oldStatus = item.Status;
                 item.Status = "维修中";
                 if (string.IsNullOrWhiteSpace(item.VisitDate)) item.VisitDate = TodayText();
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "售后维修状态流转", saved, oldStatus, "开始维修");
@@ -373,10 +459,12 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("售后维修工单不存在", 404);
                 if (NormalizeAfterSalesServiceStatus(item.Status) != "维修中") BizFail("仅维修中状态可以完成维修", 409);
+                var before = CloneAfterSalesServiceOrder(item);
                 oldStatus = item.Status;
                 item.Status = "已完成";
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "售后维修状态流转", saved, oldStatus, "完成维修");
@@ -391,12 +479,14 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("售后维修工单不存在", 404);
                 if (NormalizeAfterSalesServiceStatus(item.Status) != "已完成") BizFail("仅已完成状态可以结算", 409);
+                var before = CloneAfterSalesServiceOrder(item);
                 oldStatus = item.Status;
                 item.Status = "已结算";
                 item.ReceivedAmount = item.ReceivableAmount;
                 item.UnreceivedAmount = 0;
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "售后维修状态流转", saved, oldStatus, "结算");
@@ -413,10 +503,12 @@ namespace SupplierErpApp
                 var st = NormalizeAfterSalesServiceStatus(item.Status);
                 if (st == "已完成" || st == "已结算") BizFail("已完成或已结算的维修单不能取消", 409);
                 if (!string.IsNullOrWhiteSpace(item.ReceivableId)) BizFail("已生成应收的维修单不能取消，请先处理应收", 409);
+                var before = CloneAfterSalesServiceOrder(item);
                 oldStatus = item.Status;
                 item.Status = "已取消";
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
+                RecordAfterSalesServiceMovement(user, before, item);
                 return new JsonMutationResult<AfterSalesServiceOrder>(item, true);
             });
             AuditAfterSalesServiceOrder(user, "售后维修状态流转", saved, oldStatus, "取消");

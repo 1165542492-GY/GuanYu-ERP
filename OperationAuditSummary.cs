@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace SupplierErpApp
@@ -77,6 +78,10 @@ namespace SupplierErpApp
             AddAuditPart(parts, "customer", item.CustomerName);
             AddAuditPart(parts, "item", item.MaterialName);
             AddAuditPart(parts, "qty", item.Quantity);
+            var lines = SalesOutboundLinesForUse(item);
+            if (lines.Count > 1) AddAuditPart(parts, "lines", lines.Count.ToString(CultureInfo.InvariantCulture));
+            var finalQty = lines.Sum(SalesOutboundLineFinalQuantity);
+            if (finalQty != item.Quantity) AddAuditPart(parts, "finalQty", finalQty);
             AddAuditPart(parts, "amount", item.CostAmount);
             AddAuditPart(parts, "status", item.Status);
             return JoinAuditParts(parts);

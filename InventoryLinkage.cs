@@ -10,6 +10,107 @@ namespace SupplierErpApp
         {
             public string ExcludeSalesOutboundId;
             public string ExcludeProductionPickId;
+            public string ExcludeAfterSalesServiceOrderId;
+        }
+
+        class InventoryImpactLine
+        {
+            public string ItemType;
+            public string ItemId;
+            public string ItemCode;
+            public string ItemName;
+            public string Spec;
+            public string Unit;
+            public decimal Quantity;
+            public decimal UnitCost;
+            public string LineId;
+            public int LineNo;
+            public string ActionType;
+            public string WarehouseName;
+        }
+
+        static List<InventoryImpactLine> GetSalesOutboundStockImpacts(SalesOutbound item)
+        {
+            var rows = new List<InventoryImpactLine>();
+            if (item == null || !IsConfirmedStatus(item.Status)) return rows;
+            foreach (var line in SalesOutboundLinesForUse(item))
+            {
+                if (line == null) continue;
+                decimal qty = SalesOutboundLineFinalQuantity(line);
+                if (qty <= 0) continue;
+                if (IsFinishedProductOutboundLine(item, line))
+                {
+                    string pid = GetFinishedProductStockId(line.ModelCostId, line.BomId);
+                    rows.Add(new InventoryImpactLine
+                    {
+                        ItemType = "成品",
+                        ItemId = pid,
+                        ItemCode = line.BomCode ?? "",
+                        ItemName = line.MaterialName ?? "",
+                        Spec = line.Spec ?? "",
+                        Unit = string.IsNullOrWhiteSpace(line.Unit) ? "台" : line.Unit,
+                        Quantity = -qty,
+                        UnitCost = line.CostPrice,
+                        LineId = line.Id ?? "",
+                        LineNo = line.LineNo,
+                        ActionType = NormalizeSalesOutboundLineType(line.LineType),
+                        WarehouseName = line.WarehouseName ?? ""
+                    });
+                }
+                else
+                {
+                    string mid, mcode, mname, mspec, munit;
+                    ResolveMaterialFields(line.MaterialId, line.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                    if (!string.IsNullOrWhiteSpace(line.MaterialCode)) mcode = line.MaterialCode;
+                    rows.Add(new InventoryImpactLine
+                    {
+                        ItemType = "物料",
+                        ItemId = mid,
+                        ItemCode = mcode,
+                        ItemName = mname,
+                        Spec = string.IsNullOrWhiteSpace(line.Spec) ? mspec : line.Spec,
+                        Unit = string.IsNullOrWhiteSpace(line.Unit) ? munit : line.Unit,
+                        Quantity = -qty,
+                        UnitCost = line.CostPrice,
+                        LineId = line.Id ?? "",
+                        LineNo = line.LineNo,
+                        ActionType = NormalizeSalesOutboundLineType(line.LineType),
+                        WarehouseName = line.WarehouseName ?? ""
+                    });
+                }
+            }
+            return rows;
+        }
+
+        static List<InventoryImpactLine> GetAfterSalesServiceStockImpacts(AfterSalesServiceOrder item)
+        {
+            var rows = new List<InventoryImpactLine>();
+            if (item == null || !AfterSalesServiceInventoryActive(item) || item.Parts == null) return rows;
+            foreach (var line in item.Parts)
+            {
+                if (line == null || !AfterSalesPartHasInventoryFields(line)) continue;
+                decimal finalUsed = ComputeAfterSalesPartFinalUsedQuantity(line);
+                if (finalUsed == 0) continue;
+                string mid, mcode, mname, mspec, munit;
+                ResolveMaterialFields(line.MaterialId, line.MaterialName, out mid, out mcode, out mname, out mspec, out munit);
+                if (!string.IsNullOrWhiteSpace(line.MaterialCode)) mcode = line.MaterialCode;
+                rows.Add(new InventoryImpactLine
+                {
+                    ItemType = "物料",
+                    ItemId = mid,
+                    ItemCode = mcode,
+                    ItemName = mname,
+                    Spec = string.IsNullOrWhiteSpace(line.Spec) ? mspec : line.Spec,
+                    Unit = string.IsNullOrWhiteSpace(line.Unit) ? munit : line.Unit,
+                    Quantity = -finalUsed,
+                    UnitCost = line.CostPrice > 0 ? line.CostPrice : line.UnitPrice,
+                    LineId = line.Id ?? "",
+                    LineNo = line.LineNo,
+                    ActionType = NormalizeAfterSalesPartActionType(line.ActionType),
+                    WarehouseName = line.WarehouseName ?? ""
+                });
+            }
+            return rows;
         }
 
         static bool IsAutoSource(string sourceType)
@@ -82,12 +183,14 @@ namespace SupplierErpApp
         {
             if (item == null || !IsConfirmedStatus(item.Status)) return;
             var options = new StockMapOptions { ExcludeSalesOutboundId = excludeId };
-            if (IsFinishedProductOutbound(item))
+            var impacts = GetSalesOutboundStockImpacts(item);
+            foreach (var group in impacts.Where(x => x.Quantity < 0).GroupBy(x => StockKey(x.ItemType, x.ItemId, x.ItemName)))
             {
-                EnsureFinishedProductStockAvailable(item.Quantity, item.ModelCostId, item.BomId, item.MaterialName, options);
-                return;
+                var first = group.First();
+                decimal required = -group.Sum(x => x.Quantity);
+                if (first.ItemType == "成品") EnsureFinishedProductStockAvailable(required, first.ItemId, "", first.ItemName, options);
+                else EnsureMaterialStockAvailable(required, first.ItemId, first.ItemCode, first.ItemName, options);
             }
-            EnsureMaterialStockAvailable(item.Quantity, item.MaterialId, item.MaterialCode, item.MaterialName, options);
         }
 
         static void ValidateStockForConfirmedPick(ProductionPick item, string excludeId = null)
@@ -95,6 +198,18 @@ namespace SupplierErpApp
             if (item == null || !IsConfirmedStatus(item.Status)) return;
             EnsureMaterialStockAvailable(item.Quantity, item.MaterialId, item.MaterialCode, item.MaterialName,
                 new StockMapOptions { ExcludeProductionPickId = excludeId });
+        }
+
+        static void ValidateStockForAfterSalesServiceOrder(AfterSalesServiceOrder item, string excludeId = null)
+        {
+            if (item == null || !AfterSalesServiceInventoryActive(item)) return;
+            var options = new StockMapOptions { ExcludeAfterSalesServiceOrderId = excludeId };
+            foreach (var group in GetAfterSalesServiceStockImpacts(item).Where(x => x.Quantity < 0).GroupBy(x => StockKey(x.ItemType, x.ItemId, x.ItemName)))
+            {
+                var first = group.First();
+                decimal required = -group.Sum(x => x.Quantity);
+                EnsureMaterialStockAvailable(required, first.ItemId, first.ItemCode, first.ItemName, options);
+            }
         }
 
         static decimal GetPositiveSourceRollbackQty(decimal currentQty, string currentStatus, decimal nextQty, string nextStatus)

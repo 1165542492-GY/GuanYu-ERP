@@ -12,7 +12,7 @@ namespace SupplierErpApp
                 .Where(x => IsConfirmedStatus(x.Status)
                     && string.Equals(x.SalesOrderId ?? "", salesOrderId, StringComparison.OrdinalIgnoreCase)
                     && (excludeOutboundId == null || !string.Equals(x.Id, excludeOutboundId, StringComparison.OrdinalIgnoreCase)))
-                .Sum(x => x.Quantity);
+                .Sum(GetSalesOutboundOrderQuantity);
         }
 
         static decimal GetConfirmedInboundQtyForPurchaseOrder(string purchaseOrderId, string excludeInboundId = null)
