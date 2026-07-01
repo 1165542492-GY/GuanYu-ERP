@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Xml.Linq;
 using ClosedXML.Excel;
 
 namespace SupplierErpApp
@@ -99,10 +102,61 @@ namespace SupplierErpApp
                 using (var ms = new MemoryStream())
                 {
                     wb.SaveAs(ms);
-                    WriteXlsxDownload(ctx, "ERP测试数据总表" + DateTime.Now.ToString("yyyyMMdd") + ".xlsx", ms.ToArray());
+                    WriteXlsxDownload(ctx, "ERP测试数据总表" + DateTime.Now.ToString("yyyyMMdd") + ".xlsx", NormalizeXlsxTextCellsForReview(ms.ToArray()));
                 }
             }
             Audit(user, "导出测试数据总表", "ERP测试数据总表");
+        }
+
+        static byte[] NormalizeXlsxTextCellsForReview(byte[] bytes)
+        {
+            var ms = new MemoryStream();
+            ms.Write(bytes, 0, bytes.Length);
+            ms.Position = 0;
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Update, true))
+            {
+                var sharedEntry = archive.GetEntry("xl/sharedStrings.xml");
+                if (sharedEntry == null) return bytes;
+                var sharedTexts = new List<string>();
+                XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+                using (var stream = sharedEntry.Open())
+                {
+                    var doc = XDocument.Load(stream);
+                    foreach (var si in doc.Root.Elements(ns + "si")) sharedTexts.Add(si.Value ?? "");
+                }
+                foreach (var entry in archive.Entries.Where(x => x.FullName.StartsWith("xl/worksheets/", StringComparison.OrdinalIgnoreCase) && x.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    XDocument sheet;
+                    using (var stream = entry.Open()) sheet = XDocument.Load(stream);
+                    bool changed = false;
+                    foreach (var cell in sheet.Descendants(ns + "c").Where(x => (string)x.Attribute("t") == "s").ToList())
+                    {
+                        var v = cell.Element(ns + "v");
+                        int idx;
+                        string text = v != null && int.TryParse((v.Value ?? "").Trim(), out idx) && idx >= 0 && idx < sharedTexts.Count ? SafeExportText(sharedTexts[idx]) : "";
+                        if (string.IsNullOrWhiteSpace(text))
+                        {
+                            cell.Remove();
+                        }
+                        else
+                        {
+                            cell.SetAttributeValue("t", "inlineStr");
+                            cell.Elements().Remove();
+                            cell.Add(new XElement(ns + "is", new XElement(ns + "t", text)));
+                        }
+                        changed = true;
+                    }
+                    if (changed)
+                    {
+                        entry.Delete();
+                        var newEntry = archive.CreateEntry(entry.FullName, CompressionLevel.Optimal);
+                        using (var stream = newEntry.Open())
+                        using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                            sheet.Save(writer, System.Xml.Linq.SaveOptions.DisableFormatting);
+                    }
+                }
+            }
+            return ms.ToArray();
         }
 
         static void ImportTestDataPreview(HttpListenerContext ctx, UserSession user)
@@ -202,6 +256,7 @@ namespace SupplierErpApp
             readonly HashSet<string> _materialNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _bomCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _bomKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            readonly HashSet<string> _modelCostCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _purchaseOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             readonly HashSet<string> _salesOrderCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -245,6 +300,9 @@ namespace SupplierErpApp
                             if (!string.IsNullOrWhiteSpace(bomCode) && !string.IsNullOrWhiteSpace(bomVer))
                                 _bomKeys.Add(BomConflictKey(bomCode, bomVer));
                             break;
+                        case "modelCosts":
+                            AddIfPresent(_modelCostCodes, Cell(row, "机型编号", "机型成本编号"));
+                            break;
                         case "purchaseOrders":
                             AddIfPresent(_purchaseOrderCodes, Cell(row, "采购编号", "采购单号"));
                             break;
@@ -270,8 +328,16 @@ namespace SupplierErpApp
             {
                 if (Placeholder(company)) return false;
                 company = company.Trim();
-                return LoadSuppliers().Any(x => string.Equals((x.Company ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase))
-                    || _supplierCompanies.Contains(company);
+                var suppliers = LoadSuppliers();
+                if (suppliers.Any(x => string.Equals((x.Company ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals((x.Code ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase))) return true;
+                if (_supplierCompanies.Contains(company) || _supplierCodes.Contains(company)) return true;
+                foreach (var row in GetModuleRows("suppliers"))
+                {
+                    if (string.Equals((Cell(row, "供应商名称", "供应商公司名") ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals((Cell(row, "供应商编号") ?? "").Trim(), company, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                return false;
             }
 
             public bool CustomerExists(string code, string company)
@@ -312,6 +378,14 @@ namespace SupplierErpApp
                 }
                 if (boms.Any(x => string.Equals((x.Code ?? "").Trim(), code, StringComparison.OrdinalIgnoreCase))) return true;
                 return _bomCodes.Contains(code);
+            }
+
+            public bool ModelCostExists(string modelCode)
+            {
+                if (Placeholder(modelCode)) return false;
+                modelCode = modelCode.Trim();
+                return LoadModelCosts().Any(x => string.Equals((x.ModelCode ?? "").Trim(), modelCode, StringComparison.OrdinalIgnoreCase))
+                    || _modelCostCodes.Contains(modelCode);
             }
 
             public bool PurchaseOrderExists(string code)
@@ -428,7 +502,7 @@ namespace SupplierErpApp
                 {
                     string h = headers[c - firstCol];
                     if (string.IsNullOrWhiteSpace(h)) continue;
-                    string val = (ws.Cell(r, c).GetFormattedString() ?? "").Trim();
+                    string val = WorksheetCellText(ws.Cell(r, c), h);
                     if (!string.IsNullOrWhiteSpace(val)) hasValue = true;
                     row[h] = val;
                 }
@@ -459,15 +533,111 @@ namespace SupplierErpApp
             for (int i = 0; i < values.Length; i++)
             {
                 var v = values[i];
-                if (v is decimal d) ws.Cell(row, i + 1).Value = d;
-                else if (v is double dbl) ws.Cell(row, i + 1).Value = dbl;
-                else if (v is int n) ws.Cell(row, i + 1).Value = n;
-                else ws.Cell(row, i + 1).Value = v == null ? "" : v.ToString();
+                if (v is decimal d) WriteNumberCell(ws, row, i + 1, d);
+                else if (v is double dbl) WriteNumberCell(ws, row, i + 1, dbl);
+                else if (v is int n) WriteNumberCell(ws, row, i + 1, n);
+                else WriteSafeTextCell(ws, row, i + 1, v == null ? "" : v.ToString());
             }
         }
 
         static string Money2(decimal v) { return v.ToString("0.00"); }
-        static string DateOnly(string v) { return string.IsNullOrWhiteSpace(v) ? "" : (v.Length >= 10 ? v.Substring(0, 10) : v); }
+        static string DateOnly(string v) { return NormalizeExcelDateText(v); }
+        static string TimeText(string v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return "";
+            DateTime dt;
+            if (DateTime.TryParse(v.Trim(), CultureInfo.GetCultureInfo("zh-CN"), DateTimeStyles.AllowWhiteSpaces, out dt) ||
+                DateTime.TryParse(v.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out dt))
+                return dt.ToString("yyyy-MM-dd HH:mm:ss");
+            return v.Trim();
+        }
+
+        static string NormalizeExcelDateText(string v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return "";
+            var s = v.Trim();
+            if (s.StartsWith("说明：", StringComparison.Ordinal)) return s;
+            decimal serialDecimal;
+            if (decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out serialDecimal) && serialDecimal >= 20000 && serialDecimal <= 80000)
+                return DateTime.FromOADate((double)serialDecimal).ToString("yyyy-MM-dd");
+            DateTime dt;
+            if (DateTime.TryParse(s, CultureInfo.GetCultureInfo("zh-CN"), DateTimeStyles.AllowWhiteSpaces, out dt) ||
+                DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out dt))
+                return dt.ToString("yyyy-MM-dd");
+            return s.Length >= 10 ? s.Substring(0, 10) : s;
+        }
+
+        static string WorksheetCellText(IXLCell cell, string header)
+        {
+            if (cell == null || cell.IsEmpty()) return "";
+            var text = (cell.GetFormattedString() ?? "").Trim();
+            var isDateHeader = !string.IsNullOrWhiteSpace(header) && (header.Contains("日期") || header.Contains("时间"));
+            if (!isDateHeader) return text;
+            try
+            {
+                if (cell.DataType == XLDataType.DateTime) return cell.GetDateTime().ToString("yyyy-MM-dd");
+                if (cell.DataType == XLDataType.Number)
+                {
+                    var n = cell.GetDouble();
+                    if (n >= 20000 && n <= 80000) return DateTime.FromOADate(n).ToString("yyyy-MM-dd");
+                }
+            }
+            catch { }
+            return NormalizeExcelDateText(text);
+        }
+
+        static void WriteTextCell(IXLWorksheet ws, int row, int column, string value)
+        {
+            WriteSafeTextCell(ws, row, column, value);
+        }
+
+        static void WriteSafeTextCell(IXLWorksheet ws, int row, int column, string value)
+        {
+            var cell = ws.Cell(row, column);
+            value = SafeExportText(value);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                cell.Clear(XLClearOptions.Contents);
+                return;
+            }
+            cell.Value = value;
+        }
+
+        static void WriteDateTextCell(IXLWorksheet ws, int row, int column, string value)
+        {
+            WriteSafeTextCell(ws, row, column, DateOnly(value));
+        }
+
+        static void WriteTimeTextCell(IXLWorksheet ws, int row, int column, string value)
+        {
+            WriteSafeTextCell(ws, row, column, TimeText(value));
+        }
+
+        static void WriteNumberCell(IXLWorksheet ws, int row, int column, decimal value)
+        {
+            ws.Cell(row, column).Value = value;
+        }
+
+        static void WriteNumberCell(IXLWorksheet ws, int row, int column, double value)
+        {
+            ws.Cell(row, column).Value = value;
+        }
+
+        static void WriteNumberCell(IXLWorksheet ws, int row, int column, int value)
+        {
+            ws.Cell(row, column).Value = value;
+        }
+
+        static string SafeExportText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "";
+            value = value.Trim();
+            if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "undefined", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "System.Object", StringComparison.OrdinalIgnoreCase)) return "";
+            if (value == "0" || value == "187" || value == "0001-01-01" || value == "1900-01-01") return "";
+            return value;
+        }
 
         static void WriteSupplierSheet(XLWorkbook wb)
         {
@@ -565,10 +735,14 @@ namespace SupplierErpApp
 
         static void WriteFinishedInboundSheet(XLWorkbook wb)
         {
-            var ws = AddSheet(wb, "成品入库", new[] { "入库编号", "BOM编号", "产品名称", "入库数量", "单台成本", "入库金额", "入库日期", "状态", "备注", "最后更新", "操作人" });
+            var ws = AddSheet(wb, "成品入库", new[] { "入库编号", "BOM编号", "机型成本编号", "产品名称", "入库数量", "单台成本", "入库金额", "入库日期", "状态", "备注", "最后更新", "操作人" });
+            var modelCosts = LoadModelCosts();
             int r = 2;
             foreach (var x in LoadFinishedInbounds())
-                WriteRow(ws, r++, x.Code, x.BomCode, x.ProductName, x.Quantity, Money2(x.UnitCost), Money2(x.Amount), DateOnly(x.InboundDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            {
+                var modelCost = modelCosts.FirstOrDefault(m => string.Equals(m.Id ?? "", x.ModelCostId ?? "", StringComparison.OrdinalIgnoreCase));
+                WriteRow(ws, r++, x.Code, x.BomCode, modelCost != null ? modelCost.ModelCode : "", x.ProductName, x.Quantity, Money2(x.UnitCost), Money2(x.Amount), DateOnly(x.InboundDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            }
         }
 
         static void WriteAfterSalesServiceOrderSheet(XLWorkbook wb)
@@ -596,7 +770,11 @@ namespace SupplierErpApp
             var ws = AddSheet(wb, "应收款", new[] { "应收编号", "销售订单号", "客户名称", "应收金额", "已收金额", "未收金额", "到期日期", "状态", "备注", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadReceivables())
-                WriteRow(ws, r++, x.Code, x.SalesOrderNo, x.CustomerName, Money2(x.ReceivableAmount), Money2(x.ReceivedAmount), Money2(x.UnreceivedAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            {
+                WriteRow(ws, r, x.Code, x.SalesOrderNo, x.CustomerName, Money2(x.ReceivableAmount), Money2(x.ReceivedAmount), Money2(x.UnreceivedAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteTextCell(ws, r, 7, DateOnly(x.DueDate));
+                r++;
+            }
             ws.Cell(r, 1).Value = "说明：收款明细保存在 receivables.json 的 ReceiptDetails 数组；本表仅导出汇总金额，导入时按已收/未收汇总写入，不重复生成明细。";
         }
 
@@ -605,7 +783,11 @@ namespace SupplierErpApp
             var ws = AddSheet(wb, "应付款", new[] { "应付编号", "采购单号", "供应商名称", "应付金额", "已付金额", "未付金额", "到期日期", "状态", "备注", "最后更新", "操作人" });
             int r = 2;
             foreach (var x in LoadPayables())
-                WriteRow(ws, r++, x.Code, x.PurchaseNo, x.SupplierName, Money2(x.PayableAmount), Money2(x.PaidAmount), Money2(x.UnpaidAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+            {
+                WriteRow(ws, r, x.Code, x.PurchaseNo, x.SupplierName, Money2(x.PayableAmount), Money2(x.PaidAmount), Money2(x.UnpaidAmount), DateOnly(x.DueDate), x.Status, x.Note, x.UpdatedAt, x.UpdatedBy);
+                WriteTextCell(ws, r, 7, DateOnly(x.DueDate));
+                r++;
+            }
             ws.Cell(r, 1).Value = "说明：付款明细保存在 payables.json 的 PaymentDetails 数组；本表仅导出汇总金额，导入时按已付/未付汇总写入，不重复生成明细。";
         }
 
@@ -1001,8 +1183,8 @@ namespace SupplierErpApp
                         Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
                     if (item.Quantity < 0 || item.UnitPrice < 0) { AddErr(res, errors, rowNo, "数量/单价不能为负数"); continue; }
-                    ApplyPurchaseOrder(item);
                     if (previewOnly) { res.Added++; continue; }
+                    ApplyPurchaseOrder(item);
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(PurchaseOrderSequenceFile, "PO", list.Select(x => x.Code), "CGDD");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -1128,17 +1310,28 @@ namespace SupplierErpApp
                     string code = Cell(row, "入库编号");
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string bomCode = Cell(row, "BOM编号");
+                    string modelCostCode = Cell(row, "机型成本编号", "机型编号");
                     var bom = LoadBom().FirstOrDefault(x => string.Equals(x.Code, bomCode, StringComparison.OrdinalIgnoreCase));
+                    var modelCost = LoadModelCosts().FirstOrDefault(x => string.Equals(x.ModelCode, modelCostCode, StringComparison.OrdinalIgnoreCase));
                     var item = new FinishedInbound
                     {
-                        BomId = bom != null ? bom.Id : "", BomCode = bomCode, ProductName = Cell(row, "产品名称"),
+                        BomId = modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomId) ? modelCost.BomId : (bom != null ? bom.Id : ""),
+                        BomCode = modelCost != null && !string.IsNullOrWhiteSpace(modelCost.BomCode) ? modelCost.BomCode : bomCode,
+                        ModelCostId = modelCost != null ? modelCost.Id : "",
+                        ProductName = Cell(row, "产品名称"),
                         Quantity = Money(Cell(row, "入库数量", "数量")), UnitCost = Money(Cell(row, "单台成本", "成本单价")),
                         InboundDate = Cell(row, "入库日期"), Status = Cell(row, "状态"), Note = Cell(row, "备注"), Code = code
                     };
                     if (Placeholder(item.ProductName)) { AddErr(res, errors, rowNo, "请填写产品名称"); continue; }
                     if (item.Quantity < 0 || item.UnitCost < 0) { AddErr(res, errors, rowNo, "数量/成本不能为负数"); continue; }
+                    if (previewOnly)
+                    {
+                        bool hasModelCost = !Placeholder(modelCostCode) && excelCtx.ModelCostExists(modelCostCode);
+                        bool hasBom = !Placeholder(bomCode) && excelCtx.BomExists(bomCode, "");
+                        if (!hasModelCost && !hasBom) { AddErr(res, errors, rowNo, "成品入库必须关联 BOM 或机型成本"); continue; }
+                        res.Added++; continue;
+                    }
                     ApplyFinishedInbound(item);
-                    if (previewOnly) { res.Added++; continue; }
                     item.Id = Guid.NewGuid().ToString("N");
                     if (Placeholder(item.Code) || list.Any(x => x.Code == item.Code)) item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
                     item.UpdatedAt = NowTimeString(); item.UpdatedBy = user.DisplayName;
@@ -1345,23 +1538,26 @@ namespace SupplierErpApp
                 try
                 {
                     string code = Cell(row, "应收编号");
+                    if (!Placeholder(code) && code.Trim().StartsWith("说明：", StringComparison.Ordinal)) { res.Skipped++; continue; }
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string orderNo = Cell(row, "销售订单号");
-                    if (Placeholder(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不能为空"); continue; }
-                    if (!excelCtx.SalesOrderExists(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
                     string customerName = Cell(row, "客户名称");
+                    bool hasOrderNo = !Placeholder(orderNo);
+                    if (hasOrderNo && !excelCtx.SalesOrderExists(orderNo)) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
+                    if (!hasOrderNo && Placeholder(customerName)) { AddErr(res, errors, rowNo, "客户名称不能为空"); continue; }
                     if (!Placeholder(customerName) && !excelCtx.CustomerExists("", customerName))
                     { AddErr(res, errors, rowNo, "客户不存在，请先在客户管理中添加客户"); continue; }
                     decimal recvAmt = Money(Cell(row, "应收金额")), receivedAmt = Money(Cell(row, "已收金额"));
                     if (recvAmt < 0 || receivedAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
                     if (previewOnly) { res.Added++; continue; }
-                    var order = LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase));
-                    if (order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
+                    var order = hasOrderNo ? LoadSalesOrders().FirstOrDefault(x => string.Equals(x.Code, orderNo, StringComparison.OrdinalIgnoreCase)) : null;
+                    if (hasOrderNo && order == null) { AddErr(res, errors, rowNo, "来源销售订单不存在"); continue; }
                     var item = new Receivable
                     {
-                        SalesOrderId = order.Id, SalesOrderNo = order.Code, CustomerName = Cell(row, "客户名称", order.CustomerName),
+                        SalesOrderId = order?.Id ?? "", SalesOrderNo = order?.Code ?? "", CustomerName = order != null ? (order.CustomerName ?? "") : customerName,
                         ReceivableAmount = recvAmt, ReceivedAmount = receivedAmt,
-                        DueDate = Cell(row, "到期日期"), Note = Cell(row, "备注"), Code = code
+                        DueDate = NormalizeExcelDateText(Cell(row, "到期日期")), Note = Cell(row, "备注"), Code = code,
+                        SourceType = hasOrderNo ? "销售订单" : "手工"
                     };
                     ApplyReceivable(item);
                     item.Id = Guid.NewGuid().ToString("N");
@@ -1391,23 +1587,26 @@ namespace SupplierErpApp
                 try
                 {
                     string code = Cell(row, "应付编号");
+                    if (!Placeholder(code) && code.Trim().StartsWith("说明：", StringComparison.Ordinal)) { res.Skipped++; continue; }
                     if (!Placeholder(code) && list.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase))) { res.Skipped++; continue; }
                     string poNo = Cell(row, "采购单号");
-                    if (Placeholder(poNo)) { AddErr(res, errors, rowNo, "来源采购单不能为空"); continue; }
-                    if (!excelCtx.PurchaseOrderExists(poNo)) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
                     string supplierName = Cell(row, "供应商名称");
+                    bool hasPurchaseNo = !Placeholder(poNo);
+                    if (hasPurchaseNo && !excelCtx.PurchaseOrderExists(poNo)) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
+                    if (!hasPurchaseNo && Placeholder(supplierName)) { AddErr(res, errors, rowNo, "供应商名称不能为空"); continue; }
                     if (!Placeholder(supplierName) && !excelCtx.SupplierExists(supplierName))
                     { AddErr(res, errors, rowNo, "供应商不存在，请先在供应商管理中添加"); continue; }
                     decimal payAmt = Money(Cell(row, "应付金额")), paidAmt = Money(Cell(row, "已付金额"));
                     if (payAmt < 0 || paidAmt < 0) { AddErr(res, errors, rowNo, "金额不能为负数"); continue; }
                     if (previewOnly) { res.Added++; continue; }
-                    var po = LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase));
-                    if (po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
+                    var po = hasPurchaseNo ? LoadPurchaseOrders().FirstOrDefault(x => string.Equals(x.Code, poNo, StringComparison.OrdinalIgnoreCase)) : null;
+                    if (hasPurchaseNo && po == null) { AddErr(res, errors, rowNo, "来源采购单不存在"); continue; }
                     var item = new Payable
                     {
-                        PurchaseOrderId = po.Id, PurchaseNo = po.Code, SupplierName = Cell(row, "供应商名称", po.SupplierName),
+                        PurchaseOrderId = po?.Id ?? "", PurchaseNo = po?.Code ?? "", SupplierName = po != null ? (po.SupplierName ?? "") : supplierName,
                         PayableAmount = payAmt, PaidAmount = paidAmt,
-                        DueDate = Cell(row, "到期日期"), Note = Cell(row, "备注"), Code = code
+                        DueDate = NormalizeExcelDateText(Cell(row, "到期日期")), Note = Cell(row, "备注"), Code = code,
+                        SourceType = hasPurchaseNo ? "采购单" : "手工"
                     };
                     ApplyPayable(item);
                     item.Id = Guid.NewGuid().ToString("N");

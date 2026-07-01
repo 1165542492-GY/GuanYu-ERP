@@ -124,7 +124,6 @@ namespace SupplierErpApp
         static Receivable PersistReceivableDetailMutation(string receivableId, string clientUpdatedAt, UserSession user, Action<Receivable> mutate, string auditAction)
         {
             Receivable saved = null;
-            string auditCode = null;
             MutateJsonList<Receivable, Receivable>(ReceivablesFile, "receivables", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == receivableId);
@@ -136,18 +135,16 @@ namespace SupplierErpApp
                 ValidateReceivableTotals(item);
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
-                auditCode = item.Code;
                 saved = item;
                 return new JsonMutationResult<Receivable>(item, true);
             });
-            Audit(user, auditAction, auditCode);
+            Audit(user, auditAction, BuildReceivableAuditDetail(saved));
             return saved;
         }
 
         static Payable PersistPayableDetailMutation(string payableId, string clientUpdatedAt, UserSession user, Action<Payable> mutate, string auditAction)
         {
             Payable saved = null;
-            string auditCode = null;
             MutateJsonList<Payable, Payable>(PayablesFile, "payables", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == payableId);
@@ -159,11 +156,10 @@ namespace SupplierErpApp
                 ValidatePayableTotals(item);
                 item.UpdatedAt = BizUpdatedAtNow();
                 item.UpdatedBy = user.DisplayName;
-                auditCode = item.Code;
                 saved = item;
                 return new JsonMutationResult<Payable>(item, true);
             });
-            Audit(user, auditAction, auditCode);
+            Audit(user, auditAction, BuildPayableAuditDetail(saved));
             return saved;
         }
 
@@ -282,7 +278,7 @@ namespace SupplierErpApp
                 WriteJsonListCore(ReceivablesFile, "receivables", receivables);
                 WriteJsonListCore(FinanceFile, "finance", finance);
             });
-            Audit(user, auditAction, saved.Code);
+            Audit(user, auditAction, BuildReceivableAuditDetail(saved));
             return saved;
         }
 

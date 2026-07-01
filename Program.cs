@@ -3409,7 +3409,16 @@ namespace SupplierErpApp
             return result;
         }
 
-        static string Cell(Dictionary<string,string> row, params string[] names){foreach(var name in names){string value;if(row.TryGetValue(name,out value))return(value??"").Trim();}return"";}
+        static string Cell(Dictionary<string,string> row, params string[] names){foreach(var name in names){string value;if(row.TryGetValue(name,out value))return CleanImportedCellValue(name,value);}return"";}
+        static string CleanImportedCellValue(string header,string value)
+        {
+            value=(value??"").Trim();
+            if(string.IsNullOrWhiteSpace(value))return "";
+            if(string.Equals(value,"null",StringComparison.OrdinalIgnoreCase)||string.Equals(value,"undefined",StringComparison.OrdinalIgnoreCase)||string.Equals(value,"System.Object",StringComparison.OrdinalIgnoreCase))return "";
+            bool numericHeader=(header??"").IndexOf("金额",StringComparison.OrdinalIgnoreCase)>=0||(header??"").IndexOf("数量",StringComparison.OrdinalIgnoreCase)>=0||(header??"").IndexOf("单价",StringComparison.OrdinalIgnoreCase)>=0||(header??"").IndexOf("成本",StringComparison.OrdinalIgnoreCase)>=0||(header??"").IndexOf("余额",StringComparison.OrdinalIgnoreCase)>=0;
+            if(!numericHeader&&(value=="0"||value=="187"||value=="0001-01-01"||value=="1900-01-01"))return "";
+            return value;
+        }
         static decimal Money(string value){decimal n;value=(value??"").Replace(",","").Replace("￥","").Replace("¥","").Trim();return decimal.TryParse(value,out n)?n:0;}
         static bool Placeholder(string value){return string.IsNullOrWhiteSpace(value)||value.Contains("必填选项")||value.Contains("要求自动生成");}
 
@@ -5101,14 +5110,14 @@ namespace SupplierErpApp
         {
             var item = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(item);
             var saved = PersistSalesOrderAdd(item, user);
-            Audit(user, "新增销售订单", saved.Code); WriteJson(ctx, saved, 201);
+            Audit(user, "新增销售订单", BuildSalesOrderAuditDetail(saved)); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSalesOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = DeserializeSalesOrder(ReadBody(ctx.Request)); ApplySalesOrder(input);
             var saved = PersistSalesOrderUpdate(id, input, user);
-            Audit(user, "修改销售订单", saved.Code); WriteJson(ctx, saved);
+            Audit(user, "修改销售订单", BuildSalesOrderAuditDetail(saved)); WriteJson(ctx, saved);
         }
 
         static void DeleteSalesOrder(HttpListenerContext ctx, UserSession user, string id)
@@ -5169,7 +5178,11 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
-            Audit(user, "新增销售出库", saved.Code); WriteJson(ctx, saved, 201);
+            var detail = BuildSalesOutboundAuditDetail(saved);
+            Audit(user, "新增销售出库", detail);
+            if (HasSalesOrderSource(saved)) Audit(user, "销售订单转销售出库", detail);
+            AuditStatusTransition(user, "确认销售出库", "取消销售出库", null, saved.Status, detail);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
@@ -5177,11 +5190,13 @@ namespace SupplierErpApp
             var input = Json.Deserialize<SalesOutbound>(ReadBody(ctx.Request)); ApplySalesOutbound(input, id);
             ValidateSalesOutboundRemainingQty(input, id);
             ValidateStockForConfirmedOutbound(input, id);
+            string previousStatus = null;
             var saved = MutateJsonList<SalesOutbound, SalesOutbound>(SalesOutboundsFile, "sales_outbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                previousStatus = item.Status;
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.SalesOrderId ?? "", input.SalesOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
@@ -5197,7 +5212,10 @@ namespace SupplierErpApp
                 item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
-            Audit(user, "修改销售出库", saved.Code); WriteJson(ctx, saved);
+            var detail = BuildSalesOutboundAuditDetail(saved);
+            Audit(user, "修改销售出库", detail);
+            AuditStatusTransition(user, "确认销售出库", "取消销售出库", previousStatus, saved.Status, detail);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteSalesOutbound(HttpListenerContext ctx, UserSession user, string id)
@@ -5250,14 +5268,14 @@ namespace SupplierErpApp
         {
             var item = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(item);
             var saved = PersistPurchaseOrderAdd(item, user);
-            Audit(user, "新增采购单", saved.Code); WriteJson(ctx, saved, 201);
+            Audit(user, "新增采购单", BuildPurchaseOrderAuditDetail(saved)); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseOrder>(ReadBody(ctx.Request)); ApplyPurchaseOrder(input);
             var saved = PersistPurchaseOrderUpdate(id, input, user);
-            Audit(user, "修改采购单", saved.Code); WriteJson(ctx, saved);
+            Audit(user, "修改采购单", BuildPurchaseOrderAuditDetail(saved)); WriteJson(ctx, saved);
         }
 
         static void DeletePurchaseOrder(HttpListenerContext ctx, UserSession user, string id)
@@ -5309,18 +5327,24 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<PurchaseInbound>(item, true);
             });
-            Audit(user, "新增采购入库", saved.Code); WriteJson(ctx, saved, 201);
+            var detail = BuildPurchaseInboundAuditDetail(saved);
+            Audit(user, "新增采购入库", detail);
+            if (HasPurchaseOrderSource(saved)) Audit(user, "采购单转采购入库", detail);
+            AuditStatusTransition(user, "确认采购入库", "取消采购入库", null, saved.Status, detail);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<PurchaseInbound>(ReadBody(ctx.Request)); ApplyPurchaseInbound(input, id);
             ValidatePurchaseInboundRemainingQty(input, id);
+            string previousStatus = null;
             var saved = MutateJsonList<PurchaseInbound, PurchaseInbound>(PurchaseInboundsFile, "purchase_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                previousStatus = item.Status;
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.PurchaseOrderId ?? "", input.PurchaseOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
@@ -5332,7 +5356,10 @@ namespace SupplierErpApp
                 item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<PurchaseInbound>(item, true);
             });
-            Audit(user, "修改采购入库", saved.Code); WriteJson(ctx, saved);
+            var detail = BuildPurchaseInboundAuditDetail(saved);
+            Audit(user, "修改采购入库", detail);
+            AuditStatusTransition(user, "确认采购入库", "取消采购入库", previousStatus, saved.Status, detail);
+            WriteJson(ctx, saved);
         }
 
         static void DeletePurchaseInbound(HttpListenerContext ctx, UserSession user, string id)
@@ -5641,18 +5668,23 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
-            Audit(user, "新增生产领用", saved.Code); WriteJson(ctx, saved, 201);
+            var detail = BuildProductionPickAuditDetail(saved);
+            Audit(user, "新增生产领用", detail);
+            AuditStatusTransition(user, "确认生产领用", "取消生产领用", null, saved.Status, detail);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateProductionPick(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<ProductionPick>(ReadBody(ctx.Request)); ApplyProductionPick(input);
             ValidateStockForConfirmedPick(input, id);
+            string previousStatus = null;
             var saved = MutateJsonList<ProductionPick, ProductionPick>(ProductionPicksFile, "production_picks", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                previousStatus = item.Status;
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
@@ -5663,7 +5695,10 @@ namespace SupplierErpApp
                 item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
-            Audit(user, "修改生产领用", saved.Code); WriteJson(ctx, saved);
+            var detail = BuildProductionPickAuditDetail(saved);
+            Audit(user, "修改生产领用", detail);
+            AuditStatusTransition(user, "确认生产领用", "取消生产领用", previousStatus, saved.Status, detail);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteProductionPick(HttpListenerContext ctx, UserSession user, string id)
@@ -5906,7 +5941,7 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<ProductionWorkOrder>(item, true);
             });
-            Audit(user, "新增生产工单", saved.WorkOrderNo);
+            Audit(user, "新增生产工单", BuildProductionWorkOrderAuditDetail(saved));
             WriteJson(ctx, saved, 201);
         }
 
@@ -5940,7 +5975,7 @@ namespace SupplierErpApp
                 item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<ProductionWorkOrder>(item, true);
             });
-            Audit(user, "修改生产工单", saved.WorkOrderNo);
+            Audit(user, "修改生产工单", BuildProductionWorkOrderAuditDetail(saved));
             WriteJson(ctx, saved);
         }
 
@@ -6058,17 +6093,22 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
-            Audit(user, "新增成品入库", saved.Code); WriteJson(ctx, saved, 201);
+            var detail = BuildFinishedInboundAuditDetail(saved);
+            Audit(user, "新增成品入库", detail);
+            AuditStatusTransition(user, "确认成品入库", "取消成品入库", null, saved.Status, detail);
+            WriteJson(ctx, saved, 201);
         }
 
         static void UpdateFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
         {
             var input = Json.Deserialize<FinishedInbound>(ReadBody(ctx.Request)); ApplyFinishedInbound(input);
+            string previousStatus = null;
             var saved = MutateJsonList<FinishedInbound, FinishedInbound>(FinishedInboundsFile, "finished_inbounds", list =>
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
+                previousStatus = item.Status;
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ProductName ?? "", input.ProductName ?? "", StringComparison.OrdinalIgnoreCase)))
@@ -6080,7 +6120,10 @@ namespace SupplierErpApp
                 item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
-            Audit(user, "修改成品入库", saved.Code); WriteJson(ctx, saved);
+            var detail = BuildFinishedInboundAuditDetail(saved);
+            Audit(user, "修改成品入库", detail);
+            AuditStatusTransition(user, "确认成品入库", "取消成品入库", previousStatus, saved.Status, detail);
+            WriteJson(ctx, saved);
         }
 
         static void DeleteFinishedInbound(HttpListenerContext ctx, UserSession user, string id)
@@ -6134,7 +6177,7 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<Receivable>(item, true);
             });
-            Audit(user, "新增应收款", saved.Code); WriteJson(ctx, saved, 201);
+            Audit(user, "新增应收款", BuildReceivableAuditDetail(saved)); WriteJson(ctx, saved, 201);
         }
 
         static void UpdateReceivable(HttpListenerContext ctx, UserSession user, string id)
@@ -6155,7 +6198,7 @@ namespace SupplierErpApp
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Receivable>(item, true);
             });
-            Audit(user, "修改应收款", saved.Code); WriteJson(ctx, saved);
+            Audit(user, "修改应收款", BuildReceivableAuditDetail(saved)); WriteJson(ctx, saved);
         }
 
         static void DeleteReceivable(HttpListenerContext ctx, UserSession user, string id)
@@ -6217,7 +6260,7 @@ namespace SupplierErpApp
                 list.Insert(0, item);
                 return new JsonMutationResult<Payable>(item, true);
             });
-            Audit(user, "新增应付款", saved.Code); WriteJson(ctx, saved, 201);
+            Audit(user, "新增应付款", BuildPayableAuditDetail(saved)); WriteJson(ctx, saved, 201);
         }
 
         static void UpdatePayable(HttpListenerContext ctx, UserSession user, string id)
@@ -6238,7 +6281,7 @@ namespace SupplierErpApp
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
                 return new JsonMutationResult<Payable>(item, true);
             });
-            Audit(user, "修改应付款", saved.Code); WriteJson(ctx, saved);
+            Audit(user, "修改应付款", BuildPayableAuditDetail(saved)); WriteJson(ctx, saved);
         }
 
         static void DeletePayable(HttpListenerContext ctx, UserSession user, string id)

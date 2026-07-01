@@ -28,6 +28,8 @@ html[data-size="xlarge"]{--cell-ellipsis-w:240px}
 @media (max-width:720px){.arap-detail-form .grid{grid-template-columns:1fr}}
 #salesOrderView>.panel,#salesOutboundView>.panel,#purchaseOrderView>.panel,#purchaseInboundView>.panel,#productionPickView>.panel,#finishedInboundView>.panel,#productionWorkOrderView>.panel,#receivableView>.panel,#payableView>.panel,#stockView>.panel{overflow:hidden}
 #soDualScroll,#soutDualScroll,#poDualScroll,#pinDualScroll,#ppDualScroll,#finDualScroll,#pwoDualScroll,#asoDualScroll,#recDualScroll,#payDualScroll,#stockDualScroll{max-width:100%;overflow:hidden;flex-shrink:0}
+#receivableView,#payableView,#receivableView>.panel,#payableView>.panel,#recDualScroll,#payDualScroll{width:100%;min-width:0}
+#receivableView .tools,#payableView .tools{min-width:0}
 html[data-size="large"] .content .dual-scroll .table-scroll-top,html[data-size="xlarge"] .content .dual-scroll .table-scroll-top{flex:0 0 var(--hscroll-track)!important;min-height:var(--hscroll-track)!important;display:block!important;overflow-x:auto!important}
 html[data-size="xlarge"] .content .dual-scroll{display:flex!important;flex-direction:column!important;width:100%!important}
 .pwo-cards{grid-template-columns:repeat(5,minmax(0,1fr))}
@@ -446,7 +448,7 @@ var out;
 if(f.key==='ItemType')out=v==='FinishedProduct'?'成品':(v==='Material'?'物料':String(v));
 else if(f.key==='PriceType')out=v==='含税'||v==='不含税'?String(v):String(v);
 else if(f.type==='select'&&f.optionLabels&&f.options){var i=f.options.indexOf(v);out=(i>=0&&f.optionLabels[i])?f.optionLabels[i]:String(v)}
-else if(f.type==='number'||f.readonly||(typeof v==='number'))out=bizIsMoneyField(f)?money(v):String(bizMoney2(v));
+else if(f.type==='number'||(f.readonly&&!bizIsTextField(f))||(typeof v==='number'))out=bizIsMoneyField(f)?money(v):String(bizMoney2(v));
 else out=String(v);
 if(forList&&bizIsLongNameField(f)&&out!=='-')return cellEllipsis(out,/Material|Product|Bom|Goods|Spec|Name|Company|Supplier/.test(f.key||'')?'col-goods':'col-company');
 return safe(out);
