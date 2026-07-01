@@ -1007,6 +1007,8 @@ namespace SupplierErpApp
             ProductionPickSequenceFile = Path.Combine(DataDir, "production_pick_sequence.json");
             FinishedInboundsFile = Path.Combine(DataDir, "finished_inbounds.json");
             FinishedInboundSequenceFile = Path.Combine(DataDir, "finished_inbound_sequence.json");
+            InventoryMovementsFile = Path.Combine(DataDir, "inventory_movements.json");
+            InventoryMovementSequenceFile = Path.Combine(DataDir, "inventory_movement_sequence.json");
             ProductionWorkOrdersFile = Path.Combine(DataDir, "production-work-orders.json");
             AfterSalesServiceOrdersFile = Path.Combine(DataDir, "after-sales-service-orders.json");
             ReceivablesFile = Path.Combine(DataDir, "receivables.json");
@@ -1411,7 +1413,12 @@ namespace SupplierErpApp
                 if (path == "/api/finished-inbounds" && ctx.Request.HttpMethod == "POST") { if (!RequirePermission(ctx, user, "finished_inbound.add")) return; AddFinishedInbound(ctx, user); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "PUT") { if (!RequirePermission(ctx, user, "finished_inbound.edit")) return; UpdateFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
                 if (path.StartsWith("/api/finished-inbounds/") && ctx.Request.HttpMethod == "DELETE") { if (!RequirePermission(ctx, user, "finished_inbound.delete")) return; DeleteFinishedInbound(ctx, user, path.Substring("/api/finished-inbounds/".Length)); return; }
+                if (path == "/api/inventory-movements" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ListInventoryMovements(ctx); return; }
+                if (path == "/api/inventory-movements/export" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ExportInventoryMovementsCsv(ctx, user); return; }
+                if (path.StartsWith("/api/inventory-movements/") && path.EndsWith("/source") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; GetInventoryMovementSource(ctx, path.Substring("/api/inventory-movements/".Length, path.Length - "/api/inventory-movements/".Length - "/source".Length)); return; }
                 if (path == "/api/stocks/summary" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockSummary()); return; }
+                if (path == "/api/stocks/detail" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; GetStockDetail(ctx); return; }
+                if (path.StartsWith("/api/stocks/") && path.EndsWith("/movements") && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; ListStockMovements(ctx, path.Substring("/api/stocks/".Length, path.Length - "/api/stocks/".Length - "/movements".Length)); return; }
                 if (path == "/api/stocks" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "stock.view")) return; WriteJson(ctx, BuildStockItems()); return; }
                 if (path == "/api/stocks/export") { if (!RequirePermission(ctx, user, "stock.view")) return; ExportStocksCsv(ctx); return; }
                 if (path == "/api/receivables" && ctx.Request.HttpMethod == "GET") { if (!RequirePermission(ctx, user, "receivable.view")) return; WriteJson(ctx, LoadReceivables()); return; }
@@ -4740,6 +4747,8 @@ namespace SupplierErpApp
             EnsureJsonFile(ProductionPickSequenceFile, "0");
             EnsureJsonFile(FinishedInboundsFile);
             EnsureJsonFile(FinishedInboundSequenceFile, "0");
+            EnsureJsonFile(InventoryMovementsFile);
+            EnsureJsonFile(InventoryMovementSequenceFile, "0");
             EnsureJsonFile(ProductionWorkOrdersFile);
             EnsureJsonFile(AfterSalesServiceOrdersFile);
             EnsureJsonFile(ReceivablesFile);
@@ -5175,6 +5184,7 @@ namespace SupplierErpApp
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(SalesOutboundSequenceFile, "SOUT", list.Select(x => x.Code), "XSCK");
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordSalesOutboundMovement(user, null, item);
                 list.Insert(0, item);
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
@@ -5197,6 +5207,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
+                var before = new SalesOutbound { Id = item.Id, Code = item.Code, SalesOrderId = item.SalesOrderId, SalesOrderNo = item.SalesOrderNo, CustomerName = item.CustomerName, ItemType = item.ItemType, ModelCostId = item.ModelCostId, BomId = item.BomId, BomCode = item.BomCode, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, CostPrice = item.CostPrice, CostAmount = item.CostAmount, OutboundDate = item.OutboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.SalesOrderId ?? "", input.SalesOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
@@ -5210,6 +5221,7 @@ namespace SupplierErpApp
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.CostPrice = input.CostPrice; item.CostAmount = input.CostAmount; item.OutboundDate = input.OutboundDate;
                 item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordSalesOutboundMovement(user, before, item);
                 return new JsonMutationResult<SalesOutbound>(item, true);
             });
             var detail = BuildSalesOutboundAuditDetail(saved);
@@ -5232,6 +5244,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("销售出库不存在", 404);
+                RecordSalesOutboundMovement(user, item, null, true);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5324,6 +5337,7 @@ namespace SupplierErpApp
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(PurchaseInboundSequenceFile, "PIN", list.Select(x => x.Code), "CGRK");
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordPurchaseInboundMovement(user, null, item);
                 list.Insert(0, item);
                 return new JsonMutationResult<PurchaseInbound>(item, true);
             });
@@ -5345,6 +5359,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
+                var before = new PurchaseInbound { Id = item.Id, Code = item.Code, PurchaseOrderId = item.PurchaseOrderId, PurchaseNo = item.PurchaseNo, SupplierName = item.SupplierName, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, InboundPrice = item.InboundPrice, Amount = item.Amount, InboundDate = item.InboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.PurchaseOrderId ?? "", input.PurchaseOrderId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
@@ -5354,6 +5369,7 @@ namespace SupplierErpApp
                 item.MaterialName = input.MaterialName; item.Quantity = input.Quantity;
                 item.InboundPrice = input.InboundPrice; item.Amount = input.Amount; item.InboundDate = input.InboundDate;
                 item.Status = input.Status; item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordPurchaseInboundMovement(user, before, item);
                 return new JsonMutationResult<PurchaseInbound>(item, true);
             });
             var detail = BuildPurchaseInboundAuditDetail(saved);
@@ -5377,6 +5393,7 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("采购入库不存在", 404);
                 ValidatePurchaseInboundRollbackStock(item);
+                RecordPurchaseInboundMovement(user, item, null, true);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -5400,7 +5417,12 @@ namespace SupplierErpApp
                 var removed = list.Where(x => ids.Contains((string)x.GetType().GetProperty("Id").GetValue(x, null))).ToList();
                 if (removed.Count == 0) throw new BusinessException("未找到可删除的" + label, 404);
                 if (auditKey == "purchase_inbound") ValidatePurchaseInboundRollbackStock(removed.OfType<PurchaseInbound>());
-                foreach (var item in removed) list.Remove(item);
+                foreach (var item in removed)
+                {
+                    if (auditKey == "purchase_inbound") RecordPurchaseInboundMovement(user, item as PurchaseInbound, null, true);
+                    if (auditKey == "sales_outbound") RecordSalesOutboundMovement(user, item as SalesOutbound, null, true);
+                    list.Remove(item);
+                }
                 return new JsonMutationResult<int>(removed.Count, true);
             });
             Audit(user, "批量删除" + label, "共" + deleted + "条");
@@ -5665,6 +5687,7 @@ namespace SupplierErpApp
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(ProductionPickSequenceFile, "PL", list.Select(x => x.Code), "SCLL");
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordProductionPickMovement(user, null, item);
                 list.Insert(0, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
@@ -5685,6 +5708,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
+                var before = new ProductionPick { Id = item.Id, Code = item.Code, BomId = item.BomId, BomName = item.BomName, MaterialId = item.MaterialId, MaterialCode = item.MaterialCode, MaterialName = item.MaterialName, Quantity = item.Quantity, CostPrice = item.CostPrice, CostAmount = item.CostAmount, PickDate = item.PickDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.MaterialId ?? "", input.MaterialId ?? "", StringComparison.Ordinal)))
                     BizFail(ReferenceLockMessage, 409);
@@ -5693,6 +5717,7 @@ namespace SupplierErpApp
                 item.Quantity = input.Quantity; item.CostPrice = input.CostPrice;
                 item.CostAmount = input.CostAmount; item.PickDate = input.PickDate; item.Status = input.Status;
                 item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordProductionPickMovement(user, before, item);
                 return new JsonMutationResult<ProductionPick>(item, true);
             });
             var detail = BuildProductionPickAuditDetail(saved);
@@ -5715,6 +5740,7 @@ namespace SupplierErpApp
             {
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("生产领用不存在", 404);
+                RecordProductionPickMovement(user, item, null, true);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -6090,6 +6116,7 @@ namespace SupplierErpApp
                 item.Id = Guid.NewGuid().ToString("N");
                 item.Code = NextCode(FinishedInboundSequenceFile, "FGI", list.Select(x => x.Code), "CPRK");
                 item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordFinishedInboundMovement(user, null, item);
                 list.Insert(0, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
@@ -6109,6 +6136,7 @@ namespace SupplierErpApp
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 EnsureEditVersionMatch(item.UpdatedAt, input.UpdatedAt);
                 previousStatus = item.Status;
+                var before = new FinishedInbound { Id = item.Id, Code = item.Code, BomId = item.BomId, BomCode = item.BomCode, ModelCostId = item.ModelCostId, ProductName = item.ProductName, Quantity = item.Quantity, UnitCost = item.UnitCost, Amount = item.Amount, InboundDate = item.InboundDate, Status = item.Status, Note = item.Note, UpdatedAt = item.UpdatedAt, UpdatedBy = item.UpdatedBy };
                 if (IsConfirmedStatus(item.Status) && (!string.Equals(item.BomId ?? "", input.BomId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ModelCostId ?? "", input.ModelCostId ?? "", StringComparison.Ordinal)
                     || !string.Equals(item.ProductName ?? "", input.ProductName ?? "", StringComparison.OrdinalIgnoreCase)))
@@ -6118,6 +6146,7 @@ namespace SupplierErpApp
                 item.ProductName = input.ProductName; item.Quantity = input.Quantity; item.UnitCost = input.UnitCost;
                 item.Amount = input.Amount; item.InboundDate = input.InboundDate; item.Status = input.Status;
                 item.Note = input.Note; item.UpdatedAt = BizUpdatedAtNow(); item.UpdatedBy = user.DisplayName;
+                RecordFinishedInboundMovement(user, before, item);
                 return new JsonMutationResult<FinishedInbound>(item, true);
             });
             var detail = BuildFinishedInboundAuditDetail(saved);
@@ -6141,6 +6170,7 @@ namespace SupplierErpApp
                 var item = list.FirstOrDefault(x => x.Id == id);
                 if (item == null) throw new BusinessException("成品入库不存在", 404);
                 ValidateFinishedInboundRollbackStock(item);
+                RecordFinishedInboundMovement(user, item, null, true);
                 list.Remove(item);
                 return new JsonMutationResult<object>(new { ok = true }, true);
             });
@@ -6522,6 +6552,8 @@ namespace SupplierErpApp
                 new BackupFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json" },
                 new BackupFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json" },
                 new BackupFileSpec { Path = FinishedInboundSequenceFile, FileName = "finished_inbound_sequence.json" },
+                new BackupFileSpec { Path = InventoryMovementsFile, FileName = "inventory_movements.json" },
+                new BackupFileSpec { Path = InventoryMovementSequenceFile, FileName = "inventory_movement_sequence.json" },
                 new BackupFileSpec { Path = ReceivablesFile, FileName = "receivables.json" },
                 new BackupFileSpec { Path = ReceivableSequenceFile, FileName = "receivable_sequence.json" },
                 new BackupFileSpec { Path = PayablesFile, FileName = "payables.json" },
@@ -6598,6 +6630,8 @@ namespace SupplierErpApp
                 new ClearDataFileSpec { Path = ProductionPickSequenceFile, FileName = "production_pick_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = FinishedInboundsFile, FileName = "finished_inbounds.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = FinishedInboundSequenceFile, FileName = "finished_inbound_sequence.json", EmptyContent = "0" },
+                new ClearDataFileSpec { Path = InventoryMovementsFile, FileName = "inventory_movements.json", EmptyContent = "[]" },
+                new ClearDataFileSpec { Path = InventoryMovementSequenceFile, FileName = "inventory_movement_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = ReceivablesFile, FileName = "receivables.json", EmptyContent = "[]" },
                 new ClearDataFileSpec { Path = ReceivableSequenceFile, FileName = "receivable_sequence.json", EmptyContent = "0" },
                 new ClearDataFileSpec { Path = PayablesFile, FileName = "payables.json", EmptyContent = "[]" },

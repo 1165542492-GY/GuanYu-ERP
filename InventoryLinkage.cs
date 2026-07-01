@@ -38,8 +38,14 @@ namespace SupplierErpApp
                 ResolveMaterialFields(materialId, materialName, out mid, out mcode, out mname, out mspec, out munit);
                 string display = !string.IsNullOrWhiteSpace(mcode) ? mcode + " " + mname : (!string.IsNullOrWhiteSpace(mname) ? mname : (materialName ?? "未知物料"));
                 if (available <= 0.0001m)
-                    BizFail(string.Format("该物料「{0}」当前库存为 0，不能出库/领用", display), 409);
-                BizFail(string.Format("物料「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty)), 409);
+                {
+                    string zeroMessage = string.Format("该物料「{0}」当前库存为 0，不能出库/领用", display);
+                    AuditInventoryProtectionBlock(zeroMessage);
+                    BizFail(zeroMessage, 409);
+                }
+                string message = string.Format("物料「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty));
+                AuditInventoryProtectionBlock(message);
+                BizFail(message, 409);
             }
         }
 
@@ -61,8 +67,14 @@ namespace SupplierErpApp
             {
                 string display = !string.IsNullOrWhiteSpace(productName) ? productName : "成品";
                 if (available <= 0.0001m)
-                    BizFail(string.Format("该成品「{0}」当前库存为 0，不能出库", display), 409);
-                BizFail(string.Format("成品「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty)), 409);
+                {
+                    string zeroMessage = string.Format("该成品「{0}」当前库存为 0，不能出库", display);
+                    AuditInventoryProtectionBlock(zeroMessage);
+                    BizFail(zeroMessage, 409);
+                }
+                string message = string.Format("成品「{0}」库存不足，当前可用 {1}，需要 {2}", display, RoundMoney(available), RoundMoney(requiredQty));
+                AuditInventoryProtectionBlock(message);
+                BizFail(message, 409);
             }
         }
 
@@ -103,7 +115,9 @@ namespace SupplierErpApp
             ResolveMaterialFields(materialId, materialName, out mid, out mcode, out mname, out mspec, out munit);
             if (!string.IsNullOrWhiteSpace(materialCode)) mcode = materialCode;
             string display = !string.IsNullOrWhiteSpace(mcode) ? mcode + " " + mname : (!string.IsNullOrWhiteSpace(mname) ? mname : (materialName ?? "未知物料"));
-            BizFail(string.Format("物料「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty)), 409);
+            string message = string.Format("物料「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty));
+            AuditInventoryProtectionBlock(message);
+            BizFail(message, 409);
         }
 
         static void EnsureFinishedProductStockRollbackAvailable(decimal rollbackQty, string modelCostId, string bomId, string productName, string docName)
@@ -113,7 +127,9 @@ namespace SupplierErpApp
             if (available + 0.0001m >= rollbackQty) return;
 
             string display = !string.IsNullOrWhiteSpace(productName) ? productName : "成品";
-            BizFail(string.Format("成品「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty)), 409);
+            string message = string.Format("成品「{0}」库存不足，不能回滚{1}。当前可用 {2}，需要回滚 {3}", display, docName, RoundMoney(available), RoundMoney(rollbackQty));
+            AuditInventoryProtectionBlock(message);
+            BizFail(message, 409);
         }
 
         static void ValidatePurchaseInboundRollbackStock(PurchaseInbound current, PurchaseInbound next = null)
