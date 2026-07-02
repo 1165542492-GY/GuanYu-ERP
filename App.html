@@ -42,6 +42,51 @@ html,body{max-width:100%;overflow-x:hidden}
 @media(min-width:900px){.cards.owner-summary-cards{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 @media(min-width:1200px){.cards.owner-summary-cards{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
 @media(max-width:620px){.cards.owner-summary-cards{grid-template-columns:1fr!important}}
+</style><style id="ui-responsive-system-fix">
+html{--content-max:none}
+html[data-size="small"],html[data-size="standard"],html[data-size="large"],html[data-size="xlarge"]{--content-max:none}
+html,body{width:100%;min-width:0;max-width:none}
+.app{width:100%!important;min-width:0!important;overflow-x:hidden}
+.main{width:auto!important;max-width:none!important;min-width:0!important;margin-left:222px!important;overflow-x:hidden}
+.content{width:100%!important;max-width:none!important;min-width:0!important;margin:0!important}
+.content>.panel,.content .panel{width:100%;min-width:0}
+.top{width:100%;min-width:0}
+.cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(220px * var(--ui-scale,1))),1fr))!important}
+.cards.owner-summary-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(210px * var(--ui-scale,1))),1fr))!important}
+.dashboard-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(540px * var(--ui-scale,1))),1fr))!important}
+.owner-warning-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(150px * var(--ui-scale,1))),1fr))!important}
+.tools,.panel>.tools,.account-tools,.biz-dashboard-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;min-width:0}
+.tools{justify-content:space-between}
+.tools>div,.lefttools,.righttools,.tools .lefttools,.tools .righttools,.oplog-actions,.test-data-tools{display:flex;flex-wrap:wrap;align-items:center;gap:9px;min-width:0}
+.tools>div:last-child,.panel>.tools .righttools{margin-left:auto;justify-content:flex-end}
+.search,.tools .search,.panel>.tools .search{flex:1 1 calc(220px * var(--ui-scale,1));min-width:min(100%,calc(180px * var(--ui-scale,1)));max-width:min(100%,calc(360px * var(--ui-scale,1)))}
+.tablewrap,.batch-tablewrap,.arap-detail-tablewrap{width:100%;max-width:100%;min-width:0;overflow-x:auto!important;overflow-y:auto;scrollbar-gutter:stable}
+.dual-scroll{width:100%!important;max-width:100%!important;min-width:0!important;overflow:hidden!important}
+.dual-scroll .table-scroll-top{background:#f8fafc!important;border-bottom:1px solid var(--line)!important}
+.dual-scroll .tablewrap,.dual-scroll.dashboard-dual-scroll .tablewrap,.dual-scroll.dashboard-dual-scroll .tablewrap.dashboard-tablewrap{width:100%;max-width:100%;overflow-x:auto!important;overflow-y:auto!important}
+.dual-scroll .tablewrap::-webkit-scrollbar:horizontal,.dual-scroll.dashboard-dual-scroll .tablewrap::-webkit-scrollbar:horizontal{height:12px!important;display:block!important}
+.dual-scroll.is-no-hscroll .table-scroll-top{display:none!important;height:0!important;min-height:0!important;max-height:0!important;border:0!important}
+table,.data-table,.dashboard-table,.batch-table,.biz-table,.biz-table-compact,.oplog-table-compact,.stock-detail-mini-table,.arap-detail-table{width:100%!important;table-layout:auto}
+table{min-width:max(100%,1100px)}
+.data-table{min-width:max(100%,1100px)!important}
+.supplier-table{min-width:max(100%,1080px)!important}
+.customer-table{min-width:max(100%,960px)!important}
+.material-table{min-width:max(100%,1180px)!important}
+.bom-table,.model-cost-table{min-width:max(100%,1200px)!important}
+.biz-table{min-width:max(100%,1080px)!important}
+.inventory-movement-table{min-width:max(100%,1500px)!important}
+.dashboard-table{min-width:max(100%,900px)!important}
+.dash-receivable-table,.dash-rank-receivable-table,.dash-rank-payable-table{min-width:max(100%,980px)!important}
+.dash-payable-table,.dash-inventory-table,.dash-finance-table{min-width:max(100%,1000px)!important}
+.dash-rank-inventory-table{min-width:max(100%,900px)!important}
+.dash-rank-warning-table{min-width:max(100%,820px)!important}
+.oplog-table-compact{min-width:max(100%,980px)!important}
+.finance-table{min-width:max(100%,1200px)!important}
+.batch-table{min-width:max(100%,1200px)!important}
+.bom-detail-table{min-width:max(100%,1400px)!important}
+#salesOrderView,#salesOutboundView,#purchaseOrderView,#purchaseInboundView,#productionPickView,#finishedInboundView,#productionWorkOrderView,#afterSalesServiceOrderView,#stockView,#inventoryMovementView,#receivableView,#payableView{max-width:none!important}
+@media(max-width:900px){.main{margin-left:72px!important;width:auto!important;max-width:none!important;min-width:0!important}.content,.top{padding-left:18px!important;padding-right:18px!important}}
+@media(max-width:620px){.tools>div:last-child,.panel>.tools .righttools{margin-left:0;justify-content:flex-start}.search,.tools .search,.panel>.tools .search{max-width:100%}}
 </style></head><body>
 <div id="erpUiLockBanner"></div>
 <div class="login" id="login"><form class="loginbox" id="loginForm"><div class="loginbrand"><div class="logo">冠誉</div>智造ERP供应商管理</div><p class="loginhint">数控机床制造企业 · 局域网共享版</p><label>登录账号</label><input id="loginUser" value="admin" autocomplete="username"><label>登录密码</label><input id="loginPass" type="password" autocomplete="current-password" placeholder="请输入密码"><button class="btn primary" type="button" id="loginSubmitBtn" onclick="erpHardLogin(event)">登录系统</button><div class="loginerror" id="loginError"></div><div class="logindebug" id="loginDebug"></div><div class="loginfix-tag" id="loginFixTag">登录修复版：rc3.6-login-hardfix</div><div class="accounts">首次登录：管理员账号 <b>admin</b>，密码 <b>admin123</b><br>其他账号请查看随程序附带的《首次使用说明》。</div></form></div>
