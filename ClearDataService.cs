@@ -14,7 +14,7 @@ namespace SupplierErpApp
         const string ClearTestDataConfirmText = "确认清理测试数据";
         const string ClearAllBusinessConfirmText = "确认清空全部业务数据";
         const string DeepInitializeConfirmText = "我确认深度初始化空库";
-        static readonly string[] DeepInitializePreservedKeys = { "admin", "users", "permissions", "settings", "clearDataPassword", "dictionaries", "tax", "numbering", "contractTemplates", "finalBackup" };
+        static readonly string[] DeepInitializePreservedKeys = { "admin", "users", "permissions", "settings", "clearDataPassword", "dictionaries", "tax", "numbering", "finalBackup" };
 
         public class ClearAutoTestResult
         {
@@ -132,9 +132,6 @@ namespace SupplierErpApp
             var finance = LoadFinance();
             finance = finance.Where(x => !ObjectHasAutoTestMarker(x)).ToList();
 
-            var contracts = LoadContracts();
-            contracts = contracts.Where(x => !ObjectHasAutoTestMarker(x)).ToList();
-
             var beforeSup = LoadSuppliers().Count;
             SaveSuppliers(suppliers); removed["suppliers"] = beforeSup - suppliers.Count;
             var beforeCust = LoadCustomers().Count; SaveCustomers(customers); removed["customers"] = beforeCust - customers.Count;
@@ -152,8 +149,6 @@ namespace SupplierErpApp
             var beforeRec = LoadReceivables().Count; SaveReceivables(receivables); removed["receivables"] = beforeRec - receivables.Count;
             var beforePay = LoadPayables().Count; SavePayables(payables); removed["payables"] = beforePay - payables.Count;
             var beforeFinance = LoadFinance().Count; SaveFinance(finance); removed["finance"] = beforeFinance - finance.Count;
-            var beforeCon = LoadContracts().Count; SaveContracts(contracts); removed["contracts"] = beforeCon - contracts.Count;
-
             RepairAllSequenceFiles();
             int total = removed.Values.Sum();
             return new ClearAutoTestResult { Removed = removed, TotalRemoved = total };
@@ -215,7 +210,7 @@ namespace SupplierErpApp
                         ["model_costs"] = "机型成本", ["sales_orders"] = "销售订单", ["purchase_orders"] = "采购单",
                         ["sales_outbounds"] = "销售出库", ["purchase_inbounds"] = "采购入库", ["production_picks"] = "生产领用",
                         ["finished_inbounds"] = "成品入库", ["receivables"] = "应收", ["payables"] = "应付",
-                        ["finance"] = "财务业务", ["contracts"] = "合同"
+                        ["finance"] = "财务业务"
                     };
                     var parts = result.Removed.Where(kv => kv.Value > 0).Select(kv => (labelMap.ContainsKey(kv.Key) ? labelMap[kv.Key] : kv.Key) + " " + kv.Value + "条");
                     string msg = "已清理 AUTO_TEST 测试数据：" + string.Join("、", parts);

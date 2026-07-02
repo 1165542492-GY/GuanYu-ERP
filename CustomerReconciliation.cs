@@ -129,15 +129,6 @@ namespace SupplierErpApp
 
         static string GetCompanyRemittanceInfo()
         {
-            try
-            {
-                var setting = LoadContractSettings().FirstOrDefault(x =>
-                    string.Equals(x.Name ?? "", "冠誉公司资料", StringComparison.OrdinalIgnoreCase)
-                    && (x.Status ?? "启用") == "启用");
-                if (setting != null && !string.IsNullOrWhiteSpace(setting.Content))
-                    return setting.Content.Trim();
-            }
-            catch { }
             return "中山市冠誉数控设备有限公司\n开户行：\n账号：\n联系人：王浪\n电话：18988541298";
         }
 
@@ -157,7 +148,6 @@ namespace SupplierErpApp
             var salesOrders = LoadSalesOrders();
             var receivables = LoadReceivables();
             var outbounds = LoadSalesOutbounds();
-            var contracts = LoadContracts();
             var customerReceivables = receivables.Where(x => ReceivableBelongsToCustomer(x, customer, salesOrders)).ToList();
 
             decimal opening = 0, periodNew = 0, periodReceipts = 0;
@@ -207,15 +197,8 @@ namespace SupplierErpApp
 
                 var outbound = outbounds.FirstOrDefault(x => x.SalesOrderId == order?.Id);
                 DateTime? deliveryDate = outbound != null ? ParseBizDate(outbound.OutboundDate) : orderDate;
-                var contract = contracts
-                    .Where(c => string.Equals(c.CustomerCode ?? "", customer.Code ?? "", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(c.Status ?? "", "已作废", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(c => c.SignDate ?? "")
-                    .FirstOrDefault();
                 string orderNo = order?.Code ?? rec.SalesOrderNo ?? rec.Code ?? "-";
-                string docNo = contract != null && !string.IsNullOrWhiteSpace(contract.Code)
-                    ? contract.Code + " / " + orderNo
-                    : orderNo;
+                string docNo = orderNo;
 
                 decimal qty = order != null ? order.Quantity : 0;
                 decimal unitPrice = 0;
@@ -331,7 +314,7 @@ namespace SupplierErpApp
                 row++;
                 row++;
 
-                string[] headers = { "送机日期/订单日期", "合同编号/销售订单号", "机型规格/产品名称", "数量", "单价/含税", "金额/含税", "本次收款", "剩余未收", "收款日期", "备注" };
+                string[] headers = { "送机日期/订单日期", "销售订单号", "机型规格/产品名称", "数量", "单价/含税", "金额/含税", "本次收款", "剩余未收", "收款日期", "备注" };
                 for (int i = 0; i < headers.Length; i++)
                     ws.Cell(row, i + 1).Value = headers[i];
                 ws.Range(row, 1, row, colCount).Style.Font.Bold = true;

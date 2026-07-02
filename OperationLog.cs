@@ -109,8 +109,6 @@ namespace SupplierErpApp
             else if (action.IndexOf("收款", StringComparison.Ordinal) >= 0) { module = "应收款"; entityType = "ReceiptDetail"; }
             else if (action.IndexOf("付款", StringComparison.Ordinal) >= 0) { module = "应付款"; entityType = "PaymentDetail"; }
             else if (action.IndexOf("收支", StringComparison.Ordinal) >= 0 || action.IndexOf("期初", StringComparison.Ordinal) >= 0) { module = "财务收支"; entityType = "FinanceTransaction"; }
-            else if (action.IndexOf("合同资料", StringComparison.Ordinal) >= 0) { module = "合同资料"; entityType = "ContractSetting"; }
-            else if (action.IndexOf("合同", StringComparison.Ordinal) >= 0) { module = "合同管理"; entityType = "ContractItem"; }
             else if (action.IndexOf("字典", StringComparison.Ordinal) >= 0) { module = "系统设置"; entityType = "DictionaryOption"; }
             else if (action.IndexOf("子账号", StringComparison.Ordinal) >= 0 || action.IndexOf("账号", StringComparison.Ordinal) >= 0) { module = "系统设置"; entityType = "User"; }
             else if (action.IndexOf("登录", StringComparison.Ordinal) >= 0 || action.IndexOf("退出", StringComparison.Ordinal) >= 0) { module = "登录权限"; entityType = "Session"; }

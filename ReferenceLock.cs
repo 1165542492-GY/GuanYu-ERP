@@ -70,9 +70,6 @@ namespace SupplierErpApp
             if (LoadSalesOrders().Any(x => MatchesCustomerRef(x.CustomerId, x.CustomerCode, x.CustomerName, customerId, customerCode, customerCompany))) return true;
             if (LoadSalesOutbounds().Any(x => string.Equals((x.CustomerName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase))) return true;
             if (LoadReceivables().Any(x => string.Equals((x.CustomerName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase))) return true;
-            if (LoadContracts().Any(x =>
-                string.Equals((x.PartyBName ?? "").Trim(), customerCompany ?? "", StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(customerCode) && string.Equals((x.CustomerCode ?? "").Trim(), customerCode, StringComparison.OrdinalIgnoreCase)))) return true;
             return false;
         }
 
