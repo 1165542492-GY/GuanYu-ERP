@@ -19,6 +19,8 @@ namespace SupplierErpApp
             public decimal PayableBalance { get; set; }
             public decimal InventoryQuantityTotal { get; set; }
             public decimal InventoryAmountTotal { get; set; }
+            public decimal StockAmount { get; set; }
+            public decimal OperatingNetAsset { get; set; }
             public decimal FinanceIncomeTotal { get; set; }
             public decimal FinanceExpenseTotal { get; set; }
             public decimal FinanceNetTotal { get; set; }
@@ -113,7 +115,7 @@ namespace SupplierErpApp
                 || HasPermission(user, "purchase_order.view")
                 || HasPermission(user, "receivable.view")
                 || HasPermission(user, "payable.view")
-                || HasPermission(user, "stock.view")
+                || HasPermission(user, "stock_summary.view")
                 || HasPermission(user, "finance.view");
         }
 
@@ -197,6 +199,9 @@ namespace SupplierErpApp
             var stockSummary = BuildStockSummary();
             decimal inventoryQty = stockSummary.TotalQuantity;
             decimal inventoryAmount = RoundMoney(stockSummary.Items.Sum(x => x.StockAmount));
+            decimal receivableBalance = RoundMoney(receivableTotal - receivedTotal);
+            decimal payableBalance = RoundMoney(payableTotal - paidTotal);
+            decimal operatingNetAsset = RoundMoney(receivableBalance + inventoryAmount - payableBalance);
 
             decimal financeIncome = 0;
             decimal financeExpense = 0;
@@ -213,12 +218,14 @@ namespace SupplierErpApp
                 PurchaseTotal = RoundMoney(purchaseTotal),
                 ReceivableTotal = RoundMoney(receivableTotal),
                 ReceivedTotal = RoundMoney(receivedTotal),
-                ReceivableBalance = RoundMoney(receivableTotal - receivedTotal),
+                ReceivableBalance = receivableBalance,
                 PayableTotal = RoundMoney(payableTotal),
                 PaidTotal = RoundMoney(paidTotal),
-                PayableBalance = RoundMoney(payableTotal - paidTotal),
+                PayableBalance = payableBalance,
                 InventoryQuantityTotal = inventoryQty,
                 InventoryAmountTotal = inventoryAmount,
+                StockAmount = inventoryAmount,
+                OperatingNetAsset = operatingNetAsset,
                 FinanceIncomeTotal = RoundMoney(financeIncome),
                 FinanceExpenseTotal = RoundMoney(financeExpense),
                 FinanceNetTotal = RoundMoney(financeIncome - financeExpense),
@@ -232,12 +239,14 @@ namespace SupplierErpApp
             biz = biz ?? new BusinessDashboardResult();
             return new[]
             {
-                new DashboardSummaryCard { Key = "sales", Label = "销售总额", Value = biz.SalesTotal, Hint = "" },
-                new DashboardSummaryCard { Key = "purchase", Label = "采购总额", Value = biz.PurchaseTotal, Hint = "" },
-                new DashboardSummaryCard { Key = "receivable", Label = "应收余额", Value = biz.ReceivableBalance, Hint = "累计全期" },
-                new DashboardSummaryCard { Key = "payable", Label = "应付余额", Value = biz.PayableBalance, Hint = "累计全期" },
-                new DashboardSummaryCard { Key = "inventory", Label = "当前库存价值", Value = biz.InventoryAmountTotal, Hint = "当前实时汇总" },
-                new DashboardSummaryCard { Key = "financeNet", Label = "收支净额", Value = biz.FinanceNetTotal, Hint = "" }
+                new DashboardSummaryCard { Key = "sales", Label = "销售总额", Value = biz.SalesTotal, Hint = "销售订单金额合计" },
+                new DashboardSummaryCard { Key = "received", Label = "已收金额", Value = biz.ReceivedTotal, Hint = "应收款已收金额合计" },
+                new DashboardSummaryCard { Key = "receivable", Label = "应收余额", Value = biz.ReceivableBalance, Hint = "应收款未收金额合计" },
+                new DashboardSummaryCard { Key = "purchase", Label = "采购总额", Value = biz.PurchaseTotal, Hint = "采购单金额合计" },
+                new DashboardSummaryCard { Key = "paid", Label = "已付金额", Value = biz.PaidTotal, Hint = "应付款已付金额合计" },
+                new DashboardSummaryCard { Key = "payable", Label = "应付余额", Value = biz.PayableBalance, Hint = "应付款未付金额合计" },
+                new DashboardSummaryCard { Key = "stockAmount", Label = "库存金额", Value = biz.StockAmount, Hint = "库存汇总金额合计" },
+                new DashboardSummaryCard { Key = "operatingNetAsset", Label = "经营净资产", Value = biz.OperatingNetAsset, Hint = "应收余额 + 库存金额 - 应付余额" }
             };
         }
 
@@ -412,7 +421,7 @@ namespace SupplierErpApp
             else
                 warningCards.Add(new DashboardWarningCard { Key = "pendingPurchaseOrders", Label = "未入库采购单数", Count = 0 });
 
-            if (IsAdminUser(user) || HasPermission(user, "stock.view"))
+            if (IsAdminUser(user) || HasPermission(user, "stock_summary.view"))
             {
                 int negativeQtyCount = stockItems.Count(x => x.CurrentQuantity < 0);
                 int abnormalCount = stockItems.Count(x => x.CurrentQuantity < 0 || x.StockAmount < 0);
