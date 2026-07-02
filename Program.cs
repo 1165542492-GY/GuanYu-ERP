@@ -1364,19 +1364,24 @@ namespace SupplierErpApp
             }
             catch (ImpactBusinessException ex)
             {
-                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); WriteJson(ctx, new { message = ex.Message, error = ex.Message, blockingReasons = ex.BlockingReasons, impactItems = ex.ImpactItems }, ex.StatusCode); } catch { }
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); } catch { }
+                try { WriteJson(ctx, new { message = ex.Message, error = ex.Message, blockingReasons = ex.BlockingReasons, impactItems = ex.ImpactItems }, ex.StatusCode); } catch { }
             }
             catch (BusinessException ex)
             {
-                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, ex.StatusCode); } catch { }
+                try { WriteJson(ctx, new { message = ex.Message, error = ex.Message }, ex.StatusCode); } catch { }
             }
             catch (EditConflictException ex)
             {
-                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, 409); WriteJson(ctx, new { error = "conflict", message = ex.Message }, 409); } catch { }
+                try { LogOperationFailure(ctx, Authenticate(ctx), ex.Message, 409); } catch { }
+                try { WriteJson(ctx, new { error = "conflict", message = ex.Message }, 409); } catch { }
             }
             catch (Exception ex)
             {
-                try { string msg = ToUserMessage(ex); LogOperationFailure(ctx, Authenticate(ctx), msg, 500); WriteJson(ctx, new { error = msg, message = msg }, 500); } catch { }
+                string msg = ToUserMessage(ex);
+                try { LogOperationFailure(ctx, Authenticate(ctx), msg, 500); } catch { }
+                try { WriteJson(ctx, new { error = msg, message = msg }, 500); } catch { }
             }
             finally { EndAuditContext(); }
         }
@@ -3210,13 +3215,13 @@ namespace SupplierErpApp
 
         static void ValidateFinance(FinanceTransaction item)
         {
-            if (item == null) throw new Exception("收支记录不能为空");
+            if (item == null) throw new BusinessException("收支记录不能为空");
             DateTime date;
-            if (string.IsNullOrWhiteSpace(item.Date) || !DateTime.TryParse(item.Date, out date)) throw new Exception("请选择正确的日期");
+            if (string.IsNullOrWhiteSpace(item.Date) || !DateTime.TryParse(item.Date, out date)) throw new BusinessException("请选择正确的日期");
             string[] accounts = { "公户", "公司私户", "个人私户" };
-            if (!accounts.Contains(item.AccountType)) throw new Exception("请选择正确的账户类型");
-            if (item.Receipt < 0 || item.Payment < 0) throw new Exception("收付款金额不能为负数");
-            if ((item.Receipt > 0 && item.Payment > 0) || (item.Receipt == 0 && item.Payment == 0)) throw new Exception("每笔记录只能填写收款或付款其中一项");
+            if (!accounts.Contains(item.AccountType)) throw new BusinessException("请选择正确的账户类型");
+            if (item.Receipt < 0 || item.Payment < 0) throw new BusinessException("收付款金额不能为负数");
+            if ((item.Receipt > 0 && item.Payment > 0) || (item.Receipt == 0 && item.Payment == 0)) throw new BusinessException("每笔记录只能填写收款或付款其中一项");
             item.Date = date.ToString("yyyy-MM-dd");
             item.PaymentMethod = (item.PaymentMethod ?? "").Trim(); item.Purpose = (item.Purpose ?? "").Trim(); item.Counterparty = (item.Counterparty ?? "").Trim(); item.Note = (item.Note ?? "").Trim();
         }

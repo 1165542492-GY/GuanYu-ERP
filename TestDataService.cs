@@ -25,6 +25,7 @@ namespace SupplierErpApp
             { "销售出库", "salesOutbounds" },
             { "销售出库明细", "salesOutboundLines" },
             { "销售出库多明细", "salesOutboundLines" },
+            { "销售赠品/随货配件", "salesOutboundAccessories" },
             { "销售赠品随货配件", "salesOutboundAccessories" },
             { "销售出库配件明细", "salesOutboundAccessories" },
             { "采购单", "purchaseOrders" },
@@ -62,7 +63,7 @@ namespace SupplierErpApp
             { "salesOrders", "销售订单" },
             { "salesOutbounds", "销售出库" },
             { "salesOutboundLines", "销售出库明细" },
-            { "salesOutboundAccessories", "销售赠品随货配件" },
+            { "salesOutboundAccessories", "销售赠品/随货配件" },
             { "purchaseOrders", "采购单" },
             { "purchaseInbounds", "采购入库" },
             { "productionWorkOrders", "生产工单" },
@@ -838,6 +839,7 @@ namespace SupplierErpApp
 
         static void WriteSalesOutboundAccessorySheet(XLWorkbook wb)
         {
+            // Excel 工作表名称不能包含斜杠，界面显示为“销售赠品/随货配件”，导出表保持兼容名称。
             var ws = AddSheet(wb, "销售赠品随货配件", new[] {
                 "出库编号", "销售订单号", "客户名称", "行号", "类型", "物料编号", "物料名称", "规格", "单位",
                 "计划数量", "实际出库数量", "退回数量", "最终出库数量", "成本单价", "成本金额", "调整原因", "备注"
